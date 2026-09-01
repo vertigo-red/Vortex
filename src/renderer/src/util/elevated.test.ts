@@ -3,12 +3,16 @@ import * as path from "path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { winapiState } = vi.hoisted(() => {
-  const winapiState: { error: string | undefined } = { error: undefined };
+  const winapiState: { error: string | undefined; parameters: string | undefined } = {
+    error: undefined,
+    parameters: undefined,
+  };
   return { winapiState };
 });
 
 vi.mock("winapi-bindings", () => ({
-  ShellExecuteEx: () => {
+  ShellExecuteEx: (opts: { parameters?: string }) => {
+    winapiState.parameters = opts?.parameters;
     if (winapiState.error === undefined) {
       return;
     } else {
@@ -37,6 +41,7 @@ globalThis.__non_webpack_require__ = require;
 
 let mockTmpFileCalls = 0;
 let mockTmpFileReportError: string | undefined = undefined;
+let mockTmpFilePath = "/tmp/xyz";
 vi.mock("tmp", () => ({
   file: (
     _opts: Record<string, unknown>,
@@ -46,7 +51,7 @@ vi.mock("tmp", () => ({
       return callback(new Error(mockTmpFileReportError), "", 0, () => undefined);
     }
     mockTmpFileCalls += 1;
-    callback(null, "/tmp/xyz", 42, () => undefined);
+    callback(null, mockTmpFilePath, 42, () => undefined);
   },
 }));
 
@@ -85,9 +90,11 @@ describe("runElevated", () => {
   beforeEach(() => {
     mockTmpFileCalls = 0;
     mockTmpFileReportError = undefined;
+    mockTmpFilePath = "/tmp/xyz";
     mockWrites = [];
     mockWriteReportError = undefined;
     winapiState.error = undefined;
+    winapiState.parameters = undefined;
   });
 
   it("creates a temporary file", () => {
@@ -116,6 +123,13 @@ describe("runElevated", () => {
       expect(mockWrites[0]).toContain("let truth = true;");
       expect(mockWrites[0]).toContain('let str = "string";');
       expect(mockWrites[0]).toContain("let array = [1,2,3];");
+    });
+  });
+
+  it("quotes the temp path in the ShellExecuteEx parameters if it contains spaces", () => {
+    mockTmpFilePath = "/tmp/john doe/abc-123456.js";
+    return runElevated("ipcPath", dummy).then(() => {
+      expect(winapiState.parameters).toBe('--run "/tmp/john doe/abc-123456.js"');
     });
   });
 

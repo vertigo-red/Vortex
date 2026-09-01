@@ -215,7 +215,7 @@ export function runElevated(
           winapi.ShellExecuteEx({
             verb: "runas",
             file: process.execPath,
-            parameters: `--run ${tmpPath}`,
+            parameters: `--run "${tmpPath}"`,
             directory: path.dirname(process.execPath),
             show: "shownormal",
           });
