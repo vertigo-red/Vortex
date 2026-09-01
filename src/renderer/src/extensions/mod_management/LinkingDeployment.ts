@@ -290,7 +290,7 @@ abstract class LinkingActivator implements IDeploymentMethod {
             100,
           ),
         )
-        .then(() => {
+        .then(async () => {
           if (errorCount > 0) {
             this.mApi.store.dispatch(
               addNotification({
@@ -312,14 +312,16 @@ abstract class LinkingActivator implements IDeploymentMethod {
           const gameRequiresCleanup =
             game.requiresCleanup === undefined ? game.mergeMods !== true : game.requiresCleanup;
           if (removed.length > 0 && (gameRequiresCleanup || cleanupOnDeploy)) {
-            this.postLinkPurge(dataPath, false, false, directoryCleaning).catch((err) => {
-              if (err instanceof UserCanceled) {
-                return null;
-              }
-              this.mApi.showErrorNotification("Failed to clean up", err, {
-                message: dataPath,
-              });
-            });
+            await this.postLinkPurge(dataPath, false, false, directoryCleaning).catch(
+              (err) => {
+                if (err instanceof UserCanceled) {
+                  return null;
+                }
+                this.mApi.showErrorNotification("Failed to clean up", err, {
+                  message: dataPath,
+                });
+              },
+            );
           }
 
           this.mContext = undefined;
