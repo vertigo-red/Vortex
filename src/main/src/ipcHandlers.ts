@@ -304,11 +304,11 @@ export function init() {
       const viewOptions: Electron.WebContentsViewConstructorOptions = {
         ...typedOptions,
         webPreferences: {
+          ...typedOptions.webPreferences,
           nodeIntegration: false,
           contextIsolation: true,
           sandbox: true,
           webSecurity: false,
-          ...typedOptions?.webPreferences,
         },
       };
 
