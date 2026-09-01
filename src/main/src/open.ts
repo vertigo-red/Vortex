@@ -5,8 +5,17 @@ import { shell } from "electron";
 
 import { log } from "./logging";
 
+const allowedUrlSchemes = new Set(["http:", "https:"]);
+
 /** Opens the file using the default application registered for the protocol */
 export function openUrl(url: URL): void {
+  if (!allowedUrlSchemes.has(url.protocol)) {
+    log("warn", "refused to open URL with unexpected protocol", {
+      url: url.toString(),
+      protocol: url.protocol,
+    });
+    return;
+  }
   shell.openExternal(url.toString()).catch((err: unknown) => {
     log("error", "failed to open URL", { url: url.toString(), error: err });
   });
