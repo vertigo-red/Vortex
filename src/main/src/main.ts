@@ -134,12 +134,18 @@ if (process.platform === "win32" && process.env.NODE_ENV !== "development") {
   const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
   const programData = process.env.ProgramData || "C:\\ProgramData";
 
+  const lowerUserPath = userPath.toLowerCase();
+  const lowerProgramData = programData.toLowerCase();
+  const lowerProgramFiles = programFiles.toLowerCase();
+  const lowerProgramFilesX86 = programFilesX86.toLowerCase();
+
   const pathFilter = (envPath: string): boolean => {
+    const lowerEnvPath = envPath.toLowerCase();
     return (
-      !envPath.startsWith(userPath) &&
-      !envPath.startsWith(programData) &&
-      !envPath.startsWith(programFiles) &&
-      !envPath.startsWith(programFilesX86)
+      !lowerEnvPath.startsWith(lowerUserPath) &&
+      !lowerEnvPath.startsWith(lowerProgramData) &&
+      !lowerEnvPath.startsWith(lowerProgramFiles) &&
+      !lowerEnvPath.startsWith(lowerProgramFilesX86)
     );
   };
 
