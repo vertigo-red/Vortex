@@ -200,6 +200,15 @@ class Application {
   }
 
   private setupAppEvents(args: IParameters): void {
+    app.on("before-quit", () => {
+      log("info", "before-quit: flushing persistence queue early");
+      finalizeMainWrite().catch((err: unknown) => {
+        log("warn", "early persist flush failed", {
+          error: getErrorMessageOrDefault(err),
+        });
+      });
+    });
+
     app.on("window-all-closed", () => {
       log("info", "Vortex closing");
       finalizeMainWrite()
