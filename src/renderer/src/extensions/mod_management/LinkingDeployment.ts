@@ -201,6 +201,10 @@ abstract class LinkingActivator implements IDeploymentMethod {
     const directoryCleaning = game.directoryCleaning || "tag";
     const dirTags = directoryCleaning === "tag";
 
+    // Track keys whose removal failed so we can exclude them from the
+    // relink step without mutating the arrays during concurrent iteration.
+    const failedRemoveKeys = new Set<string>();
+
     return (
       mapWithConcurrency(
         removed,
@@ -225,7 +229,7 @@ abstract class LinkingActivator implements IDeploymentMethod {
                     error: getErrorMessageOrDefault(err),
                   });
                   ++errorCount;
-                  sourceChanged.splice(idx, 1);
+                  failedRemoveKeys.add(key);
                 },
               ),
             50,
@@ -242,7 +246,7 @@ abstract class LinkingActivator implements IDeploymentMethod {
                     error: getErrorMessageOrDefault(err),
                   });
                   ++errorCount;
-                  contentChanged.splice(idx, 1);
+                  failedRemoveKeys.add(key);
                 },
               ),
             50,
@@ -273,7 +277,10 @@ abstract class LinkingActivator implements IDeploymentMethod {
         // then update modified files
         .then(() =>
           mapWithConcurrency(
-            [].concat(sourceChanged, contentChanged),
+            [].concat(
+              sourceChanged.filter((k) => !failedRemoveKeys.has(k)),
+              contentChanged.filter((k) => !failedRemoveKeys.has(k)),
+            ),
             (key: string) =>
               this.deployFile(key, installationPath, dataPath, true, dirTags)
                 .catch((err: unknown) => {
