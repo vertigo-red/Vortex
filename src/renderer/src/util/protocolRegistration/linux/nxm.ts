@@ -28,6 +28,7 @@ const NXM_PROTOCOL = "nxm";
 const PACKAGE_DESKTOP_ID = "com.nexusmods.vortex.desktop";
 const DEV_DESKTOP_ID = "com.nexusmods.vortex.dev.desktop";
 const DEV_WRAPPER_FILE_NAME = "com.nexusmods.vortex.dev.sh";
+const PORTABLE_DESKTOP_ID = "com.nexusmods.vortex.portable.desktop";
 
 /**
  * Required registration inputs for Linux `nxm` routing.
@@ -59,6 +60,13 @@ export function registerLinuxNxmProtocolHandler(
       applicationsDir,
       options.executablePath,
       options.appPath,
+    );
+  } else if (desktopId === PORTABLE_DESKTOP_ID) {
+    didChangeDesktopFiles = ensureDevDesktopEntry(
+      applicationsDir,
+      options.executablePath,
+      undefined,
+      PORTABLE_DESKTOP_ID,
     );
   }
 
@@ -107,7 +115,7 @@ function desktopIdForCurrentBuild(): string {
     return DEV_DESKTOP_ID;
   }
 
-  return PACKAGE_DESKTOP_ID;
+  return PORTABLE_DESKTOP_ID;
 }
 
 function escapeShellScriptArgument(input: string): string {
@@ -130,7 +138,10 @@ function escapeShellScriptArgument(input: string): string {
  * The desktop-entry escaping rules are applied separately to Exec/TryExec fields.
  * Vortex adds `appPath` because Electron launches as: <electron> <appPath> ...
  */
-function generateWrapperScript(executablePath: string, appPath: string): string {
+function generateWrapperScript(executablePath: string, appPath?: string): string {
+  const command =
+    `"${escapeShellScriptArgument(executablePath)}"` +
+    (appPath ? ` "${escapeShellScriptArgument(appPath)}"` : "");
   // Persist GTK/Electron environment variables used to run Vortex.
   // This is needed for Nix, such that you can launch the desktop entry outside
   // of the Nix devShell during development. For other environments, this will
@@ -170,9 +181,9 @@ function generateWrapperScript(executablePath: string, appPath: string): string 
     // This matches Windows behaviour, which includes --download on all protocol handler calls,
     // but does not on non-handler calls (e.g., when starting from the start menu).
     `if [ -n "$1" ]; then\n` +
-    `  exec "${escapeShellScriptArgument(executablePath)}" "${escapeShellScriptArgument(appPath)}" --download "$@"\n` +
+    `  exec ${command} --download "$@"\n` +
     `else\n` +
-    `  exec "${escapeShellScriptArgument(executablePath)}" "${escapeShellScriptArgument(appPath)}"\n` +
+    `  exec ${command}\n` +
     `fi\n`
   );
 }
@@ -215,10 +226,14 @@ function warnIfApplicationsPathNeedsEscaping(applicationsDir: string): void {
 function ensureDevDesktopEntry(
   applicationsDir: string,
   executablePath: string,
-  appPath: string,
+  appPath?: string,
+  desktopId: string = DEV_DESKTOP_ID,
 ): boolean {
-  const wrapperPath = path.join(applicationsDir, DEV_WRAPPER_FILE_NAME);
-  const desktopFilePath = path.join(applicationsDir, DEV_DESKTOP_ID);
+  const wrapperPath = path.join(
+    applicationsDir,
+    desktopId === DEV_DESKTOP_ID ? DEV_WRAPPER_FILE_NAME : "com.nexusmods.vortex.portable.sh",
+  );
+  const desktopFilePath = path.join(applicationsDir, desktopId);
 
   warnIfApplicationsPathNeedsEscaping(applicationsDir);
 
@@ -233,7 +248,7 @@ function ensureDevDesktopEntry(
   const desktopFileContent =
     "[Desktop Entry]\n" +
     "Type=Application\n" +
-    "Name=Vortex (dev build)\n" +
+    (appPath ? "Name=Vortex (dev build)\n" : "Name=Vortex\n") +
     "GenericName=Mod Manager\n" +
     "Comment=Mod manager for PC games from Nexus Mods\n" +
     "NoDisplay=true\n" +

@@ -40,7 +40,7 @@ export function registerLinuxProtocolHandler(options: IProtocolRegistrationOptio
 
   return registerLinuxNxmProtocolHandler({
     setAsDefault: options.setAsDefault,
-    executablePath: process.execPath,
+    executablePath: process.env.APPIMAGE || process.execPath,
     appPath: getVortexPath("package"),
   });
 }
