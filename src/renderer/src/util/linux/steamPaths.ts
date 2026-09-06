@@ -9,13 +9,18 @@ import getVortexPath from "../getVortexPath";
  */
 export function getLinuxSteamPaths(): string[] {
   const home = getVortexPath("home");
+  const dataHome = process.env.XDG_DATA_HOME;
   return [
-    path.join(home, ".local", "share", "Steam"), // XDG standard (native)
-    path.join(home, ".steam", "debian-installation"), // Debian/Ubuntu symlink
-    path.join(home, ".var", "app", "com.valvesoftware.Steam", "data", "Steam"), // Flatpak
-    path.join(home, ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam"),
-    path.join(home, "snap", "steam", "common", ".local", "share", "Steam"), // Snap
-    path.join(home, ".steam", "steam"), // Legacy
+    ...new Set([
+      ...(dataHome && path.isAbsolute(dataHome) ? [path.join(dataHome, "Steam")] : []),
+      path.join(home, ".local", "share", "Steam"), // XDG standard (native)
+      path.join(home, ".steam", "debian-installation"), // Debian/Ubuntu symlink
+      path.join(home, ".var", "app", "com.valvesoftware.Steam", "data", "Steam"), // Flatpak
+      path.join(home, ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam"),
+      path.join(home, "snap", "steam", "common", ".local", "share", "Steam"), // Snap
+      path.join(home, ".steam", "steam"), // Legacy
+      path.join(home, ".steam", "root"),
+    ]),
   ];
 }
 
@@ -23,13 +28,13 @@ export function getLinuxSteamPaths(): string[] {
  * Check if a path is a valid Steam installation
  */
 export function isValidSteamPath(steamPath: string): boolean {
-  const libraryFoldersPath = path.join(steamPath, "config", "libraryfolders.vdf");
-  try {
-    fs.statSync(libraryFoldersPath);
-    return true;
-  } catch {
-    return false;
-  }
+  return ["steamapps", "config"].some((directory) => {
+    try {
+      return fs.statSync(path.join(steamPath, directory, "libraryfolders.vdf")).isFile();
+    } catch {
+      return false;
+    }
+  });
 }
 
 /**

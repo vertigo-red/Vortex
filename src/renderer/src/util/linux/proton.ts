@@ -4,6 +4,7 @@ import { parse } from "simple-vdf";
 
 import * as fs from "../fs";
 import { log } from "../log";
+import { getSafeCI } from "../storeHelper";
 
 export interface IProtonInfo {
   usesProton: boolean;
@@ -15,10 +16,9 @@ export interface IProtonInfo {
  * Check if a game uses Proton by looking for its compatdata folder
  */
 export async function detectProtonUsage(steamAppsPath: string, appId: string): Promise<boolean> {
-  const compatDataPath = path.join(steamAppsPath, "compatdata", appId);
+  const prefixPath = path.join(steamAppsPath, "compatdata", appId, "pfx", "drive_c");
   try {
-    await fs.statAsync(compatDataPath);
-    return true;
+    return (await fs.statAsync(prefixPath)).isDirectory();
   } catch {
     return false;
   }
@@ -49,8 +49,14 @@ export async function getConfiguredProtonName(
   try {
     const configData = await fs.readFileAsync(configPath, "utf8");
     const config = parse(configData.toString()) as any;
-    const mapping = config?.InstallConfigStore?.Software?.Valve?.Steam?.CompatToolMapping;
-    return mapping?.[appId]?.name;
+    const mapping = getSafeCI(
+      config,
+      ["InstallConfigStore", "Software", "Valve", "Steam", "CompatToolMapping"],
+      {},
+    );
+    const name = getSafeCI(mapping, [appId, "name"], undefined);
+    // An empty per-game name means the global default, not an arbitrary installed tool.
+    return name || getSafeCI(mapping, ["0", "name"], undefined);
   } catch (err: any) {
     log("debug", "Could not read Steam config.vdf", { error: err?.message });
     return undefined;
@@ -62,8 +68,7 @@ export async function getConfiguredProtonName(
  */
 async function pathExists(filePath: string): Promise<boolean> {
   try {
-    await fs.statAsync(filePath);
-    return true;
+    return (await fs.statAsync(path.join(filePath, "proton"))).isFile();
   } catch {
     return false;
   }
@@ -91,18 +96,13 @@ function extractProtonKeyword(protonName: string): string | undefined {
 function folderMatchesKeyword(folderName: string, keyword: string): boolean {
   const lowerFolder = folderName.toLowerCase();
 
-  // Direct substring match (handles "experimental", "hotfix", etc.)
-  if (lowerFolder.includes(keyword)) {
-    return true;
-  }
-
   // Version number match: "9" should match "9.0", "9.1", etc.
   if (/^\d+$/.test(keyword)) {
     const versionPattern = new RegExp(`\\b${keyword}(\\.\\d+)?\\b`);
     return versionPattern.test(lowerFolder);
   }
 
-  return false;
+  return lowerFolder.includes(keyword);
 }
 
 /**
@@ -131,7 +131,12 @@ function folderMatchesKeyword(folderName: string, keyword: string): boolean {
 export async function resolveProtonPath(
   steamPath: string,
   protonName: string,
+  libraryPaths: string[] = [steamPath],
 ): Promise<string | undefined> {
+  // A config name is a tool identifier, never a relative or absolute filesystem path.
+  if (!protonName || /[\\/]/.test(protonName) || protonName === "." || protonName === "..") {
+    return undefined;
+  }
   // 1. Check custom compatibility tools directory (GE-Proton, etc.)
   // Custom tools use their config name as the folder name directly
   const customToolPath = path.join(steamPath, "compatibilitytools.d", protonName);
@@ -139,30 +144,23 @@ export async function resolveProtonPath(
     return customToolPath;
   }
 
-  const commonPath = path.join(steamPath, "steamapps", "common");
+  for (const library of new Set([steamPath, ...libraryPaths])) {
+    const commonPath = path.join(library, "steamapps", "common");
+    const exactPath = path.join(commonPath, protonName);
+    if (await pathExists(exactPath)) return exactPath;
 
-  // 2. Check for exact match in steamapps/common
-  const exactPath = path.join(commonPath, protonName);
-  if (await pathExists(exactPath)) {
-    return exactPath;
-  }
-
-  // 3. Fuzzy match: scan Proton* folders and match by keyword
-  const keyword = extractProtonKeyword(protonName);
-  if (keyword) {
+    const keyword = extractProtonKeyword(protonName);
+    if (!keyword) continue;
     try {
-      const entries = await fs.readdirAsync(commonPath);
-      const protonDirs = entries.filter((e) => e.toLowerCase().startsWith("proton"));
-
-      for (const dir of protonDirs) {
-        if (folderMatchesKeyword(dir, keyword)) {
-          return path.join(commonPath, dir);
-        }
+      const entries = (await fs.readdirAsync(commonPath))
+        .filter((e) => e.toLowerCase().startsWith("proton"))
+        .sort((a, b) => b.localeCompare(a, "en", { numeric: true }));
+      for (const entry of entries) {
+        const candidate = path.join(commonPath, entry);
+        if (folderMatchesKeyword(entry, keyword) && (await pathExists(candidate))) return candidate;
       }
     } catch (err: any) {
-      log("debug", "Could not scan steamapps/common for Proton", {
-        error: err?.message,
-      });
+      log("debug", "Could not scan Steam library for Proton", { error: err?.message });
     }
   }
 
@@ -172,22 +170,34 @@ export async function resolveProtonPath(
 /**
  * Find the latest installed Proton version (fallback)
  */
-export async function findLatestProton(steamPath: string): Promise<string | undefined> {
-  const commonPath = path.join(steamPath, "steamapps", "common");
-  try {
-    const entries = await fs.readdirAsync(commonPath);
-    const protonDirs = entries
-      .filter((e) => e.toLowerCase().startsWith("proton"))
-      .sort()
-      .reverse();
-
-    if (protonDirs.length > 0) {
-      return path.join(commonPath, protonDirs[0]);
+export async function findLatestProton(
+  steamPath: string,
+  libraryPaths: string[] = [steamPath],
+): Promise<string | undefined> {
+  const candidates: string[] = [];
+  for (const library of new Set([steamPath, ...libraryPaths])) {
+    const common = path.join(library, "steamapps", "common");
+    try {
+      const entries = await fs.readdirAsync(common);
+      for (const entry of entries) {
+        const candidate = path.join(common, entry);
+        if (/^proton(?:[ -]|$)/i.test(entry) && (await pathExists(candidate)))
+          candidates.push(candidate);
+      }
+    } catch (err: any) {
+      log("debug", "Could not scan for Proton versions", { error: err?.message });
     }
-  } catch (err: any) {
-    log("debug", "Could not scan for Proton versions", { error: err?.message });
   }
-  return undefined;
+  // Prefer numbered stable releases; compare 10 > 9 numerically.
+  candidates.sort((a, b) => {
+    const aStable = /^proton \d/i.test(path.basename(a));
+    const bStable = /^proton \d/i.test(path.basename(b));
+    return (
+      Number(bStable) - Number(aStable) ||
+      path.basename(b).localeCompare(path.basename(a), "en", { numeric: true })
+    );
+  });
+  return candidates[0];
 }
 
 /**
@@ -197,6 +207,7 @@ export async function getProtonInfo(
   steamPath: string,
   steamAppsPath: string,
   appId: string,
+  libraryPaths: string[] = [steamPath],
 ): Promise<IProtonInfo> {
   const usesProton = await detectProtonUsage(steamAppsPath, appId);
   if (!usesProton) {
@@ -210,11 +221,11 @@ export async function getProtonInfo(
   let protonPath: string | undefined;
 
   if (protonName) {
-    protonPath = await resolveProtonPath(steamPath, protonName);
+    protonPath = await resolveProtonPath(steamPath, protonName, libraryPaths);
   }
 
-  if (!protonPath) {
-    protonPath = await findLatestProton(steamPath);
+  if (!protonName) {
+    protonPath = await findLatestProton(steamPath, libraryPaths);
   }
 
   return { usesProton: true, compatDataPath, protonPath };
@@ -236,16 +247,11 @@ export function buildProtonEnvironment(
   steamPath: string,
   existingEnv?: Record<string, string>,
 ): Record<string, string> {
-  const preloads = [
-    path.join(steamPath, "ubuntu12_32", "gameoverlayrenderer.so"),
-    path.join(steamPath, "ubuntu12_64", "gameoverlayrenderer.so"),
-  ];
   return {
     ...existingEnv,
     STEAM_COMPAT_DATA_PATH: compatDataPath,
     STEAM_COMPAT_CLIENT_INSTALL_PATH: steamPath,
     WINEPREFIX: getWinePrefixPath(compatDataPath),
-    LD_PRELOAD: preloads.join(":"),
   };
 }
 
