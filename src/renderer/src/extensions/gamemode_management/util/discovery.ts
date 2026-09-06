@@ -19,6 +19,8 @@ import GameStoreHelper from "../../../util/GameStoreHelper";
 import type { Normalize } from "../../../util/getNormalizeFunc";
 import getNormalizeFunc from "../../../util/getNormalizeFunc";
 import getVortexPath from "../../../util/getVortexPath";
+import { resolveWindowsPath } from "../../../util/linux/caseInsensitivePaths";
+import { isWindowsExecutable } from "../../../util/linux/proton";
 import { log } from "../../../util/log";
 import StarterInfo from "../../../util/StarterInfo";
 import { getSafe } from "../../../util/storeHelper";
@@ -256,8 +258,18 @@ function handleDiscoveredGame(
     executable: exe !== game.executable() ? exe : undefined,
     store,
   };
-  onDiscoveredGame(game.id, disco);
-  return getNormalizeFunc(resolvedPath)
+  const executablePath =
+    process.platform === "linux" && isWindowsExecutable(exe)
+      ? resolveWindowsPath(resolvedPath, exe)
+      : Promise.resolve(path.join(resolvedPath, exe));
+  return Bluebird.resolve(executablePath)
+    .then((resolvedExecutable) => {
+      if (process.platform === "linux" && isWindowsExecutable(exe)) {
+        disco.executable = path.relative(resolvedPath, resolvedExecutable);
+      }
+      onDiscoveredGame(game.id, disco);
+      return getNormalizeFunc(resolvedPath);
+    })
     .then((normalize) =>
       discoverRelativeTools(game, resolvedPath, discoveredGames, onDiscoveredTool, normalize),
     )
@@ -454,9 +466,11 @@ function verifyToolDir(tool: ITool, testPath: string): Bluebird<void> {
     // is not something we want at this point because we don't even know yet if the user
     // wants to manage the game at all.
     (fileName: string) =>
-      fsExtra.stat(path.join(testPath, fileName)).catch((err) => {
-        return Bluebird.reject(err);
-      }),
+      Bluebird.resolve(
+        process.platform === "linux" && isWindowsExecutable(tool.executable(testPath))
+          ? resolveWindowsPath(testPath, fileName)
+          : Promise.resolve(path.join(testPath, fileName)),
+      ).then((resolved) => fsExtra.stat(resolved)),
   ).then(() => undefined);
 }
 

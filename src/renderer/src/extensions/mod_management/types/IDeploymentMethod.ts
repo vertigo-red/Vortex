@@ -40,6 +40,8 @@ export interface IFileChange {
 }
 
 export interface IDeployedFile {
+  /** Actual relative destination spelling when Windows paths are deployed on Linux. */
+  deployedPath?: string;
   /**
    * the relative path to the file
    */

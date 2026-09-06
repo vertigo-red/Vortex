@@ -1,3 +1,5 @@
+import * as nativeFs from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
@@ -6,10 +8,16 @@ import type { IExtensionApi } from "../../types/IExtensionContext";
 import type { IDeployedFile } from "./types/IDeploymentMethod";
 
 vi.mock("../../util/api", () => ({
-  getGame: () => ({ directoryCleaning: "tag", requiresCleanup: false }),
+  getGame: () => ({
+    directoryCleaning: "tag",
+    requiresCleanup: false,
+    executable: () => "Game.exe",
+  }),
   UserCanceled: class extends Error {},
 }));
-vi.mock("../../util/fs", () => ({ renameAsync: async () => {} }));
+vi.mock("../../util/fs", () => ({
+  renameAsync: (from: string, to: string) => nativeFs.rename(from, to),
+}));
 vi.mock("../../logging", () => ({ log: vi.fn() }));
 vi.mock("turbowalk", () => ({ default: vi.fn() }));
 
@@ -22,7 +30,7 @@ class TestActivator extends LinkingActivator {
   public isSupported() {
     return undefined;
   }
-  protected async linkFile(destination: string) {
+  protected async linkFile(destination: string, _source: string) {
     this.linked.push(path.basename(destination));
   }
   protected async unlinkFile(destination: string) {
@@ -43,7 +51,10 @@ class TestActivator extends LinkingActivator {
 function setup() {
   const dispatch = vi.fn();
   const api = {
-    store: { dispatch, getState: () => ({ settings: { mods: { cleanupOnDeploy: false } } }) },
+    store: {
+      dispatch,
+      getState: () => ({ settings: { mods: { cleanupOnDeploy: false }, profiles: {} } }),
+    },
     translate: (text: string) => text,
   } as unknown as IExtensionApi;
   return { activator: new TestActivator("test", "test", "test", true, api), dispatch };
@@ -92,3 +103,70 @@ describe("deployment with locked files", () => {
     await activator.cancel("game", "data", "staging");
   });
 });
+
+it.runIf(process.platform === "linux")(
+  "deploys, replaces and restores using existing destination casing",
+  async () => {
+    const root = await nativeFs.mkdtemp(path.join(os.tmpdir(), "vortex-deploy-case-"));
+    try {
+      const data = path.join(root, "game");
+      const staging = path.join(root, "staging");
+      const target = path.join(data, "Data", "Textures", "Armor.dds");
+      await nativeFs.mkdir(path.dirname(target), { recursive: true });
+      await nativeFs.writeFile(target, "original");
+      const api = {
+        store: {
+          dispatch: vi.fn(),
+          getState: () => ({
+            settings: {
+              mods: { cleanupOnDeploy: false },
+              profiles: { activeProfileId: "profile" },
+              gameMode: { discovered: {} },
+            },
+            persistent: { profiles: { profile: { gameId: "game" } } },
+          }),
+        },
+        translate: (text: string) => text,
+      } as unknown as IExtensionApi;
+      class DiskActivator extends TestActivator {
+        protected async linkFile(destination: string, source: string) {
+          await nativeFs.mkdir(path.dirname(destination), { recursive: true });
+          await nativeFs.link(source, destination);
+        }
+        protected async unlinkFile(destination: string) {
+          await nativeFs.unlink(destination);
+        }
+        protected async isLink() {
+          return false;
+        }
+      }
+      const activator = new DiskActivator("disk", "disk", "disk", true, api);
+      let manifest: IDeployedFile[] = [];
+      for (const [source, relPath] of [
+        ["first", "data/textures/ARMOR.dds"],
+        ["second", "DATA/TEXTURES/armor.dds"],
+      ]) {
+        const staged = path.join(staging, source, relPath);
+        await nativeFs.mkdir(path.dirname(staged), { recursive: true });
+        await nativeFs.writeFile(staged, source);
+        await activator.prepare(data, true, manifest, (value) => value);
+        (activator as any).mContext.newDeployment[relPath.toLowerCase()] = {
+          source,
+          relPath,
+          time: 1,
+        };
+        manifest = await activator.finalize("game", data, staging);
+        expect(await nativeFs.readFile(target, "utf8")).toBe(source);
+        expect(manifest[0].relPath).toBe(relPath);
+        expect(manifest[0].deployedPath).toBe(path.join("Data", "Textures", "Armor.dds"));
+        expect(await nativeFs.readFile(target + ".vortex_backup", "utf8")).toBe("original");
+        expect(await nativeFs.readdir(data)).toEqual(["Data"]);
+      }
+      await activator.prepare(data, true, manifest, (value) => value);
+      expect(await activator.finalize("game", data, staging)).toEqual([]);
+      expect(await nativeFs.readFile(target, "utf8")).toBe("original");
+    } finally {
+      await nativeFs.rm(root, { recursive: true, force: true });
+    }
+  },
+);
