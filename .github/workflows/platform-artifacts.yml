@@ -1,0 +1,85 @@
+name: Platform test artifacts
+
+on:
+  push:
+    branches: [improvements/windows, improvements/linux]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-artifacts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    if: github.repository == 'vertigo-red/Vortex' && github.ref_name == 'improvements/windows'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      NO_PARALLEL: true
+      NX_DAEMON: false
+    steps:
+      - uses: actions/checkout@v7
+      - name: Package unsigned installer
+        uses: ./.github/actions/package
+        with:
+          version: 1.0.0-windows.${{ github.run_number }}
+          use-codesigning: "false"
+      - name: Verify workspace
+        run: pnpm run verify
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: vortex-windows-${{ github.sha }}
+          path: dist/vortex-setup-*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  linux:
+    if: github.repository == 'vertigo-red/Vortex' && github.ref_name == 'improvements/linux'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      NX_DAEMON: false
+      VORTEX_ELECTRON_REBUILD: defer
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+          cache: pnpm
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev rpm
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+      - name: Verify workspace
+        run: pnpm run verify
+      - name: Set test version
+        run: pnpm -F @vortex/main version 1.0.0-linux.${{ github.run_number }} --no-git-tag-version --no-git-checks --allow-same-version
+      - name: Prepare deployment
+        run: pnpm nx run @vortex/main:publish
+        env:
+          NODE_ENV: production
+          VORTEX_ELECTRON_REBUILD: skip
+      - name: Rebuild packaged native modules
+        working-directory: src/main/dist
+        run: pnpm exec electron-rebuild
+      - name: Package Linux
+        run: pnpm -F @vortex/main run package:nosign
+      - name: Verify packaged dependencies
+        run: node scripts/verify-packaged-asar.mjs --asar dist/linux-unpacked/resources/app.asar
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vortex-linux-${{ github.sha }}
+          path: |
+            dist/*.zip
+            dist/*.rpm
+            dist/*.AppImage
+          if-no-files-found: error
+          retention-days: 30
