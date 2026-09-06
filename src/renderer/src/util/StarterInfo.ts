@@ -26,6 +26,7 @@ import {
 import { emitGameLaunched, recordLaunchExit } from "./gameLaunchAnalytics";
 import GameStoreHelper from "./GameStoreHelper";
 import getVortexPath from "./getVortexPath";
+import { resolveWindowsPath } from "./linux/caseInsensitivePaths";
 import { isWindowsExecutable } from "./linux/proton";
 import type { Steam, ISteamEntry } from "./Steam";
 import { getSafe } from "./storeHelper";
@@ -81,7 +82,7 @@ async function shouldRunWithProton(
   info: IStarterInfo,
   api: IExtensionApi,
 ): Promise<ISteamEntry | undefined> {
-  if (process.platform === "win32") {
+  if (process.platform !== "linux") {
     return undefined;
   }
   if (!isWindowsExecutable(info.exePath)) {
@@ -95,11 +96,20 @@ async function shouldRunWithProton(
     const steamStore = GameStoreHelper.getGameStore("steam") as Steam;
     const games = await steamStore.allGames();
 
-    // Find the game entry that matches this executable's location
-    return games.find(
-      (g) =>
-        info.workingDirectory?.toLowerCase().startsWith(g.gamePath.toLowerCase()) ||
-        info.exePath.toLowerCase().startsWith(g.gamePath.toLowerCase()),
+    // Use the owning game's discovery even when a mod tool lives outside the game.
+    const discoveryPath = api.getState().settings.gameMode.discovered[info.gameId]?.path;
+    const contains = (root: string, candidate?: string) => {
+      if (!candidate) return false;
+      const relative = path.relative(root, candidate);
+      return (
+        relative === "" ||
+        (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+      );
+    };
+    return games.find((g) =>
+      discoveryPath
+        ? path.resolve(g.gamePath) === path.resolve(discoveryPath)
+        : contains(g.gamePath, info.workingDirectory) || contains(g.gamePath, info.exePath),
     );
   } catch (err: any) {
     log("debug", "Could not check for Proton execution", {
@@ -255,6 +265,16 @@ class StarterInfo implements IStarterInfo {
         getApplication().quit();
       }
     };
+
+    if (process.platform === "linux" && isWindowsExecutable(info.exePath)) {
+      const root = path.parse(info.exePath).root;
+      if (root) {
+        info = {
+          ...info,
+          exePath: await resolveWindowsPath(root, info.exePath.slice(root.length)),
+        };
+      }
+    }
 
     // Check if game/tool should run through Proton on Linux
     const protonGameEntry = await shouldRunWithProton(info, api);

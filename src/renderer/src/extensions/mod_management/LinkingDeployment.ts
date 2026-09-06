@@ -14,6 +14,8 @@ import type { IState } from "../../types/IState";
 import { getGame, UserCanceled } from "../../util/api";
 import * as fs from "../../util/fs";
 import type { Normalize } from "../../util/getNormalizeFunc";
+import { CaseInsensitivePathResolver } from "../../util/linux/caseInsensitivePaths";
+import { isWindowsExecutable } from "../../util/linux/proton";
 import { activeGameId } from "../../util/selectors";
 import { truthy } from "../../util/util";
 import type {
@@ -83,6 +85,7 @@ abstract class LinkingActivator implements IDeploymentMethod {
   private mQueue: Promise<void> = Promise.resolve();
   private mContext: IDeploymentContext;
   private mDirCache: Set<string>;
+  private mPathResolver?: CaseInsensitivePathResolver;
 
   constructor(
     id: string,
@@ -130,24 +133,43 @@ abstract class LinkingActivator implements IDeploymentMethod {
 
     const queue = this.mQueue;
     this.mQueue = this.mQueue.then(() => queueProm);
-    this.mNormalize = normalize;
-
-    return queue.then(() => {
-      this.mContext = {
-        newDeployment: {},
-        previousDeployment: {},
-        onComplete: queueResolve,
-      };
-      lastDeployment.forEach((file) => {
-        const outputPath = [file.target || null, file.relPath]
-          .filter((i) => i !== null)
-          .join(path.sep);
-        const key = this.mNormalize(outputPath);
-        this.mContext.previousDeployment[key] = file;
-        if (!clean) {
-          this.mContext.newDeployment[key] = file;
+    return queue.then(async () => {
+      try {
+        const state = this.mApi.store.getState();
+        const gameId = activeGameId(state);
+        const game = gameId ? getGame(gameId) : undefined;
+        const discovery = state.settings?.gameMode?.discovered?.[gameId];
+        const executable = discovery?.executable ?? game?.executable?.(discovery?.path);
+        const windowsPaths =
+          process.platform === "linux" && executable && isWindowsExecutable(executable);
+        this.mNormalize = windowsPaths ? (value) => normalize(value).toLowerCase() : normalize;
+        this.mPathResolver = windowsPaths ? new CaseInsensitivePathResolver(dataPath) : undefined;
+        this.mContext = {
+          newDeployment: {},
+          previousDeployment: {},
+          onComplete: queueResolve,
+        };
+        for (const previous of lastDeployment) {
+          const file = { ...previous };
+          if (this.mPathResolver) {
+            file.deployedPath = await this.mPathResolver.resolve(
+              file.deployedPath ?? path.join(file.target || "", file.relPath),
+            );
+          }
+          const outputPath = [file.target || null, file.relPath]
+            .filter((i) => i !== null)
+            .join(path.sep);
+          const key = this.mNormalize(outputPath);
+          this.mContext.previousDeployment[key] = file;
+          if (!clean) {
+            this.mContext.newDeployment[key] = file;
+          }
         }
-      });
+      } catch (err) {
+        this.mContext = undefined;
+        queueResolve();
+        throw err;
+      }
     });
   }
 
@@ -465,7 +487,10 @@ abstract class LinkingActivator implements IDeploymentMethod {
   }
 
   public isDeployed(installPath: string, dataPath: string, file: IDeployedFile): Promise<boolean> {
-    const fullPath = path.join(dataPath, file.target || "", file.relPath);
+    const fullPath = path.join(
+      dataPath,
+      file.deployedPath ?? path.join(file.target || "", file.relPath),
+    );
 
     return Promise.resolve(
       fs
@@ -486,11 +511,10 @@ abstract class LinkingActivator implements IDeploymentMethod {
     return mapWithConcurrency(
       activation ?? [],
       (fileEntry) => {
-        const fileDataPath = (
-          truthy(fileEntry.target)
-            ? [dataPath, fileEntry.target, fileEntry.relPath]
-            : [dataPath, fileEntry.relPath]
-        ).join(path.sep);
+        const fileDataPath = path.join(
+          dataPath,
+          fileEntry.deployedPath ?? path.join(fileEntry.target || "", fileEntry.relPath),
+        );
         const fileModPath = [installPath, fileEntry.source, fileEntry.relPath].join(path.sep);
         let sourceDeleted: boolean = false;
         let destDeleted: boolean = false;
@@ -705,8 +729,11 @@ abstract class LinkingActivator implements IDeploymentMethod {
     }
     const outputPath = path.join(
       dataPath,
-      this.mContext.previousDeployment[key].target || "",
-      this.mContext.previousDeployment[key].relPath,
+      this.mContext.previousDeployment[key].deployedPath ??
+        path.join(
+          this.mContext.previousDeployment[key].target || "",
+          this.mContext.previousDeployment[key].relPath,
+        ),
     );
     const sourcePath = path.join(
       installationPath,
@@ -746,7 +773,7 @@ abstract class LinkingActivator implements IDeploymentMethod {
       });
   }
 
-  private deployFile(
+  private async deployFile(
     key: string,
     installPathStr: string,
     dataPath: string,
@@ -758,13 +785,12 @@ abstract class LinkingActivator implements IDeploymentMethod {
       this.mContext.newDeployment[key].source,
       this.mContext.newDeployment[key].relPath,
     ].join(path.sep);
-    const fullOutputPath = [
-      dataPath,
-      this.mContext.newDeployment[key].target || null,
-      this.mContext.newDeployment[key].relPath,
-    ]
-      .filter((i) => i !== null)
-      .join(path.sep);
+    const file = this.mContext.newDeployment[key];
+    const relativeOutput = path.join(file.target || "", file.relPath);
+    if (this.mPathResolver) {
+      file.deployedPath = await this.mPathResolver.resolve(relativeOutput);
+    }
+    const fullOutputPath = path.join(dataPath, file.deployedPath ?? relativeOutput);
 
     const backupProm: Promise<void> = replace
       ? Promise.resolve()
