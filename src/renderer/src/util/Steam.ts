@@ -354,7 +354,12 @@ class Steam implements IGameStore {
             return this.mBaseFolder.then((basePath) =>
               PromiseBB.map(entries, async (entry) => {
                 try {
-                  const protonInfo = await getProtonInfo(basePath, steamAppsPath, entry.appid);
+                  const protonInfo = await getProtonInfo(
+                    basePath,
+                    steamAppsPath,
+                    entry.appid,
+                    steamPaths,
+                  );
                   entry.usesProton = protonInfo.usesProton;
                   entry.compatDataPath = protonInfo.compatDataPath;
                   entry.protonPath = protonInfo.protonPath;
@@ -403,8 +408,13 @@ class Steam implements IGameStore {
     options: any,
     gameEntry: ISteamEntry,
   ): Promise<void> {
-    if (!gameEntry.usesProton || !gameEntry.protonPath || !gameEntry.compatDataPath) {
+    if (!gameEntry.usesProton) {
       return api.runExecutable(exePath, args, options);
+    }
+    if (!gameEntry.protonPath || !gameEntry.compatDataPath) {
+      throw new Error(
+        "The configured Proton installation is unavailable. Install it in Steam and launch the game once before running tools.",
+      );
     }
 
     const steamPath = await this.mBaseFolder;
@@ -413,7 +423,7 @@ class Steam implements IGameStore {
       exePath,
       args,
     );
-    const protonEnv = buildProtonEnvironment(gameEntry.compatDataPath, steamPath, options.env);
+    const protonEnv = buildProtonEnvironment(gameEntry.compatDataPath, steamPath, options?.env);
 
     return api.runExecutable(executable, protonArgs, {
       ...options,
