@@ -207,47 +207,39 @@ abstract class LinkingActivator implements IDeploymentMethod {
         (key) =>
           this.removeDeployedFile(installationPath, dataPath, key, true).catch((err: unknown) => {
             log("warn", "failed to remove deployed file", {
-              link: context.newDeployment[key].relPath,
+              link: context.previousDeployment[key]?.relPath ?? key,
               error: getErrorMessageOrDefault(err),
             });
             ++errorCount;
           }),
         50,
       )
-        .then(() =>
-          mapWithConcurrency(
-            sourceChanged,
-            (key: string, idx: number) =>
-              this.removeDeployedFile(installationPath, dataPath, key, false).catch(
-                (err: unknown) => {
+        .then(async () => {
+          // Workers must not splice the arrays they are consuming: with more
+          // than 50 changes, a failed unlink would shift and skip queued files.
+          const unlinkChanges = async (keys: string[]): Promise<string[]> => {
+            const results = await mapWithConcurrency(
+              keys,
+              async (key) => {
+                try {
+                  await this.removeDeployedFile(installationPath, dataPath, key, false);
+                  return key;
+                } catch (err) {
                   log("warn", "failed to remove deployed file", {
                     link: context.newDeployment[key].relPath,
                     error: getErrorMessageOrDefault(err),
                   });
                   ++errorCount;
-                  sourceChanged.splice(idx, 1);
-                },
-              ),
-            50,
-          ),
-        )
-        .then(() =>
-          mapWithConcurrency(
-            contentChanged,
-            (key: string, idx: number) =>
-              this.removeDeployedFile(installationPath, dataPath, key, false).catch(
-                (err: unknown) => {
-                  log("warn", "failed to remove deployed file", {
-                    link: context.newDeployment[key].relPath,
-                    error: getErrorMessageOrDefault(err),
-                  });
-                  ++errorCount;
-                  contentChanged.splice(idx, 1);
-                },
-              ),
-            50,
-          ),
-        )
+                  return undefined;
+                }
+              },
+              50,
+            );
+            return results.filter((key): key is string => key !== undefined);
+          };
+          sourceChanged = await unlinkChanges(sourceChanged);
+          contentChanged = await unlinkChanges(contentChanged);
+        })
         // then, (re-)link all files that were added
         .then(() =>
           mapWithConcurrency(
