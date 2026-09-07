@@ -36,7 +36,7 @@ workspace catalogs. Packaging now invokes the installed binaries with
 Local targeted tests covered 8 common regressions and 45 Linux checks (including
 existing desktop escaping tests). A disk-backed deployment test installs a mod,
 replaces it with a differently cased source, and restores the original game file.
-The full local build is not a substitute for CI: this container lacks the .NET SDK
+The archive extension also passed 40 tests, typecheck and its Linux build. Four existing full-BA2-fixture cases return early when optional archives are absent; the added synthetic BA2 extraction test always exercises file output. The full local build is not a substitute for CI: this container lacks the .NET SDK
 and cannot perform some native build filesystem operations.
 
 The [Platform test artifacts workflow](../.github/workflows/platform-artifacts.yml)
@@ -71,10 +71,12 @@ This is a tested foundation, not evidence of Windows feature parity for every ga
 The audit identified larger gaps that require separate implementation and real
 installations to validate:
 
-- `gamebryo-plugin-management`, `gamebryo-bsa-support`, and
-  `gamebryo-archive-support` explicitly skip their builds off Windows. Native
-  LOOT/BSA bindings, dependency packaging and platform-specific plugin paths need
-  porting before Bethesda plugin and archive support can be claimed.
+- `gamebryo-plugin-management` and the legacy `gamebryo-bsa-support` still
+  explicitly skip their builds off Windows. Native LOOT bindings, dependency
+  packaging and platform-specific plugin paths need porting before Bethesda plugin
+  sorting and management can be claimed. The pure TypeScript
+  `gamebryo-archive-support` is now built on Linux and covers BSA/BA2 archives
+  independently of the legacy native BSA extension.
 - General Wine/Proton registry and known-folder mapping is missing. Many game
   extensions use registry discovery or Windows Documents/AppData paths. The common
   path resolver does not replace these game-specific integrations.

@@ -18,7 +18,7 @@ class BA2Handler implements types.IArchiveHandler {
   public readDir(archPath: string): PromiseBB<string[]> {
     return new PromiseBB<string[]>((resolve) => {
       let query = archPath.toLowerCase().replace(/\//g, "\\");
-      if (!query.endsWith("\\")) {
+      if (query && !query.endsWith("\\")) {
         query = query + "\\";
       }
       const files: string[] = [];
@@ -71,7 +71,7 @@ class BSAHandler implements types.IArchiveHandler {
     if (this.mBSA === undefined) {
       return PromiseBB.resolve([]);
     }
-    return PromiseBB.resolve(this.readDirImpl(archPath.split(path.sep)));
+    return PromiseBB.resolve(this.readDirImpl(archPath.split(/[\\/]/)));
   }
 
   public extractFile(filePath: string, outputPath: string): PromiseBB<void> {
@@ -118,7 +118,7 @@ class BSAHandler implements types.IArchiveHandler {
       this.mBSA
         .extractFile(file, tmpPath)
         .then(() => {
-          const fileStream = fs.createReadStream(path.join(tmpPath, path.basename(filePath)));
+          const fileStream = fs.createReadStream(path.join(tmpPath, path.win32.basename(filePath)));
           fileStream.on("data", (data: Buffer) => pass.write(data));
           fileStream.on("end", () => {
             pass.end();

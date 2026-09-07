@@ -104,7 +104,7 @@ describe("BSA parser", () => {
 
         try {
           for (const file of archive.fileList) {
-            const outDir = path.join(tmpDir, file.folderPath);
+            const outDir = path.join(tmpDir, ...file.folderPath.split(/[\\/]/));
             await archive.extractFile(file, outDir);
           }
           verifyExtractedContent(tmpDir, exp.files);
@@ -140,6 +140,7 @@ function verifyExtractedContent(tmpDir: string, expectedFiles: Record<string, st
   const extractedMap = new Map<string, string>();
   function walk(dir: string, prefix: string) {
     for (const entry of fs.readdirSync(dir)) {
+      expect(entry).not.toContain("\\");
       const full = path.join(dir, entry);
       const relPath = prefix ? prefix + "\\" + entry : entry;
       if (fs.statSync(full).isDirectory()) {
