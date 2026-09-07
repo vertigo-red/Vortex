@@ -1,8 +1,9 @@
 name: Linux readiness (fork branch)
 
-# Bootstrap + future Linux work for the native Linux port, restricted to the
-# fork and the dedicated branch. Deliberately small and cheap; nothing here
-# signs, publishes, or touches production release infra.
+# Workflow for the native Linux port, restricted to the fork and the dedicated
+# branch. verify runs on every push; package runs only for commits marked
+# `[linux-package]` (or manually, where dispatch is registered). Nothing here
+# signs, publishes releases, runs NPM publish, or touches upstream secrets.
 
 on:
   push:
@@ -14,49 +15,145 @@ concurrency:
   group: linux-readiness-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  bootstrap:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
+  verify:
+    if: github.repository == 'vertigo-red/Vortex' && startsWith(github.ref_name, 'linux/native-readiness-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NX_DAEMON: false
+      VORTEX_ELECTRON_REBUILD: defer
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: "recursive"
 
-      - name: Print toolchain versions
-        run: |
-          echo "runner os: ${{ runner.os }} / ${{ runner.arch }}"
-          node --version
-          git --version
-          python3 --version
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6.0.9
+      - uses: pnpm/action-setup@v6.0.9
         with:
           version: 11.10.0
 
-      - name: Use Node.js from package.json engines
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "24.17.0"
           cache: "pnpm"
 
-      - name: Install fontconfig (font-scanner build dep)
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - name: Fix pnpm node-gyp permissions
+        run: find "$PNPM_HOME" -path '*/node-gyp/gyp/gyp_main.py' -exec chmod +x {} \;
 
-      - name: Install dependencies
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev rpm
+
+      - name: Install workspace
         run: pnpm install --frozen-lockfile
-        env:
-          VORTEX_ELECTRON_REBUILD: "defer"
 
-      - name: Upload tiny test artifact
-        uses: actions/upload-artifact@v7
+      - name: Rebuild Electron native modules
+        run: pnpm --filter @vortex/main exec electron-rebuild
+
+      - name: Verify workspace
+        run: pnpm run verify
+
+  package:
+    needs: verify
+    if: github.repository == 'vertigo-red/Vortex' &&
+        startsWith(github.ref_name, 'linux/native-readiness-') &&
+        (github.event_name == 'workflow_dispatch' ||
+         contains(github.event.head_commit.message, '[linux-package]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      NX_DAEMON: false
+      VORTEX_ELECTRON_REBUILD: defer
+    steps:
+      - uses: actions/checkout@v7
         with:
-          name: linux-readiness-bootstrap-${{ github.sha }}
+          submodules: "recursive"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - uses: pnpm/action-setup@v6.0.9
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.17.0"
+          cache: "pnpm"
+
+      - name: Fix pnpm node-gyp permissions
+        run: find "$PNPM_HOME" -path '*/node-gyp/gyp/gyp_main.py' -exec chmod +x {} \;
+
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev rpm
+
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+
+      - name: Set test version
+        run: >-
+          pnpm -F @vortex/main version
+          1.0.0-linux.${{ github.run_number }}
+          --no-git-tag-version --no-git-checks --allow-same-version
+
+      - name: Build workspace
+        env:
+          NODE_ENV: production
+        run: pnpm run build
+
+      - name: Prepare deployment
+        run: pnpm nx run @vortex/main:publish
+        env:
+          NODE_ENV: production
+          VORTEX_ELECTRON_REBUILD: "skip"
+
+      - name: Rebuild packaged native modules
+        working-directory: src/main/dist
+        # pnpm exec would re-install this deploy tree using the parent
+        # workspace's catalogs; use the already installed binaries instead.
+        run: npx --no-install electron-rebuild
+
+      - name: Package Linux
+        working-directory: src/main/dist
+        run: npx --no-install electron-builder --config ./electron-builder.config.json --publish never
+
+      - name: Verify packaged dependencies
+        run: node scripts/verify-packaged-asar.mjs --asar dist/linux-unpacked/resources/app.asar
+
+      - name: Checksums and metadata
+        run: |
+          cd dist
+          find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.tar.*' \) -exec sha256sum {} \; | tee SHA256SUMS
+          cat > build-metadata.json <<EOF
+          {
+            "source_sha": "${{ github.sha }}",
+            "upstream_base_sha": "9c641bd78f7f551df3645a0f5b2bf08fe656e78f",
+            "runner_os": "${{ runner.os }}",
+            "runner_arch": "${{ runner.arch }}",
+            "runner_image": "${{ runner.image }}",
+            "node": "24.17.0",
+            "pnpm": "11.10.0",
+            "ci_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vortex-linux-${{ github.sha }}
           path: |
-            pnpm-lock.yaml
-            package.json
-            .node-version
+            dist/*.zip
+            dist/*.rpm
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.tar.*
+            dist/SHA256SUMS
+            dist/build-metadata.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
