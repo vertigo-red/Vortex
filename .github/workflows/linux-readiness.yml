@@ -1,0 +1,53 @@
+name: Linux readiness (fork branch)
+
+# Bootstrap + future Linux work for the native Linux port, restricted to the
+# fork and the dedicated branch. Deliberately small and cheap; nothing here
+# signs, publishes, or touches production release infra.
+
+on:
+  push:
+    branches:
+      - "linux/native-readiness-*"
+  workflow_dispatch:
+
+concurrency:
+  group: linux-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: "recursive"
+
+      - name: Print toolchain versions
+        run: |
+          echo "runner os: ${{ runner.os }} / ${{ runner.arch }}"
+          node --version
+          git --version
+          python3 --version
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.0.9
+        with:
+          version: 11.10.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          VORTEX_ELECTRON_REBUILD: "defer"
+
+      - name: Upload tiny test artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-readiness-bootstrap-${{ github.sha }}
+          path: |
+            pnpm-lock.yaml
+            package.json
+            .node-version
+          if-no-files-found: error
+          retention-days: 14
