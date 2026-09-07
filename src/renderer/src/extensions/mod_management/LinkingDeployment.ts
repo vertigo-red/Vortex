@@ -374,6 +374,9 @@ abstract class LinkingActivator implements IDeploymentMethod {
     deployPath: string,
     blackList: BlacklistSet,
   ): Promise<void> {
+    const normalizedBlacklist = this.mPathResolver
+      ? new Set(Array.from(blackList, (entry) => this.mNormalize(entry)))
+      : undefined;
     return Promise.resolve(
       fs
         .statAsync(sourcePath)
@@ -391,7 +394,10 @@ abstract class LinkingActivator implements IDeploymentMethod {
                   const relPathWithSource = path.join(sourceName, relPath);
                   const relPathWithSourceNorm = this.mNormalize(relPathWithSource);
                   const relPathNorm = this.mNormalize(path.join(deployPath, relPath));
-                  if (!blackList.has(relPathWithSourceNorm)) {
+                  if (
+                    !blackList.has(relPathWithSourceNorm) &&
+                    !normalizedBlacklist?.has(relPathWithSourceNorm)
+                  ) {
                     // mods are activated in order of ascending priority so
                     // overwriting is fine here
                     this.mContext.newDeployment[relPathNorm] = {

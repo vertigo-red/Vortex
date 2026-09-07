@@ -34,7 +34,7 @@ import type { FileAction, IFileEntry } from "../types/IFileEntry";
  * @returns {Promise<IDeployedFile[]>} an updated deployment manifest to use as a reference
  *                                     for the new one
  */
-async function applyFileActions(
+export async function applyFileActions(
   api: IExtensionApi,
   profileId: string,
   sourcePath: string,
@@ -45,6 +45,15 @@ async function applyFileActions(
   if (fileActions === undefined || fileActions.length === 0) {
     return lastDeployment;
   }
+
+  const deployedPaths = new Map(
+    lastDeployment.map((file) => [JSON.stringify([file.source, file.relPath]), file.deployedPath]),
+  );
+  const destination = (entry: IFileEntry) =>
+    path.join(
+      outputPath,
+      deployedPaths.get(JSON.stringify([entry.source, entry.filePath])) ?? entry.filePath,
+    );
 
   const actionGroups: { [type: string]: IFileEntry[] } = fileActions.reduce(
     (prev: { [type: string]: IFileEntry[] }, value) => {
@@ -68,7 +77,7 @@ async function applyFileActions(
   await Promise.all(
     (actionGroups["drop"] || []).map((entry) =>
       truthy(entry.filePath)
-        ? fs.removeAsync(path.join(outputPath, entry.filePath))
+        ? fs.removeAsync(destination(entry))
         : Promise.reject(new Error("invalid file path")),
     ),
   );
@@ -84,7 +93,7 @@ async function applyFileActions(
   await Promise.all(
     (actionGroups["import"] || []).map((entry) => {
       const source = path.join(sourcePath, entry.source, entry.filePath);
-      const deployed = path.join(outputPath, entry.filePath);
+      const deployed = destination(entry);
       // Very rarely we have a case where the files are links of each other
       // (or at least node reports that) so the copy would fail.
       // Instead of handling the errors (when we can't be sure if it's due to a bug in node.js

@@ -103,7 +103,7 @@ function readManifest(data: string | Buffer): IDeploymentManifest {
 export function purgeDeployedFiles(basePath: string, files: IDeployedFile[]): Promise<void> {
   return Promise.all(
     files.map((file) => {
-      const fullPath = path.join(basePath, file.relPath);
+      const fullPath = path.join(basePath, file.deployedPath ?? file.relPath);
       return fs
         .statAsync(fullPath)
         .then((stats) => {
