@@ -56,15 +56,18 @@ branch workflows are replaced by `.github/workflows/linux-readiness.yml`
 | bootstrap (fixed) | 34162915894 | SUCCESS | full install OK; artifact saved to T\artifacts\bootstrap |
 | baseline verify | 34163391340 | verify SUCCESS | upstream source verifies green on ubuntu-24.04 |
 | baseline package | 34163391340 | FAIL (Package Linux) | EEXIST hardlink on winapi.node → B-03; loot install dead-link → B-04 |
+| ported verify | 34165291581 | verify SUCCESS | all 7 ported commits + tests green on base 9c641bd78 |
+| ported package | 34165291581 | FAIL (gate) | native-module gate tripped on loot (N-03 open, no Linux build path); EEXIST had been the earlier blocker |
 
 ## Next concrete step
 
-Push the current tree (B-03/B-04 fixes, B-01 OS-split, marker gate) and get the
-first full LINUX ARTIFACT (zip + rpm) + SHA256SUMS + metadata from the
-`package` job for the ported branch. Then download, unpack on a Linux host and
-run the manual checks in TESTING.md / the packaged smoke list. While that CI
-runs: continue evaluating the remaining SUSPECTED audit items (R-03 non-Steam
-launchers, R-04 game-scoped paths) with new tests/fixtures.
+Get the first full LINUX ARTIFACT (zip + rpm) + SHA256SUMS + metadata from the
+(with loot reported absent, N-03) `package` job after relaxing the gate; then
+download, unpack on a Linux host and run the manual checks in TESTING.md / the
+packaged smoke list. While that CI runs: continue evaluating the remaining
+SUSPECTED audit items (R-03 non-Steam launchers, R-04 game-scoped paths) with
+new tests/fixtures, and start real porting work for N-03 (loot) only if a Linux
+libloot linkage proves tractable.
 
 ## External blockers
 

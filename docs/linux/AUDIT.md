@@ -40,17 +40,20 @@ Findings below were re-checked against base `9c641bd78f7f551df3645a0f5b2bf08fe65
 - FIXED: the packaging step sets `USE_HARD_LINKS: "false"` (the documented
   builder-util switch), making copies idempotent.
 
-### B-04 loot native module not built (silently) — CONFIRMED, FIXED
+### B-04 loot native module not built (silently) — CONFIRMED, GATED (product work open)
 - node-loot `install` = `prebuild-install -r napi -t 9 -a x64 || npm run
-  rebuild`. When the prebuilt download fails, the fallback links
-  `-l../loot_api/libloot` (autogypi CMake output) and `ld: cannot find
-  -l../loot_api/libloot` (run 34163391340 Install workspace). pnpm tolerated
-  the failure, so the package job proceeded with NO `loot.node` in the payload.
-- FIXED: the deploy-tree native module check fails loudly when any of
-  fomod-installer-native/winapi-bindings/leveldown/drivelist/@parcel/watcher/
-  xxhash-addon/loot ships without a `.node`; a native-build cache (incl. the
-  loot build dir and loot_api) makes the result reproducible across runs.
-- Residual risk tracked in N-03 (LOOT runtime on Linux).
+  rebuild`. At cc1515667, `loot_api/` ships only Windows artifacts
+  (`libloot.dll`/`.lib`/`.pdb` + headers); there is no Linux prebuild and the
+  source fallback links `-l../loot_api/libloot`, which does not exist on Linux
+  (`ld: cannot find -l../loot_api/libloot`, runs 34163391340/34165291581).
+  pnpm tolerates the failed lifecycle silently; electron-builder would ship a
+  payload without `loot.node`.
+- GATED: the deploy-tree native-module check reports loot absence (WARN, not
+  fatal) and the other native modules as OK/FAIL loudly. Producing a Linux
+  `loot.node` is open product work (N-03): link against a system LOOT
+  (`libloot-dev` on Debian) via an injected/autogypi binding, or vendor a
+  built `loot_api/libloot` for the target. Until then, LOOT sorting on Linux is
+  unavailable and the package must not claim otherwise.
 
 ## Runtime / game environment
 
@@ -121,9 +124,18 @@ Findings below were re-checked against base `9c641bd78f7f551df3645a0f5b2bf08fe65
   on Linux; a .NET runtime dependency (if required) needs discovery/packaging.
 - Test: installer fixtures incl. malicious traversal entries.
 
-### N-03 LOOT — SUSPECTED
-- Linux build/runtime libs, masterlist/userlist, sorting, missing masters,
-  conflict and load-order save need real verification, no pre-sorted results.
+### N-03 LOOT — CONFIRMED OPEN (blocked, no Linux build path)
+- `loot` (node-loot@6.2.3, cc1515667) cannot produce `loot.node` on Linux:
+  `loot_api/` ships Windows-only prebuilt artifacts; the source fallback
+  links a nonexistent `loot_api/libloot`; no linux-x64 napi-9 prebuild is
+  consumable. pnpm's install tolerates the failure, so subsystems still build.
+- Path forward: link against system `libloot` (Debian `libloot-dev`) via a
+  vendor patch/autogypi binding, or vendor a built Linux `libloot`.
+
+### I-01 BSA/BA2 / gamebryo-archive-support — FIXED (verification pending)
+- 0009 (ported 71e15aad4) enables `gamebryo-archive-support` off-Windows and
+  adds portable extraction path resolution (BSA/BA2 plugin). Unit coverage in
+  `archivePath.test.ts`. Packaged verification pending.
 
 ## Flatpak
 

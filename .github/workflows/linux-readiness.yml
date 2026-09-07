@@ -63,8 +63,6 @@ jobs:
             node_modules/.pnpm/xxhash-addon@*/node_modules/xxhash-addon/bin
             node_modules/.pnpm/@parcel+watcher@*/node_modules/@parcel/watcher/build
             node_modules/.pnpm/@parcel+watcher@*/node_modules/@parcel/watcher/bin
-            node_modules/.pnpm/loot@*/node_modules/loot/build
-            node_modules/.pnpm/loot@*/node_modules/loot/loot_api
           key: linux-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'src/main/postinstall.mjs') }}
 
       - name: Install workspace
@@ -126,8 +124,6 @@ jobs:
             node_modules/.pnpm/xxhash-addon@*/node_modules/xxhash-addon/bin
             node_modules/.pnpm/@parcel+watcher@*/node_modules/@parcel/watcher/build
             node_modules/.pnpm/@parcel+watcher@*/node_modules/@parcel/watcher/bin
-            node_modules/.pnpm/loot@*/node_modules/loot/build
-            node_modules/.pnpm/loot@*/node_modules/loot/loot_api
           key: linux-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'src/main/postinstall.mjs') }}
 
       - name: Install workspace
@@ -164,12 +160,14 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
         working-directory: src/main/dist
         # electron-builder silently ships whatever the deploy tree contains.
-        # Fail loudly when a required native addon was not built (loot in
-        # particular can fall back to a source build that pnpm tolerates
-        # failing), instead of shipping a broken payload.
+        # Fail loudly when a required native addon was not built. loot is the
+        # known exception: node-loot ships Windows-only loot_api artifacts and
+        # has no Linux prebuild, so loot.node cannot be produced on a Linux CI
+        # (open product item N-03). Its absence is reported, not fatal; the
+        # packaged artifact must not silently claim LOOT sorting works.
         run: |
           failures=0
-          for pkg in "loot" "winapi-bindings" "leveldown" "drivelist" "@parcel/watcher" "xxhash-addon" "@nexusmods/fomod-installer-native"; do
+          for pkg in "winapi-bindings" "leveldown" "drivelist" "@parcel/watcher" "xxhash-addon" "@nexusmods/fomod-installer-native"; do
             if find "node_modules/$pkg" -name '*.node' -print -quit 2>/dev/null | grep -q .; then
               echo "OK: $pkg"
             else
@@ -177,6 +175,11 @@ jobs:
               failures=$((failures + 1))
             fi
           done
+          if find "node_modules/loot" -name '*.node' -print -quit 2>/dev/null | grep -q .; then
+            echo "OK: loot"
+          else
+            echo "WARN: loot has no Linux .node (N-03, LOOT sorting unavailable)"
+          fi
           exit "$failures"
 
       - name: Package Linux
