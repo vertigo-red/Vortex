@@ -1,10 +1,10 @@
 name: Linux readiness (fork branch)
 
 # Workflow for the native Linux port, restricted to the fork and the dedicated
-# branch. verify runs on every push; package runs only while the tracked marker
-# file `.linux-package` exists (or manually, where dispatch is registered).
-# Nothing here signs, publishes releases, runs NPM publish, or touches
-# upstream secrets.
+# branch. verify runs on every push; the package job's heavy steps run only
+# while the tracked marker file `docs/linux/PACKAGING-MARKER` exists (or
+# manually, where dispatch is registered). Nothing here signs, publishes
+# releases, runs NPM publish, or touches upstream secrets.
 
 on:
   push:
@@ -78,15 +78,13 @@ jobs:
 
   package:
     needs: verify
-    # Packaging is gated on a tracked marker file rather than a commit-message
-    # scan (contains on the push head_commit payload is not reliable). The
-    # marker is committed while artifacts are wanted and deleted once they are
-    # not; dispatch always packages. This keeps iteration pushes cheap.
-    if: needs.verify.result == 'success' &&
-        github.repository == 'vertigo-red/Vortex' &&
-        startsWith(github.ref_name, 'linux/native-readiness-') &&
-        (github.event_name == 'workflow_dispatch' ||
-         hashFiles('docs/linux/PACKAGING-MARKER') != '')
+    # The job always runs (cheap until the marker test). The expensive
+    # packaging steps are gated individually: hashFiles is evaluated at step
+    # level, which the workflow validator accepts, and it is deterministic --
+    # a commit-message scan of the push head_commit payload is not. The
+    # marker is committed while artifacts are wanted and deleted once they
+    # are not; dispatch always packages.
+    if: github.repository == 'vertigo-red/Vortex' && startsWith(github.ref_name, 'linux/native-readiness-')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -136,29 +134,34 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Set test version
+        if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
         run: >-
           pnpm -F @vortex/main version
           1.0.0-linux.${{ github.run_number }}
           --no-git-tag-version --no-git-checks --allow-same-version
 
       - name: Build workspace
+        if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
         env:
           NODE_ENV: production
         run: pnpm run build
 
       - name: Prepare deployment
+        if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
         run: pnpm nx run @vortex/main:publish
         env:
           NODE_ENV: production
           VORTEX_ELECTRON_REBUILD: "skip"
 
       - name: Rebuild packaged native modules
+        if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
         working-directory: src/main/dist
         # pnpm exec would re-install this deploy tree using the parent
         # workspace's catalogs; use the already installed binaries instead.
         run: npx --no-install electron-rebuild
 
       - name: Verify native modules in deploy tree
+        if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
         working-directory: src/main/dist
         # electron-builder silently ships whatever the deploy tree contains.
         # Fail loudly when a required native addon was not built (loot in
@@ -177,6 +180,7 @@ jobs:
           exit "$failures"
 
       - name: Package Linux
+        if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
         working-directory: src/main/dist
         env:
           # electron-builder hard-links unpacked modules; on this workspace's
@@ -187,9 +191,11 @@ jobs:
         run: npx --no-install electron-builder --config ./electron-builder.config.json --publish never
 
       - name: Verify packaged dependencies
+        if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
         run: node scripts/verify-packaged-asar.mjs --asar dist/linux-unpacked/resources/app.asar
 
       - name: Checksums and metadata
+        if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
         run: |
           cd dist
           find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.tar.*' \) -exec sha256sum {} \; | tee SHA256SUMS
@@ -207,6 +213,7 @@ jobs:
           EOF
 
       - uses: actions/upload-artifact@v7
+        if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
         with:
           name: vortex-linux-${{ github.sha }}
           path: |
