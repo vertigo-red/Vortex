@@ -1,6 +1,7 @@
 # Linux native readiness — STATUS
 
-Last updated: 2026-09-08 (initial bootstrap).
+Last updated: 2026-09-08 (port of the fork's Linux commits landed; first
+baseline verify + first package attempt recorded).
 
 ## Fixed baseline
 
@@ -23,26 +24,47 @@ Last updated: 2026-09-08 (initial bootstrap).
   `T = %TEMP%\vortex-linux-20260907-w1` (and children) for external_directory;
   everything else external denied. Backups of global+project config in
   `T\config-backup\`.
+- Local `pnpm install` is not possible on this host (node-gyp needs Visual
+  Studio Build Tools the machine does not have); all verification runs in CI.
 
-## Done
+## Landed on the branch (port, base 9c641bd78)
 
-- Pre-flight access checks (read/write/rename/delete in P and T; gh auth;
-  fork/upstream metadata; Actions enabled).
-- Initial docs skeleton (`AUDIT.md`, `COMPATIBILITY.md`, `TESTING.md`).
-- Bootstrap workflow `.github/workflows/linux-readiness.yml`.
-- Pushed bootstrap commit; CI run #TBD; artifact downloaded to TBD.
+Everything below is cherry-picked from `vertigo-red/Vortex` branch
+`improvements/linux` with `-x` attribution, resolved against the newer
+upstream base. Only source + tests were taken; the fork's own
+`platform-artifacts.yml` workflow is superseded by `linux-readiness.yml` here.
 
-## Next concrete step
+- `b28c21dc8` 0002 Steam: library discovery + launch matched app IDs (+tests)
+- `e31cad850` 0003 LinkingDeployment: stable unlink queues on locked files (+tests)
+- `115b1ea39` 0004 proton: pfx/drive_c detection, numeric version sort, global
+  default, cross-library search, no unconditional LD_PRELOAD (+tests)
+- `d1bd5e9bd` 0005 case-insensitive paths resolver + deployedPath + StarterInfo
+  component-boundary matching (+tests)
+- `81825a567` 0006 portable nxm handler + RPM linux.target (+tests)
+- `3312f9ff6` 0007 external changes / fallback purge destination casing (+tests)
+- `71e15aad4` 0009 BSA/BA2 archives with portable extraction paths (+tests)
 
-Baseline build/test on the fixed base SHA (upstream master) via the extended
-`linux-readiness.yml` (ubuntu build + test), recorded here with the run id.
-Then Linux unpacked package -> tar.gz -> AppImage, then RPM/DEB.
+Skipped from the fork, deliberately: 0001 and the 0008-workflow part — the fork
+branch workflows are replaced by `.github/workflows/linux-readiness.yml`
+(verify always; package gated by `docs/linux/PACKAGING-MARKER`).
 
 ## CI runs
 
 | Purpose | Run id | Result | Notes |
 |---|---|---|---|
-| bootstrap | TBD | TBD | |
+| bootstrap (ub) | 34162811823 | FAIL | Install: missing fontconfig headers, Node 22 (default) |
+| bootstrap (fixed) | 34162915894 | SUCCESS | full install OK; artifact saved to T\artifacts\bootstrap |
+| baseline verify | 34163391340 | verify SUCCESS | upstream source verifies green on ubuntu-24.04 |
+| baseline package | 34163391340 | FAIL (Package Linux) | EEXIST hardlink on winapi.node → B-03; loot install dead-link → B-04 |
+
+## Next concrete step
+
+Push the current tree (B-03/B-04 fixes, B-01 OS-split, marker gate) and get the
+first full LINUX ARTIFACT (zip + rpm) + SHA256SUMS + metadata from the
+`package` job for the ported branch. Then download, unpack on a Linux host and
+run the manual checks in TESTING.md / the packaged smoke list. While that CI
+runs: continue evaluating the remaining SUSPECTED audit items (R-03 non-Steam
+launchers, R-04 game-scoped paths) with new tests/fixtures.
 
 ## External blockers
 

@@ -1,9 +1,10 @@
 name: Linux readiness (fork branch)
 
 # Workflow for the native Linux port, restricted to the fork and the dedicated
-# branch. verify runs on every push; package runs only for commits marked
-# `[linux-package]` (or manually, where dispatch is registered). Nothing here
-# signs, publishes releases, runs NPM publish, or touches upstream secrets.
+# branch. verify runs on every push; package runs only while the tracked marker
+# file `.linux-package` exists (or manually, where dispatch is registered).
+# Nothing here signs, publishes releases, runs NPM publish, or touches
+# upstream secrets.
 
 on:
   push:
@@ -50,6 +51,22 @@ jobs:
       - name: Install native build dependencies
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev rpm
 
+      - name: Cache native module builds
+        uses: actions/cache@v6
+        with:
+          path: |
+            node_modules/.pnpm/@nexusmods+fomod-installer-native@*/node_modules/@nexusmods/fomod-installer-native/build
+            node_modules/.pnpm/@nexusmods+fomod-installer-native@*/node_modules/@nexusmods/fomod-installer-native/bin
+            node_modules/.pnpm/drivelist@*/node_modules/drivelist/build
+            node_modules/.pnpm/drivelist@*/node_modules/drivelist/bin
+            node_modules/.pnpm/leveldown@*/node_modules/leveldown/build
+            node_modules/.pnpm/xxhash-addon@*/node_modules/xxhash-addon/bin
+            node_modules/.pnpm/@parcel+watcher@*/node_modules/@parcel/watcher/build
+            node_modules/.pnpm/@parcel+watcher@*/node_modules/@parcel/watcher/bin
+            node_modules/.pnpm/loot@*/node_modules/loot/build
+            node_modules/.pnpm/loot@*/node_modules/loot/loot_api
+          key: linux-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'src/main/postinstall.mjs') }}
+
       - name: Install workspace
         run: pnpm install --frozen-lockfile
 
@@ -61,10 +78,15 @@ jobs:
 
   package:
     needs: verify
-    if: github.repository == 'vertigo-red/Vortex' &&
+    # Packaging is gated on a tracked marker file rather than a commit-message
+    # scan (contains on the push head_commit payload is not reliable). The
+    # marker is committed while artifacts are wanted and deleted once they are
+    # not; dispatch always packages. This keeps iteration pushes cheap.
+    if: needs.verify.result == 'success' &&
+        github.repository == 'vertigo-red/Vortex' &&
         startsWith(github.ref_name, 'linux/native-readiness-') &&
         (github.event_name == 'workflow_dispatch' ||
-         contains(github.event.head_commit.message, '[linux-package]'))
+         hashFiles('docs/linux/PACKAGING-MARKER') != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -94,6 +116,22 @@ jobs:
       - name: Install native build dependencies
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev rpm
 
+      - name: Cache native module builds
+        uses: actions/cache@v6
+        with:
+          path: |
+            node_modules/.pnpm/@nexusmods+fomod-installer-native@*/node_modules/@nexusmods+fomod-installer-native/build
+            node_modules/.pnpm/@nexusmods+fomod-installer-native@*/node_modules/@nexusmods+fomod-installer-native/bin
+            node_modules/.pnpm/drivelist@*/node_modules/drivelist/build
+            node_modules/.pnpm/drivelist@*/node_modules/drivelist/bin
+            node_modules/.pnpm/leveldown@*/node_modules/leveldown/build
+            node_modules/.pnpm/xxhash-addon@*/node_modules/xxhash-addon/bin
+            node_modules/.pnpm/@parcel+watcher@*/node_modules/@parcel/watcher/build
+            node_modules/.pnpm/@parcel+watcher@*/node_modules/@parcel/watcher/bin
+            node_modules/.pnpm/loot@*/node_modules/loot/build
+            node_modules/.pnpm/loot@*/node_modules/loot/loot_api
+          key: linux-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'src/main/postinstall.mjs') }}
+
       - name: Install workspace
         run: pnpm install --frozen-lockfile
 
@@ -120,8 +158,32 @@ jobs:
         # workspace's catalogs; use the already installed binaries instead.
         run: npx --no-install electron-rebuild
 
+      - name: Verify native modules in deploy tree
+        working-directory: src/main/dist
+        # electron-builder silently ships whatever the deploy tree contains.
+        # Fail loudly when a required native addon was not built (loot in
+        # particular can fall back to a source build that pnpm tolerates
+        # failing), instead of shipping a broken payload.
+        run: |
+          failures=0
+          for pkg in "loot" "winapi-bindings" "leveldown" "drivelist" "@parcel/watcher" "xxhash-addon" "@nexusmods/fomod-installer-native"; do
+            if find "node_modules/$pkg" -name '*.node' -print -quit 2>/dev/null | grep -q .; then
+              echo "OK: $pkg"
+            else
+              echo "ERROR: no native addon found for $pkg"
+              failures=$((failures + 1))
+            fi
+          done
+          exit "$failures"
+
       - name: Package Linux
         working-directory: src/main/dist
+        env:
+          # electron-builder hard-links unpacked modules; on this workspace's
+          # pnpm deploy layout the same module can be selected twice and the
+          # second link fails with EEXIST (builder-util only falls back to a
+          # copy on EXDEV). Disable hard links so the copy is idempotent.
+          USE_HARD_LINKS: "false"
         run: npx --no-install electron-builder --config ./electron-builder.config.json --publish never
 
       - name: Verify packaged dependencies
