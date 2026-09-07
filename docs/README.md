@@ -34,6 +34,8 @@ Project and coding documentation. To set up and build Vortex, start with
 
 ## Building and shipping
 
+- [platform-audit.md](platform-audit.md) - Fork platform fixes, validation, manual tests and remaining Linux gaps
+
 - [packaging/windows.md](packaging/windows.md) - Local unsigned installers, the pipeline, signed CI builds
 - [packaging/flatpak.md](packaging/flatpak.md) - Building and installing the Flatpak
 - [flatpak/technical.md](flatpak/technical.md) - Flatpak manifest and runtime details

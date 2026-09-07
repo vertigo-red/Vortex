@@ -73,9 +73,12 @@ jobs:
           VORTEX_ELECTRON_REBUILD: skip
       - name: Rebuild packaged native modules
         working-directory: src/main/dist
-        run: pnpm exec electron-rebuild
+        # pnpm exec would re-install this deploy tree using the parent workspace's
+        # catalogs. Use the already installed binaries, as the Windows action does.
+        run: npx --no-install electron-rebuild
       - name: Package Linux
-        run: pnpm -F @vortex/main run package:nosign
+        working-directory: src/main/dist
+        run: npx --no-install electron-builder --config ./electron-builder.config.json --publish never
       - name: Verify packaged dependencies
         run: node scripts/verify-packaged-asar.mjs --asar dist/linux-unpacked/resources/app.asar
       - uses: actions/upload-artifact@v7
