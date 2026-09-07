@@ -34,7 +34,7 @@ const timeoutError = (): TimeoutError =>
   );
 
 const requestErrorWithCode = (code: string): RequestError => {
-  const err = new RequestError("Network request failed", { code } as never, {} as never);
+  const err = new RequestError("Network request failed", { code }, {} as never);
   Object.assign(err, { errno: -1, syscall: "connect" });
   return err;
 };
