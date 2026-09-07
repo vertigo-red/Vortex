@@ -7,6 +7,14 @@ import { delay } from "./util";
 
 const mockDelay = vi.mocked(delay);
 
+const createGate = (): { promise: Promise<null>; resolve: () => void } => {
+  let release: () => void = () => undefined;
+  const promise = new Promise<null>((resolve) => {
+    release = () => resolve(null);
+  });
+  return { promise, resolve: release };
+};
+
 describe("ConcurrencyLimiter", () => {
   beforeEach(() => {
     mockDelay.mockReset();
@@ -61,18 +69,20 @@ describe("ConcurrencyLimiter", () => {
     await expect(limiter.do(async () => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
   });
 
-  it("retries a failing job while repeatTest accepts the error", async () => {
-    const limiter = new ConcurrencyLimiter(1, () => true);
-    const cb = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("temp"))
-      .mockRejectedValueOnce(new Error("temp"))
-      .mockResolvedValueOnce("ok");
+  it("retries a failed job once a slot frees up", async () => {
+    const limiter = new ConcurrencyLimiter(2, () => true);
+    const cb = vi.fn().mockRejectedValueOnce(new Error("temp")).mockResolvedValueOnce("ok");
+    const gate = createGate();
 
-    await expect(limiter.do(cb)).resolves.toBe("ok");
+    const blocker = limiter.do(() => gate.promise);
+    const job = limiter.do(cb);
 
-    expect(cb).toHaveBeenCalledTimes(3);
-    expect(mockDelay).toHaveBeenCalledTimes(2);
+    gate.resolve();
+    await expect(job).resolves.toBe("ok");
+    expect(cb).toHaveBeenCalledTimes(2);
+    expect(mockDelay).toHaveBeenCalledTimes(1);
+
+    await blocker;
   });
 
   it("does not retry when repeatTest rejects the error", async () => {
