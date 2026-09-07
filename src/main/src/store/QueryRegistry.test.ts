@@ -1,15 +1,15 @@
 import type { DuckDBConnection } from "@duckdb/node-api";
 import { describe, it, expect, vi } from "vitest";
 
-import QueryRegistry from "./QueryRegistry";
 import type { ParsedQuery } from "./queryParser";
+import QueryRegistry from "./QueryRegistry";
 
 function createConnection() {
   return {
     run: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    getTableNames: vi.fn<(sql: string, allowError?: boolean) => Set<string>>().mockReturnValue(
-      new Set(),
-    ),
+    getTableNames: vi
+      .fn<(sql: string, allowError?: boolean) => Set<string>>()
+      .mockReturnValue(new Set()),
     runAndReadAll: vi.fn().mockResolvedValue({ getRowObjectsJson: () => [] }),
   };
 }
@@ -49,7 +49,10 @@ describe("QueryRegistry", () => {
 
       expect(connection.run).toHaveBeenCalledTimes(2);
       expect(connection.run).toHaveBeenNthCalledWith(1, "CREATE TABLE mods_pivot AS SELECT 1");
-      expect(connection.run).toHaveBeenNthCalledWith(2, "CREATE VIEW mods_view AS SELECT * FROM mods");
+      expect(connection.run).toHaveBeenNthCalledWith(
+        2,
+        "CREATE VIEW mods_view AS SELECT * FROM mods",
+      );
       expect(connection.getTableNames).toHaveBeenCalledWith("SELECT * FROM mods", true);
       expect(registry.hasQueries).toBe(true);
       expect(registry.getQueryNames()).toEqual(["list"]);

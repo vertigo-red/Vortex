@@ -8,6 +8,13 @@ import { defaultRetryStrategy, sleep, withRetry } from "./retry";
 const errorWithCode = (code: string, extra: Record<string, unknown> = {}): Error =>
   Object.assign(new Error(`error ${code}`), { code, ...extra });
 
+const expectRetryAllowed = (verdict: RetryVerdict): void => {
+  expect(verdict.retry).toBe(true);
+  if (verdict.retry) {
+    expect(verdict.delayMs).toBeGreaterThanOrEqual(0);
+  }
+};
+
 const httpError = (statusCode: number): HTTPErrorType =>
   new HTTPError({
     statusCode,
@@ -33,10 +40,7 @@ describe("defaultRetryStrategy", () => {
 
     it("still retries on the final allowed attempt", () => {
       const strategy = defaultRetryStrategy(3);
-      expect(strategy({ attempt: 3, error: errorWithCode("ETIMEDOUT") })).toEqual({
-        retry: true,
-        delayMs: expect.any(Number),
-      });
+      expectRetryAllowed(strategy({ attempt: 3, error: errorWithCode("ETIMEDOUT") }));
     });
   });
 
@@ -45,10 +49,7 @@ describe("defaultRetryStrategy", () => {
       "retries %s",
       (code) => {
         const strategy = defaultRetryStrategy();
-        expect(strategy({ attempt: 1, error: errorWithCode(code) })).toEqual({
-          retry: true,
-          delayMs: expect.any(Number),
-        });
+        expectRetryAllowed(strategy({ attempt: 1, error: errorWithCode(code) }));
       },
     );
 
@@ -61,10 +62,7 @@ describe("defaultRetryStrategy", () => {
   describe("http status codes", () => {
     it.each([408, 429, 500, 502, 503, 504])("retries HTTP %s", (statusCode) => {
       const strategy = defaultRetryStrategy();
-      expect(strategy({ attempt: 1, error: httpError(statusCode) })).toEqual({
-        retry: true,
-        delayMs: expect.any(Number),
-      });
+      expectRetryAllowed(strategy({ attempt: 1, error: httpError(statusCode) }));
     });
 
     it("does not retry a 404", () => {
@@ -95,10 +93,7 @@ describe("defaultRetryStrategy", () => {
         url: "https://example.com/file",
         originalCode: "ETIMEDOUT",
       });
-      expect(strategy({ attempt: 1, error: err })).toEqual({
-        retry: true,
-        delayMs: expect.any(Number),
-      });
+      expectRetryAllowed(strategy({ attempt: 1, error: err }));
     });
   });
 
@@ -108,10 +103,7 @@ describe("defaultRetryStrategy", () => {
       const inner = errorWithCode("ECONNRESET");
       const outer = new Error("wrapper");
       (outer as { cause?: unknown }).cause = inner;
-      expect(strategy({ attempt: 1, error: outer })).toEqual({
-        retry: true,
-        delayMs: expect.any(Number),
-      });
+      expectRetryAllowed(strategy({ attempt: 1, error: outer }));
     });
   });
 

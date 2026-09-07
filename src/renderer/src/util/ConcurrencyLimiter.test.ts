@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./util", () => ({ delay: vi.fn() }));
 
-import { delay } from "./util";
 import ConcurrencyLimiter from "./ConcurrencyLimiter";
+import { delay } from "./util";
 
 const mockDelay = vi.mocked(delay);
 
@@ -15,9 +15,7 @@ describe("ConcurrencyLimiter", () => {
 
   it("returns the callback results", async () => {
     const limiter = new ConcurrencyLimiter(2);
-    const results = await Promise.all(
-      [0, 1, 2, 3].map((i) => limiter.do(async () => i)),
-    );
+    const results = await Promise.all([0, 1, 2, 3].map((i) => limiter.do(async () => i)));
     expect(results).toEqual([0, 1, 2, 3]);
   });
 

@@ -179,7 +179,11 @@ CREATE TABLE b`,
   describe("directory traversal", () => {
     it("discovers .sql files recursively", () => {
       const dir = makeDir();
-      writeQuery(dir, "nested/deep/mods.sql", `-- @type view\n-- @name viewA\nCREATE VIEW a AS SELECT 1`);
+      writeQuery(
+        dir,
+        "nested/deep/mods.sql",
+        `-- @type view\n-- @name viewA\nCREATE VIEW a AS SELECT 1`,
+      );
 
       const queries = parseAllQueries(dir);
       expect(queries).toHaveLength(1);

@@ -70,9 +70,7 @@ describe("QueryWatcher.onQueriesInvalidated", () => {
 
   it("re-executes affected queries and notifies on a diff", async () => {
     const { watcher, registry } = createWatcher();
-    registry.executeQuery
-      .mockResolvedValueOnce([{ a: 1 }])
-      .mockResolvedValueOnce([{ a: 2 }]);
+    registry.executeQuery.mockResolvedValueOnce([{ a: 1 }]).mockResolvedValueOnce([{ a: 2 }]);
     const callback = vi.fn<(diff: WatchDiff) => void>();
 
     watcher.watch("queryA", { gameId: "skyrim" }, callback);

@@ -8,7 +8,6 @@ vi.mock("../profile_management/selectors", () => ({ activeGameId: vi.fn() }));
 vi.mock("./util/getDownloadPath", () => ({ default: vi.fn() }));
 
 import { activeGameId } from "../profile_management/selectors";
-import getDownloadPath from "./util/getDownloadPath";
 import {
   activeDownloads,
   downloadPath,
@@ -18,6 +17,7 @@ import {
   getDownloadByIds,
   queueClearingDownloads,
 } from "./selectors";
+import getDownloadPath from "./util/getDownloadPath";
 
 const mockActiveGameId = vi.mocked(activeGameId);
 const mockGetDownloadPath = vi.mocked(getDownloadPath);
@@ -76,7 +76,7 @@ describe("activeDownloads", () => {
 
   it("excludes finished, paused and queued downloads", () => {
     const state = makeState(downloads);
-    const result = activeDownloads(state);
+    const result = activeDownloads(state) as Record<string, FileLike>;
     expect(result.fin1).toBeUndefined();
     expect(result.paused).toBeUndefined();
     expect(result.queued).toBeUndefined();
@@ -86,7 +86,7 @@ describe("activeDownloads", () => {
 describe("queueClearingDownloads", () => {
   it("returns downloads that would be lost when clearing the queue", () => {
     const state = makeState(downloads);
-    const result = queueClearingDownloads(state);
+    const result = queueClearingDownloads(state) as Record<string, FileLike>;
     expect(result.running?.state).toBe("started");
     expect(result.paused?.state).toBe("paused");
     expect(result.queued?.state).toBe("init");
@@ -94,7 +94,7 @@ describe("queueClearingDownloads", () => {
 
   it("excludes finished and finalizing downloads", () => {
     const state = makeState(downloads);
-    const result = queueClearingDownloads(state);
+    const result = queueClearingDownloads(state) as Record<string, FileLike>;
     expect(result.fin1).toBeUndefined();
     expect(result.finalizing).toBeUndefined();
   });

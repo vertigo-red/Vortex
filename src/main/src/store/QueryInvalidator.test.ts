@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("../logging", () => ({ log: vi.fn() }));
 
 import { log } from "../logging";
-import type QueryRegistry from "./QueryRegistry";
 import QueryInvalidator from "./QueryInvalidator";
+import type QueryRegistry from "./QueryRegistry";
 import type QueryWatcher from "./QueryWatcher";
 
 const dirtyTable = (table: string, database = "gamedata") =>
@@ -38,10 +38,7 @@ describe("QueryInvalidator", () => {
   });
 
   it("is a no-op when no queries are registered", async () => {
-    const invalidator = new QueryInvalidator(
-      { hasQueries: false } as unknown as QueryRegistry,
-      16,
-    );
+    const invalidator = new QueryInvalidator({ hasQueries: false } as unknown as QueryRegistry, 16);
     invalidator.notifyDirtyTables([dirtyTable("mods")]);
     await vi.advanceTimersByTimeAsync(100);
   });
