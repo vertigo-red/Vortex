@@ -113,8 +113,7 @@ describe("withRetry", () => {
 
     await expect(withRetry(fn, strategy)).resolves.toBe("ok");
     expect(strategy).toHaveBeenCalledTimes(1);
-    expect(strategy.mock.calls[0][0].attempt).toBe(1);
-    expect(strategy.mock.calls[0][0].error).toBe(httpErr);
+    expect(strategy).toHaveBeenCalledWith({ attempt: 1, error: httpErr });
   });
 
   it("gives up when the strategy says so and rethrows the last error", async () => {
@@ -127,7 +126,7 @@ describe("withRetry", () => {
 
     await expect(withRetry(fn, strategy)).rejects.toBe(err);
     expect(strategy).toHaveBeenCalledTimes(2);
-    expect(strategy.mock.calls[1][0].attempt).toBe(2);
+    expect(strategy).toHaveBeenCalledWith({ attempt: 2, error: err });
   });
 
   it("never retries cancellations", async () => {
