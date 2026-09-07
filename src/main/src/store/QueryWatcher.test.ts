@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 
 import { log } from "../logging";
@@ -10,29 +11,30 @@ vi.mock("../logging", () => ({
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-const makeRegistry = () =>
-  ({
-    executeQuery: vi.fn(),
-  }) as unknown as QueryRegistry;
+const makeRegistry = (): { registry: QueryRegistry; executeQuery: Mock } => {
+  const executeQuery = vi.fn();
+  const registry = { executeQuery } as unknown as QueryRegistry;
+  return { registry, executeQuery };
+};
 
 describe("QueryWatcher", () => {
   it("establishes a baseline without notifying the callback", async () => {
-    const registry = makeRegistry();
-    registry.executeQuery.mockResolvedValue([{ a: 1 }]);
+    const { registry, executeQuery } = makeRegistry();
+    executeQuery.mockResolvedValue([{ a: 1 }]);
     const watcher = new QueryWatcher(registry);
     const callback = vi.fn();
 
     watcher.watch("q1", { tag: "x" }, callback);
     await flush();
 
-    expect(registry.executeQuery).toHaveBeenCalledWith("q1", { tag: "x" });
+    expect(executeQuery).toHaveBeenCalledWith("q1", { tag: "x" });
     await watcher.onQueriesInvalidated(["q1"]);
     expect(callback).not.toHaveBeenCalled();
   });
 
   it("notifies the callback when the query result changes", async () => {
-    const registry = makeRegistry();
-    registry.executeQuery.mockResolvedValueOnce([{ a: 1 }]).mockResolvedValueOnce([{ a: 2 }]);
+    const { registry, executeQuery } = makeRegistry();
+    executeQuery.mockResolvedValueOnce([{ a: 1 }]).mockResolvedValueOnce([{ a: 2 }]);
     const watcher = new QueryWatcher(registry);
     const callback = vi.fn();
 
@@ -49,8 +51,8 @@ describe("QueryWatcher", () => {
   });
 
   it("does not notify the callback when the result is unchanged", async () => {
-    const registry = makeRegistry();
-    registry.executeQuery.mockResolvedValue([{ a: 1 }]);
+    const { registry, executeQuery } = makeRegistry();
+    executeQuery.mockResolvedValue([{ a: 1 }]);
     const watcher = new QueryWatcher(registry);
     const callback = vi.fn();
 
@@ -58,13 +60,13 @@ describe("QueryWatcher", () => {
     await flush();
     await watcher.onQueriesInvalidated(["q1"]);
 
-    expect(registry.executeQuery).toHaveBeenCalledTimes(2);
+    expect(executeQuery).toHaveBeenCalledTimes(2);
     expect(callback).not.toHaveBeenCalled();
   });
 
   it("only re-executes affected watched queries", async () => {
-    const registry = makeRegistry();
-    registry.executeQuery
+    const { registry, executeQuery } = makeRegistry();
+    executeQuery
       .mockResolvedValueOnce([{ a: 1 }])
       .mockResolvedValueOnce([{ b: 1 }])
       .mockResolvedValueOnce([{ b: 2 }]);
@@ -79,15 +81,15 @@ describe("QueryWatcher", () => {
 
     expect(callbackA).not.toHaveBeenCalled();
     expect(callbackB).toHaveBeenCalledTimes(1);
-    expect(registry.executeQuery).toHaveBeenCalledTimes(3);
-    expect(registry.executeQuery).toHaveBeenNthCalledWith(1, "qA", {});
-    expect(registry.executeQuery).toHaveBeenNthCalledWith(2, "qB", {});
-    expect(registry.executeQuery).toHaveBeenNthCalledWith(3, "qB", {});
+    expect(executeQuery).toHaveBeenCalledTimes(3);
+    expect(executeQuery).toHaveBeenNthCalledWith(1, "qA", {});
+    expect(executeQuery).toHaveBeenNthCalledWith(2, "qB", {});
+    expect(executeQuery).toHaveBeenNthCalledWith(3, "qB", {});
   });
 
   it("stops notifying after unsubscribing", async () => {
-    const registry = makeRegistry();
-    registry.executeQuery.mockResolvedValueOnce([{ a: 1 }]).mockResolvedValueOnce([{ a: 2 }]);
+    const { registry, executeQuery } = makeRegistry();
+    executeQuery.mockResolvedValueOnce([{ a: 1 }]).mockResolvedValueOnce([{ a: 2 }]);
     const watcher = new QueryWatcher(registry);
     const callback = vi.fn();
 
@@ -100,8 +102,8 @@ describe("QueryWatcher", () => {
   });
 
   it("ignores the baseline for an entry unsubscribed before it arrives", async () => {
-    const registry = makeRegistry();
-    registry.executeQuery.mockResolvedValue([{ a: 1 }]);
+    const { registry, executeQuery } = makeRegistry();
+    executeQuery.mockResolvedValue([{ a: 1 }]);
     const watcher = new QueryWatcher(registry);
     const callback = vi.fn();
 
@@ -114,8 +116,8 @@ describe("QueryWatcher", () => {
   });
 
   it("logs a warning when the initial fetch fails", async () => {
-    const registry = makeRegistry();
-    registry.executeQuery.mockRejectedValue(new Error("no such table"));
+    const { registry, executeQuery } = makeRegistry();
+    executeQuery.mockRejectedValue(new Error("no such table"));
     const watcher = new QueryWatcher(registry);
 
     watcher.watch("q1", {}, vi.fn());
@@ -129,8 +131,8 @@ describe("QueryWatcher", () => {
   });
 
   it("continues watching other queries when one re-fetch fails", async () => {
-    const registry = makeRegistry();
-    registry.executeQuery
+    const { registry, executeQuery } = makeRegistry();
+    executeQuery
       .mockResolvedValueOnce([{ a: 1 }])
       .mockResolvedValueOnce([{ b: 1 }])
       .mockRejectedValueOnce(new Error("boom"))
