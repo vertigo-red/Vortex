@@ -39,7 +39,7 @@ describe("defaultRetryStrategy", () => {
 
   it("backs off exponentially and caps the delay", () => {
     vi.spyOn(Math, "random").mockReturnValue(0.5);
-    const strategy = defaultRetryStrategy(5, 1000, 30_000);
+    const strategy = defaultRetryStrategy(10, 1000, 30_000);
     const err = httpError(503);
 
     expect(strategy({ attempt: 1, error: err })).toEqual({ retry: true, delayMs: 1000 });
