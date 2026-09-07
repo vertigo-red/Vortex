@@ -85,7 +85,8 @@ describe("QueryInvalidator", () => {
   });
 
   it("logs and swallows a watcher notification failure", async () => {
-    const { invalidator, watcher } = createInvalidator();
+    const { invalidator, registry, watcher } = createInvalidator();
+    registry.getAffectedQueries.mockReturnValue(["modList"]);
     watcher.onQueriesInvalidated.mockRejectedValue(new Error("watcher down"));
     invalidator.notifyDirtyTables([dirtyTable("mods")]);
 

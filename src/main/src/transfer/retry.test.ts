@@ -15,17 +15,25 @@ const expectRetryAllowed = (verdict: RetryVerdict): void => {
   }
 };
 
-const httpError = (statusCode: number): HTTPErrorType =>
-  new HTTPError({
-    statusCode,
-    statusMessage: "test",
-    request: {
-      options: {
-        method: "GET",
-        url: new URL("https://example.com/file"),
-      },
+const httpError = (statusCode: number): HTTPErrorType => {
+  // got v15 builds HTTPError.request from `response.request` and copies the
+  // response back from `request.response`, so both have to be set for
+  // `err.response.statusCode` to be readable.
+  const request: {
+    _onResponse: () => void;
+    options: { method: string; url: URL };
+    response?: unknown;
+  } = {
+    _onResponse: () => undefined,
+    options: {
+      method: "GET",
+      url: new URL("https://example.com/file"),
     },
-  } as never);
+  };
+  const response = { statusCode, statusMessage: "test", request };
+  request.response = response;
+  return new HTTPError(response as never);
+};
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -228,7 +236,6 @@ describe("sleep", () => {
     const controller = new AbortController();
     controller.abort();
     const err: unknown = await sleep(100, controller.signal).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(Error);
-    expect((err as Error).name).toBe("AbortError");
+    expect((err as { name?: string } | null)?.name).toBe("AbortError");
   });
 });

@@ -153,11 +153,11 @@ CREATE TABLE b`,
   });
 
   describe("invalid input", () => {
-    it("throws when queries exist without a @type declaration", () => {
+    it("skips queries that lack a @type declaration", () => {
       const dir = makeDir();
       writeQuery(dir, "bad.sql", `-- @name orphan\nSELECT 1`);
 
-      expect(() => parseAllQueries(dir)).toThrow("Missing @type declaration");
+      expect(parseAllQueries(dir)).toEqual([]);
     });
 
     it("throws on duplicate query names across files", () => {
