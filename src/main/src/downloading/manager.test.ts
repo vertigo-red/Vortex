@@ -1,5 +1,5 @@
 import { VortexError } from "@vortex/shared";
-import type { Chunker, DownloadCheckpoint } from "@vortex/shared/download";
+import type { Chunker, DownloadCheckpoint, RetryStrategy } from "@vortex/shared/download";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const logMock = vi.hoisted(() => vi.fn());
@@ -65,11 +65,11 @@ type CapturedOptions = {
   userAgent?: string;
 };
 
-const noRetry = () => ({ retry: false });
+const noRetry: RetryStrategy = () => ({ retry: false });
 const resource = "https://example.com/file.bin";
 const dest = "/tmp/out.bin";
 const chunker: Chunker<string> = () => [];
-const resolver = async (r: string) => ({ url: new URL(r) });
+const resolver = (r: string) => Promise.resolve({ url: new URL(r) });
 
 function makeManager(options?: {
   concurrency?: number;
@@ -165,7 +165,7 @@ describe("DownloadManager.download", () => {
       | undefined;
     let capturedOptions: CapturedOptions | undefined;
     downloadMock.mockImplementation(
-      async (
+      (
         _r: unknown,
         _d: unknown,
         strategy: NonNullable<typeof capturedStrategy>,
@@ -199,7 +199,7 @@ describe("DownloadManager.download", () => {
   it("creates a rate limiter only when a positive bandwidth limit is configured", async () => {
     let rateLimiter: unknown;
     downloadMock.mockImplementation(
-      async (_r: unknown, _d: unknown, strategy: { rateLimiter?: unknown }) => {
+      (_r: unknown, _d: unknown, strategy: { rateLimiter?: unknown }) => {
         rateLimiter = strategy.rateLimiter;
       },
     );
@@ -212,7 +212,7 @@ describe("DownloadManager.download", () => {
   it("leaves the rate limiter undefined without a bandwidth limit", async () => {
     let rateLimiter: unknown;
     downloadMock.mockImplementation(
-      async (_r: unknown, _d: unknown, strategy: { rateLimiter?: unknown }) => {
+      (_r: unknown, _d: unknown, strategy: { rateLimiter?: unknown }) => {
         rateLimiter = strategy.rateLimiter;
       },
     );
@@ -225,7 +225,7 @@ describe("DownloadManager.download", () => {
   it("ignores a zero or NaN bandwidth limit", async () => {
     let rateLimiter: unknown;
     downloadMock.mockImplementation(
-      async (_r: unknown, _d: unknown, strategy: { rateLimiter?: unknown }) => {
+      (_r: unknown, _d: unknown, strategy: { rateLimiter?: unknown }) => {
         rateLimiter = strategy.rateLimiter;
       },
     );
@@ -258,7 +258,7 @@ describe("DownloadManager.download", () => {
   it("exposes progress and metadata on the state after a successful transfer", async () => {
     const manager = makeManager();
     downloadMock.mockImplementation(
-      async (_r: unknown, _d: unknown, _s: unknown, options: CapturedOptions) => {
+      (_r: unknown, _d: unknown, _s: unknown, options: CapturedOptions) => {
         const reporter = options.progressReporter;
         if (reporter) {
           reporter.etag = "abc123";
@@ -671,7 +671,7 @@ describe("DownloadManager.configure", () => {
     const manager = makeManager();
     let rateLimiter: unknown;
     downloadMock.mockImplementation(
-      async (_r: unknown, _d: unknown, strategy: { rateLimiter?: unknown }) => {
+      (_r: unknown, _d: unknown, strategy: { rateLimiter?: unknown }) => {
         rateLimiter = strategy.rateLimiter;
       },
     );
