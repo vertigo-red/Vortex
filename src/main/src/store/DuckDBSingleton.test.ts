@@ -15,19 +15,20 @@ const { logMock, createMock, connectMock, instanceCloseSyncMock, connections } =
 
   const makeConnection = (): Connection => {
     const conn = {
-      run: vi.fn<(sql: string) => Promise<unknown>>(async (_sql: string) => {}),
+      run: vi.fn<(sql: string) => Promise<unknown>>((_sql: string) => Promise.resolve()),
       closeSync: vi.fn<() => void>(() => {}),
     };
     connections.push(conn);
     return conn;
   };
 
-  const connectMock = vi.fn<() => Promise<unknown>>(async () => makeConnection());
+  const connectMock = vi.fn<() => Promise<unknown>>(() => Promise.resolve(makeConnection()));
 
-  const defaultCreateImpl = async () => ({
-    connect: connectMock,
-    closeSync: instanceCloseSyncMock,
-  });
+  const defaultCreateImpl = () =>
+    Promise.resolve({
+      connect: connectMock,
+      closeSync: instanceCloseSyncMock,
+    });
 
   const createMock =
     vi.fn<
@@ -120,16 +121,13 @@ describe("initialize", () => {
   });
 
   it("propagates instance creation failures and stays uninitialized", async () => {
-    createMock.mockImplementation(async () => {
-      throw new Error("boom");
-    });
+    createMock.mockImplementation(() => Promise.reject(new Error("boom")));
     const instance = DuckDBSingleton.getInstance();
     await expect(instance.initialize(extensionDir)).rejects.toThrow("boom");
     expect(instance.isInitialized).toBe(false);
-    createMock.mockImplementation(async () => ({
-      connect: connectMock,
-      closeSync: instanceCloseSyncMock,
-    }));
+    createMock.mockImplementation(() =>
+      Promise.resolve({ connect: connectMock, closeSync: instanceCloseSyncMock }),
+    );
   });
 });
 
