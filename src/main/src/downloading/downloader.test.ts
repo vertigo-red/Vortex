@@ -168,16 +168,22 @@ vi.mock("@vortex/shared", () => {
   return { VortexError: MockVortexError, parseError, getErrorCode, unknownToError };
 });
 
-type MockFn = Mock<(...args: unknown[]) => unknown>;
+type FdWrite = (
+  buffer: Buffer,
+  offset: number,
+  len: number,
+  position: number,
+) => Promise<{ bytesWritten: number }>;
+
 type FakeStream = {
   requestUrl: URL;
   on(_event: string, _listener: () => void): FakeStream;
   [Symbol.asyncIterator](): AsyncGenerator<Buffer, void, unknown>;
 };
 type FakeFd = {
-  truncate: MockFn;
-  write: MockFn;
-  close: MockFn;
+  truncate: Mock<() => Promise<void>>;
+  write: Mock<FdWrite>;
+  close: Mock<() => Promise<void>>;
 };
 
 function fakeStream(
@@ -228,9 +234,15 @@ function primeStream(
   gotMock.stream.mockImplementation(() => fakeStream(buffers, overrides));
 }
 
+function createTimeoutError(): TimeoutError {
+  // The runtime mock's TimeoutError takes a message while the real got type
+  // requires (error, timings, request); construct via the prototype.
+  return Object.create(TimeoutError.prototype) as TimeoutError;
+}
+
 function makeRateLimiter(bucketSize: number): {
   tokenBucket: { bucketSize: number };
-  removeTokens: MockFn;
+  removeTokens: Mock<(tokens: number) => Promise<number>>;
 } {
   return {
     tokenBucket: { bucketSize },
@@ -479,7 +491,7 @@ describe("download() probe (HEAD)", () => {
   });
 
   it("maps probe failures through toNetworkError (timeout)", async () => {
-    primeHeadRejected(new TimeoutError("boom"));
+    primeHeadRejected(createTimeoutError());
 
     await expect(download(resource, dest, { resolver, chunker })).rejects.toMatchObject({
       data: { kind: "http:timeout", url: endpointUrl.toString() },
@@ -574,7 +586,7 @@ describe("download() single-stream transfer", () => {
               syscall: "write",
             }),
           ),
-        ),
+        ) as unknown as Mock<FdWrite>,
       }),
     );
 
@@ -860,7 +872,7 @@ describe("download() rate limiting", () => {
       rateLimiter: limiter as unknown as RateLimiter,
     });
 
-    expect(limiter.removeTokens.mock.calls.map((call) => call[0] as number)).toEqual([10, 10, 5]);
+    expect(limiter.removeTokens.mock.calls.map((call) => call[0])).toEqual([10, 10, 5]);
   });
 });
 
