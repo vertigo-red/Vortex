@@ -267,6 +267,67 @@ jobs:
             || echo "screenshot unavailable (best effort)"
           kill "$APP_PID" 2>/dev/null || true
 
+      - name: AppImage payload smoke
+        # The zip/deb/rpm wrap the same unpacked tree the boot smoke ran; the
+        # AppImage is the only target with its own runtime, so prove the
+        # actual AppImage artifact boots (no FUSE on CI -> extract-and-run).
+        if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
+        run: |
+          set -euxo pipefail
+          cd dist
+          VORTEX_APPIMAGE=$(ls Vortex-*.AppImage | head -n1)
+          test -n "$VORTEX_APPIMAGE"
+          file "$VORTEX_APPIMAGE"
+          ./"$VORTEX_APPIMAGE" --appimage-extract >/dev/null
+          trap 'rm -rf squashfs-root' EXIT
+          test -d squashfs-root
+          DESKTOP=$(ls squashfs-root/*.desktop | head -n1)
+          echo "--- embedded .desktop ---"
+          cat "$DESKTOP"
+          grep -Eq '^Exec=.*vortex' "$DESKTOP"
+          ICON=$(find squashfs-root -maxdepth 2 -iname '*.png' | head -n1)
+          test -n "$ICON"
+          echo "embedded icon: $ICON"
+          export DISPLAY=:98
+          Xvfb :98 -screen 0 1280x800x24 >/dev/null 2>&1 &
+          XVFB_PID=$!
+          trap 'rm -rf squashfs-root; kill $XVFB_PID 2>/dev/null || true; pkill -f Vortex-1.0.0-linux 2>/dev/null || true' EXIT
+          sleep 1
+          rm -rf appimage-smoke-userdata appimage-smoke.log
+          ./"$VORTEX_APPIMAGE" --appimage-extract-and-run --no-sandbox --disable-gpu --remote-debugging-port=9224 --user-data-dir="$PWD/appimage-smoke-userdata" > appimage-smoke.log 2>&1 &
+          APP_PID=$!
+          ok=0
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:9224/json/version > /dev/null 2>&1; then ok=1; break; fi
+            if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          echo "--- appimage-smoke.log (tail) ---"
+          tail -n 30 appimage-smoke.log || true
+          if [ "$ok" -ne 1 ]; then
+            echo "APPIMAGE SMOKE FAILED: DevTools endpoint not reachable in 120s"
+            exit 1
+          fi
+          curl -fsS http://127.0.0.1:9224/json | grep -q '"type": "page"'
+          echo "APPIMAGE SMOKE OK: AppImage boots via extract-and-run"
+          kill "$APP_PID" 2>/dev/null || true
+
+      - name: Verify deb/rpm payload contents
+        if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
+        run: |
+          set -euxo pipefail
+          cd dist
+          DEB=$(ls Vortex_*.deb | head -n1)
+          echo "--- $DEB (desktop/icon/binary) ---"
+          dpkg-deb -c "$DEB" | grep -E 'usr/share/applications|usr/share/icons|/usr/bin/' | head -n 20
+          RPM=$(ls Vortex-*.rpm | head -n1)
+          if command -v rpm >/dev/null 2>&1; then
+            echo "--- $RPM (desktop/icon/binary) ---"
+            rpm -qlp "$RPM" 2>/dev/null | grep -E 'share/applications|share/icons|/usr/bin/' | head -n 20
+          else
+            echo "rpm tool not installed; skipping rpm listing (build already succeeded)"
+          fi
+
       - name: Checksums and metadata
         if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
         run: |
