@@ -86,12 +86,12 @@ const completionXml = `<CompleteMultipartUpload>
 function uploadPartShim(): void {
   const puts: Array<{ url: string; size: number; label: string; range: Range | undefined }> = [];
   transportMock.putFile.mockImplementation(
-    async (_session, url, _filePath, size, label, range, onProgress) => {
+    (_session, url, _filePath, size, label, range, onProgress) => {
       puts.push({ url, size, label, range });
       if (onProgress !== undefined) {
         onProgress(size);
       }
-      return { headers: { etag: `etag-${puts.length}` } };
+      return Promise.resolve({ headers: { etag: `etag-${puts.length}` } });
     },
   );
 }
@@ -111,9 +111,11 @@ describe("uploadS3Multipart", () => {
   it("rejects a layout whose preset parts cannot cover the file size", async () => {
     // 130 bytes at 40 bytes/part need 4 parts but only 3 URLs were issued.
     const p = uploadS3Multipart(THREE_PART_LAYOUT, "/file.bin", 130);
+    const message =
+      "Multipart layout mismatch: server returned 3 presigned URLs but 130 bytes at 40 bytes/part needs 4";
 
     await expect(p).rejects.toMatchObject({
-      message: expect.stringContaining("Multipart layout mismatch"),
+      message,
       data: { kind: "http:protocol-violation", url: "https://s3.example.com/complete" },
     });
     expect(transportMock.putFile).not.toHaveBeenCalled();
@@ -143,13 +145,13 @@ describe("uploadS3Multipart", () => {
 
     await uploadS3Multipart(THREE_PART_LAYOUT, "/file.bin", 100, { onProgress });
 
-    expect(onProgress.mock.calls.map((call) => call[0] as number)).toEqual([40, 80, 100]);
+    expect(onProgress.mock.calls.map((call) => call[0])).toEqual([40, 80, 100]);
   });
 
   it("stops at the first part that is answered without an ETag", async () => {
-    transportMock.putFile.mockImplementation(async (_session, url) => {
+    transportMock.putFile.mockImplementation((_session, url) => {
       const etag = url.endsWith("/2") ? undefined : "etag";
-      return { headers: { etag } };
+      return Promise.resolve({ headers: { etag } });
     });
 
     const p = uploadS3Multipart(THREE_PART_LAYOUT, "/file.bin", 100);
