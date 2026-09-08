@@ -43,7 +43,7 @@ describe("hash worker", () => {
       .mockResolvedValueOnce({ hash: "h2", numBytes: 2 });
 
     handler({ id: 1, algorithm: "md5", filePath: "/a" });
-    handler({ id: 2, algorithm: "sha256", filePath: "/b" });
+    handler({ id: 2, algorithm: "md5", filePath: "/b" });
 
     await vi.waitFor(() => {
       expect(portMock.postMessage).toHaveBeenCalledTimes(2);
@@ -51,7 +51,7 @@ describe("hash worker", () => {
 
     expect(computeMock.hashFileStream.mock.calls).toEqual([
       ["md5", "/a"],
-      ["sha256", "/b"],
+      ["md5", "/b"],
     ]);
     expect(portMock.postMessage.mock.calls.map((call) => call[0] as HashResult)).toEqual([
       { id: 1, hash: "h1", numBytes: 1 },
@@ -62,13 +62,13 @@ describe("hash worker", () => {
   it("posts the hash and byte count for a successful job", async () => {
     computeMock.hashFileStream.mockResolvedValue({ hash: "abc", numBytes: 42 });
 
-    handler({ id: 7, algorithm: "sha256", filePath: "/file.bin" });
+    handler({ id: 7, algorithm: "md5", filePath: "/file.bin" });
 
     await vi.waitFor(() => {
       expect(portMock.postMessage).toHaveBeenCalledWith({ id: 7, hash: "abc", numBytes: 42 });
     });
 
-    expect(computeMock.hashFileStream).toHaveBeenCalledWith("sha256", "/file.bin");
+    expect(computeMock.hashFileStream).toHaveBeenCalledWith("md5", "/file.bin");
   });
 
   it("posts an error message instead of an exception when hashing fails", async () => {
