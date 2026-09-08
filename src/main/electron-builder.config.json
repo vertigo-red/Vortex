@@ -42,7 +42,7 @@
     "installerHeaderIcon": "nsis/icon.ico"
   },
   "linux": {
-    "target": ["zip", "rpm"],
+    "target": ["zip", "rpm", "deb"],
     "icon": "../../../assets/images/vortex.png",
     "category": "Network;Development;Game;",
     "synopsis": "Mod Manager",

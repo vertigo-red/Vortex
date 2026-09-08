@@ -49,7 +49,9 @@ jobs:
         run: find "$PNPM_HOME" -path '*/node-gyp/gyp/gyp_main.py' -exec chmod +x {} \;
 
       - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev rpm
+        # fontconfig/libarchive are build-time; the GUI/runtime set is what a
+        # packaged Electron needs to actually start (used by the boot smoke).
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev rpm libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 libgl1 libgtk-3-0 xvfb
 
       - name: Cache native module builds
         uses: actions/cache@v6
@@ -70,6 +72,37 @@ jobs:
 
       - name: Rebuild Electron native modules
         run: pnpm --filter @vortex/main exec electron-rebuild
+
+      - name: Verify workspace
+        run: pnpm run verify
+
+  verify-windows:
+    # Regression gate: the port touches cross-platform code (deployment,
+    # StarterInfo, Steam, archives, protocol registration). Keep Windows
+    # build+test green on every change so Linux work cannot silently break it.
+    # Ordinary GitHub-hosted runner; no secrets.
+    if: github.repository == 'vertigo-red/Vortex' && startsWith(github.ref_name, 'linux/native-readiness-')
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      NX_DAEMON: false
+      VORTEX_ELECTRON_REBUILD: defer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: "recursive"
+
+      - uses: pnpm/action-setup@v6.0.9
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.17.0"
+          cache: "pnpm"
+
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
 
       - name: Verify workspace
         run: pnpm run verify
@@ -110,7 +143,9 @@ jobs:
         run: find "$PNPM_HOME" -path '*/node-gyp/gyp/gyp_main.py' -exec chmod +x {} \;
 
       - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev rpm
+        # fontconfig/libarchive are build-time; the GUI/runtime set is what a
+        # packaged Electron needs to actually start (used by the boot smoke).
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev rpm libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 libgl1 libgtk-3-0 xvfb
 
       - name: Cache native module builds
         uses: actions/cache@v6
@@ -196,6 +231,39 @@ jobs:
       - name: Verify packaged dependencies
         if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
         run: node scripts/verify-packaged-asar.mjs --asar dist/linux-unpacked/resources/app.asar
+
+      - name: Boot smoke (xvfb)
+        if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
+        # The packaged app has never been run: this starts the real binary
+        # under a virtual display and proves the main process + a renderer page
+        # come up, so a broken payload (native addon that fails to load, missing
+        # runtime lib, bad asar) fails here rather than on a user's machine.
+        run: |
+          set -euxo pipefail
+          cd dist
+          export DISPLAY=:99
+          rm -rf smoke-userdata smoke-boot.log
+          Xvfb :99 -screen 0 1280x800x24 &
+          XVFB_PID=$!
+          trap 'kill $XVFB_PID 2>/dev/null || true; pkill -f linux-unpacked/vortex 2>/dev/null || true' EXIT
+          sleep 1
+          ./linux-unpacked/vortex --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir="$PWD/smoke-userdata" > smoke-boot.log 2>&1 &
+          APP_PID=$!
+          ok=0
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:9222/json/version > /dev/null 2>&1; then ok=1; break; fi
+            if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          echo "--- smoke-boot.log (tail) ---"
+          tail -n 40 smoke-boot.log || true
+          if [ "$ok" -ne 1 ]; then
+            echo "BOOT SMOKE FAILED: DevTools endpoint not reachable in 120s"
+            exit 1
+          fi
+          curl -fsS http://127.0.0.1:9222/json | grep -q '"type": "page"'
+          echo "BOOT SMOKE OK: main process and renderer page are up"
+          kill "$APP_PID" 2>/dev/null || true
 
       - name: Checksums and metadata
         if: github.event_name == 'workflow_dispatch' || hashFiles('docs/linux/PACKAGING-MARKER') != ''
