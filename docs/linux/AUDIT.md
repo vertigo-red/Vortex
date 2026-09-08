@@ -19,7 +19,7 @@ Findings below were re-checked against base `9c641bd78f7f551df3645a0f5b2bf08fe65
   electron-builder tolerates missing extraResources (the fork's Linux package
   built with them absent), so it did not fail the build; the payload would be
   wrong the moment Windows resources were prepared.
-- FIXED in 63aef8b-wip: Windows runtime/NSIS resources moved under
+- FIXED (52af44821): Windows runtime/NSIS resources moved under
   `win.extraResources`; top-level `extraResources` now only the shared
   `locales` entry, so Linux packages carry no Windows runtime payload.
 - VERIFIED (run 34167843426): packaged zip contains 55 top-level locale packs,
