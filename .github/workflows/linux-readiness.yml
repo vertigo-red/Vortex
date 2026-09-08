@@ -263,6 +263,8 @@ jobs:
           fi
           curl -fsS http://127.0.0.1:9222/json | grep -q '"type": "page"'
           echo "BOOT SMOKE OK: main process and renderer page are up"
+          node ../scripts/capture-smoke-screenshot.mjs 127.0.0.1 9222 "$PWD/smoke-screenshot.png" \
+            || echo "screenshot unavailable (best effort)"
           kill "$APP_PID" 2>/dev/null || true
 
       - name: Checksums and metadata
@@ -293,6 +295,8 @@ jobs:
             dist/*.AppImage
             dist/*.deb
             dist/*.tar.*
+            dist/smoke-screenshot.png
+            dist/smoke-boot.log
             dist/SHA256SUMS
             dist/build-metadata.json
           if-no-files-found: error
