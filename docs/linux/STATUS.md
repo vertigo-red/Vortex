@@ -77,6 +77,7 @@ Additional fixes landed on the branch (not in the fork):
 | deterministic screenshot | 34226196821 | SUCCESS (full) | Page.enable+first-paint wait → PNG captured (476×171); marker re-added |
 | AppImage payload smoke | 34231894090 | FAIL (package) | new step asserted `Exec=.*vortex` but electron-builder rewrites it to `Exec=AppRun` for AppImage |
 | AppImage/dpkg/rpm verify | 34234290430 | SUCCESS (full) | `Exec=AppRun` assertion fixed; AppImage boots via extract-and-run; deb+rpm both install vortex.desktop + vortex.png |
+| marker removed | (final verify) | — | package steps back to push-time no-ops (7f5b6f505); artifact rebuilds via workflow_dispatch |
 
 ## Current state
 
