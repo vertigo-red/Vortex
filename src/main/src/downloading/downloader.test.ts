@@ -1,4 +1,4 @@
-import { VortexError } from "@vortex/shared";
+import { VortexError, unknownToError } from "@vortex/shared";
 import type { Chunk, Chunker, ResolvedEndpoint, Resolver } from "@vortex/shared/download";
 import { TimeoutError } from "got";
 import type { RateLimiter } from "limiter";
@@ -168,7 +168,7 @@ vi.mock("@vortex/shared", () => {
   return { VortexError: MockVortexError, parseError, getErrorCode, unknownToError };
 });
 
-type MockFn = Mock<(...args: any[]) => any>;
+type MockFn = Mock<(...args: unknown[]) => unknown>;
 type FakeStream = {
   requestUrl: URL;
   on(_event: string, _listener: () => void): FakeStream;
@@ -193,7 +193,7 @@ function fakeStream(
         yield buffer;
       }
       if (overrides.error !== undefined) {
-        throw overrides.error;
+        throw unknownToError(overrides.error);
       }
     },
   };
@@ -226,10 +226,6 @@ function primeStream(
   overrides: { requestUrl?: URL; error?: unknown } = {},
 ): void {
   gotMock.stream.mockImplementation(() => fakeStream(buffers, overrides));
-}
-
-function instanceOf(proto: object, message: string): Error {
-  return Object.assign(Object.create(proto), { message });
 }
 
 function makeRateLimiter(bucketSize: number): {
@@ -348,7 +344,7 @@ describe("download() setup", () => {
     expect(fd.truncate).not.toHaveBeenCalled();
     expect(gotMock.stream).toHaveBeenCalledWith(
       endpointUrl,
-      expect.objectContaining({ headers: expect.objectContaining({ Range: undefined }) }),
+      expect.objectContaining({ headers: { Range: undefined, "If-Match": undefined } }),
     );
   });
 
@@ -366,7 +362,7 @@ describe("download() setup", () => {
     expect(gotMock.stream).toHaveBeenCalledWith(
       endpointUrl,
       expect.objectContaining({
-        headers: expect.objectContaining({ Range: undefined, "If-Match": undefined }),
+        headers: { Range: undefined, "If-Match": undefined },
       }),
     );
   });
@@ -483,7 +479,7 @@ describe("download() probe (HEAD)", () => {
   });
 
   it("maps probe failures through toNetworkError (timeout)", async () => {
-    primeHeadRejected(instanceOf(TimeoutError.prototype, "boom"));
+    primeHeadRejected(new TimeoutError("boom"));
 
     await expect(download(resource, dest, { resolver, chunker })).rejects.toMatchObject({
       data: { kind: "http:timeout", url: endpointUrl.toString() },
@@ -608,7 +604,7 @@ describe("download() resume from checkpoint", () => {
     expect(gotMock.stream).toHaveBeenCalledWith(
       endpointUrl,
       expect.objectContaining({
-        headers: expect.objectContaining({ Range: "bytes=40-99", "If-Match": '"v1"' }),
+        headers: { Range: "bytes=40-99", "If-Match": '"v1"' },
       }),
     );
     expect(fd.write).toHaveBeenCalledWith(expect.any(Buffer), 0, 60, 40);
@@ -630,7 +626,7 @@ describe("download() resume from checkpoint", () => {
     expect(gotMock.stream).toHaveBeenCalledWith(
       endpointUrl,
       expect.objectContaining({
-        headers: expect.objectContaining({ Range: "bytes=20-99" }),
+        headers: { Range: "bytes=20-99", "If-Match": undefined },
       }),
     );
   });
@@ -650,7 +646,7 @@ describe("download() resume from checkpoint", () => {
     expect(gotMock.stream).toHaveBeenCalledWith(
       endpointUrl,
       expect.objectContaining({
-        headers: expect.objectContaining({ Range: "bytes=10-99" }),
+        headers: { Range: "bytes=10-99", "If-Match": undefined },
       }),
     );
   });
@@ -664,7 +660,7 @@ describe("download() resume from checkpoint", () => {
 
     expect(gotMock.stream).toHaveBeenCalledWith(
       endpointUrl,
-      expect.objectContaining({ headers: expect.objectContaining({ "If-Match": undefined }) }),
+      expect.objectContaining({ headers: { Range: undefined, "If-Match": undefined } }),
     );
   });
 });
@@ -705,11 +701,11 @@ describe("download() chunked transfer", () => {
     expect(gotMock.head).toHaveBeenCalledWith(endpointUrl, expect.any(Object));
     expect(gotMock.stream).toHaveBeenCalledWith(
       new URL("https://chunks.example.test/0"),
-      expect.objectContaining({ headers: expect.objectContaining({ Range: "bytes=0-49" }) }),
+      expect.objectContaining({ headers: { Range: "bytes=0-49", "If-Match": undefined } }),
     );
     expect(gotMock.stream).toHaveBeenCalledWith(
       new URL("https://chunks.example.test/1"),
-      expect.objectContaining({ headers: expect.objectContaining({ Range: "bytes=50-99" }) }),
+      expect.objectContaining({ headers: { Range: "bytes=50-99", "If-Match": undefined } }),
     );
     expect(fd.write).toHaveBeenCalledWith(expect.any(Buffer), 0, 50, 0);
     expect(fd.write).toHaveBeenCalledWith(expect.any(Buffer), 0, 50, 50);
@@ -742,7 +738,7 @@ describe("download() chunked transfer", () => {
     expect(gotMock.stream).toHaveBeenCalledTimes(1);
     expect(gotMock.stream).toHaveBeenCalledWith(
       endpointUrl,
-      expect.objectContaining({ headers: expect.objectContaining({ Range: "bytes=50-99" }) }),
+      expect.objectContaining({ headers: { Range: "bytes=50-99", "If-Match": undefined } }),
     );
     const progress = reporter.getProgress();
     if (progress.isChunked) {
@@ -794,7 +790,7 @@ describe("download() chunked transfer", () => {
     expect(gotMock.stream).toHaveBeenCalledTimes(1);
     expect(gotMock.stream).toHaveBeenCalledWith(
       endpointUrl,
-      expect.objectContaining({ headers: expect.objectContaining({ Range: undefined }) }),
+      expect.objectContaining({ headers: { Range: undefined, "If-Match": undefined } }),
     );
   });
 
@@ -811,13 +807,13 @@ describe("download() chunked transfer", () => {
     expect(gotMock.head).toHaveBeenCalledWith(
       endpointUrl,
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer xyz" }),
+        headers: { Range: undefined, "If-Match": undefined, Authorization: "Bearer xyz" },
       }),
     );
     expect(gotMock.stream).toHaveBeenCalledWith(
       endpointUrl,
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer xyz" }),
+        headers: { Range: undefined, "If-Match": undefined, Authorization: "Bearer xyz" },
       }),
     );
   });
@@ -864,7 +860,7 @@ describe("download() rate limiting", () => {
       rateLimiter: limiter as unknown as RateLimiter,
     });
 
-    expect(limiter.removeTokens.mock.calls.map((call) => call[0])).toEqual([10, 10, 5]);
+    expect(limiter.removeTokens.mock.calls.map((call) => call[0] as number)).toEqual([10, 10, 5]);
   });
 });
 
