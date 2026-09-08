@@ -42,9 +42,14 @@ Linux-артефакт». Отчёт честный: зелёное — толь
 | 34162915894 | bootstrap (ubuntu-latest) | SUCCESS |
 | 34163391340 | verify базы (исходный upstream source) | verify SUCCESS; package FAIL (EEXIST → B-03) |
 | 34165291581 | verify порта | verify SUCCESS (все перенесённые тесты) |
-| 34167843426 | **полный прогон порта** | **SUCCESS** — verify + package + проверки + артефакты |
+| 34167843426 | **полный прогон порта** | **SUCCESS** — verify + package + проверки + артефакты (zip+rpm) |
 | 34189211483 | verify после снятия маркера (f71b7144b) | SUCCESS |
 | 34189875767 | финальный HEAD (c3e2e4776) | SUCCESS |
+| 34218309860 | boot smoke + deb | SUCCESS (verify + verify-windows + package); Windows-гейт поймал баг WINEPREFIX |
+| 34220720010 | AppImage | SUCCESS (zip+rpm+deb+AppImage) |
+| 34226196821 | детерминированный скриншот | SUCCESS (PNG 476×171 валиден) |
+| 34231894090 | AppImage payload smoke | FAIL — ассерт `Exec=.*vortex`; в AppImage desktop записывается `Exec=AppRun` |
+| 34234290430 | фикс ассерта + payload deb/rpm | SUCCESS (linux.16) — AppImage бут via extract-and-run, deb/rpm несут vortex.desktop + vortex.png |
 
 ## Артефакт
 
@@ -64,14 +69,26 @@ linux-x64 `.node`: winapi-bindings (`winapi.node`), leveldown, drivelist,
 @parcel/watcher, xxhash-addon, @nexusmods/fomod-installer-native,
 @duckdb/node-api. `loot` отсутствует — ожидаемо (см. N-03).
 
+Поздние артефакты (linux.13/linux.14/linux.16): добавляют `deb`, `AppImage`
+и валидный boot-скриншот; свежие лежат в
+`%TEMP%\vortex-linux-20260907-w1\artifact-dl\vortex-linux-93bda803a...\`,
+метаданные/ilogи — рядом.
+
 ## Что проверено честно (только это — «работает»)
 
 - Полная сборка+тесты порта зелёные в Linux CI (все перенесённые юнит-тесты
   включая Proton, case-insensitive deployment с реальным диском, nxm-registration,
   BSA-маршруты).
-- Упаковка Linux (zip+rpm) воспроизводимо проходит на ubuntu-24.04, payload
-  соответствует ожиданиям (native-модули на месте, локаль есть, Windows-мусора
-  нет).
+- Упаковка Linux (zip+rpm, затем deb+AppImage) воспроизводимо проходит на
+  ubuntu-24.04, payload соответствует ожиданиям (native-модули на месте,
+  локаль есть, Windows-мусора нет).
+- **Упакованное приложение стартует**: boot smoke под Xvfb — main процесс +
+  renderer-страница подняты (CDP-эндпоинт + `<"type": "page">`), валидный
+  скриншот (476×171 PNG). То же подтверждено для AppImage через
+  `--appimage-extract-and-run` (без FUSE на CI); встроенные `vortex.desktop`
+  (`Exec=AppRun --no-sandbox %U`) и иконка на месте.
+- deb и rpm несут десктоп-интеграцию: `usr/share/applications/vortex.desktop`,
+  `usr/share/icons/hicolor/0x0/apps/vortex.png`.
 - Все описанные выше фиксы подтверждены payload-проверками.
 
 ## Что НЕ проверено (требует Linux-хоста и реальных установок)

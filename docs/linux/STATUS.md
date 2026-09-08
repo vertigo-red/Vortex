@@ -74,15 +74,30 @@ Additional fixes landed on the branch (not in the fork):
 | boot smoke, deb, win-regr | 34216983888 | FAIL | apt libasound2 (virtual pkg) on 24.04; WINEPREFIX backslash on Windows (caught by new verify-windows) |
 | WINEPREFIX fix | 34218309860 | SUCCESS (full) | verify + verify-windows + package green; Boot smoke + deb added |
 | AppImage + screenshot | 34220720010 | SUCCESS (full) | zip/rpm/deb/AppImage all built; Boot smoke OK with PNG; package only (marker again removed afterward) |
+| deterministic screenshot | 34226196821 | SUCCESS (full) | Page.enable+first-paint wait → PNG captured (476×171); marker re-added |
+| AppImage payload smoke | 34231894090 | FAIL (package) | new step asserted `Exec=.*vortex` but electron-builder rewrites it to `Exec=AppRun` for AppImage |
+| AppImage/dpkg/rpm verify | 34234290430 | SUCCESS (full) | `Exec=AppRun` assertion fixed; AppImage boots via extract-and-run; deb+rpm both install vortex.desktop + vortex.png |
 
 ## Current state
 
-First full Linux artifact produced (run 34167843426):
+All four targets (zip/rpm/deb/AppImage) build, boot under Xvfb, and carry the
+right payload:
 
-- `Vortex-1.0.0-linux.7.zip` (251 MB) + `Vortex-1.0.0-linux.7.x86_64.rpm`
-  (164 MB), `SHA256SUMS`, `build-metadata.json` (source_sha d3be75403,
-  upstream_base 9c641bd78, ubuntu-24.04, node 24.17.0, pnpm 11.10.0, CI URL).
-  Copies in `T\artifacts\vortex-linux-d3be754036f8b9e897c0262e1e584de7684824db\`.
+- run 34234290430 (linux.16, commit 51178381b): verify + verify-windows +
+  package all green.
+- Boot smoke (linux-unpacked binary): main process + a renderer page come up
+  under Xvfb; deterministic PNG captured via DevTools (valid 476×171 frame,
+  unpacked window size).
+- AppImage payload smoke: `--appimage-extract-and-run` boots the real AppImage
+  (no FUSE on CI), embedded `vortex.desktop` has `Exec=AppRun --no-sandbox %U`,
+  embedded icon `vortex.png` present.
+- deb (dpkg-deb -c) and rpm (rpm -qlp) both carry
+  `usr/share/applications/vortex.desktop` and
+  `usr/share/icons/hicolor/0x0/apps/vortex.png`.
+- First full artifact (zip+rpm) remains available in
+  `T\artifacts\vortex-linux-d3be754036f8b9e897c0262e1e584de7684824db\`; latest
+  (linux.13, AppImage) in `T\artifacts\vortex-linux-5fcb378f9...\` and
+  `T\artifact-dl\vortex-linux-93bda803a...\` (linux.14).
 - Payload inspected from the zip: 55 locale packs at top level (B-01 verified),
   `resources/app.asar` (224 MB, layout verified by
   `scripts/verify-packaged-asar.mjs` in the package job), and in
@@ -91,8 +106,9 @@ First full Linux artifact produced (run 34167843426):
   @parcel/watcher, xxhash-addon, @nexusmods/fomod-installer-native,
   @duckdb/node-api — all present as ELF .node binaries; `loot` correctly absent
   (N-03, gated as a warning).
-- The package's heavy steps are now skipped by default (marker deleted).
-  `workflow_dispatch` re-runs them if a new artifact is ever wanted.
+- The package's heavy steps run on every push while the marker
+  (`docs/linux/PACKAGING-MARKER`) is present; deleting it in a dedicated commit
+  makes them push-time no-ops again (`workflow_dispatch` can still trigger them).
 
 ## Remaining verification (needs a Linux host)
 
