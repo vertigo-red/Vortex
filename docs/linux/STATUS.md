@@ -70,6 +70,7 @@ Additional fixes landed on the branch (not in the fork):
 | ported package | 34165291581 | FAIL (gate) | native-module gate tripped on loot (N-03 open, no Linux build path); EEXIST had been the earlier blocker |
 | homepage fix | 34167843426 | SUCCESS (full) | verify + package green: zip (251 MB) + rpm (164 MB) + SHA256SUMS + build-metadata.json; artifact saved to T\artifacts\vortex-linux-d3be75403 |
 | marker removed, docs | 34189211483 | SUCCESS (verify) | verify-only run on f71b7144b; package steps skipped (monitoring) |
+| final docs (c3e2e4776) | 34189875767 | SUCCESS (verify) | final HEAD verify green; no open CI concern |
 
 ## Current state
 
