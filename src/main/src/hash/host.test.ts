@@ -54,6 +54,12 @@ class FakeWorker implements HashWorker {
     }
   }
 
+  emitExit(code: number): void {
+    for (const listener of this.#exitListeners) {
+      listener(code);
+    }
+  }
+
   get lastJob(): HashJob {
     return this.jobAt(this.posted.length - 1);
   }
@@ -207,5 +213,101 @@ describe("HashWorkerPool", () => {
 
     await pool.shutdown();
     expect(workers.every((w) => w.terminated)).toBe(true);
+  });
+
+  it("rejects the job as a setup-error when the worker answers with an error message", async () => {
+    const { factory, workers } = trackingFactory();
+    const pool = new HashWorkerPool(factory, 1);
+
+    const p = pool.hashFile("md5", "/a");
+    const worker = nthWorker(workers, 0);
+    worker.emitMessage({ id: worker.lastJob.id, error: "unsupported algorithm" });
+
+    await expect(p).rejects.toMatchObject({
+      message: "unsupported algorithm",
+      data: { kind: "setup-error", component: "hash-worker" },
+    });
+  });
+
+  it("defaults missing hash and byte count on the result", async () => {
+    const { factory, workers } = trackingFactory();
+    const pool = new HashWorkerPool(factory, 1);
+
+    const p = pool.hashFile("md5", "/a");
+    const worker = nthWorker(workers, 0);
+    worker.emitMessage({ id: worker.lastJob.id });
+
+    await expect(p).resolves.toEqual({ hash: "", numBytes: 0 });
+  });
+
+  it("rejects the running job and replaces the worker on a non-zero exit", async () => {
+    const { factory, workers } = trackingFactory();
+    const pool = new HashWorkerPool(factory, 1);
+
+    const p1 = pool.hashFile("md5", "/1");
+    const worker = nthWorker(workers, 0);
+
+    worker.emitExit(1);
+
+    await expect(p1).rejects.toMatchObject({
+      message: "hash worker stopped unexpectedly (exit code 1)",
+      data: { kind: "setup-error", component: "hash-worker" },
+    });
+    // The crashed worker was dropped and a replacement joined the pool.
+    expect(workers).toHaveLength(2);
+
+    const p2 = pool.hashFile("md5", "/2");
+    const replacement = nthWorker(workers, 1);
+    expect(replacement.jobAt(0).filePath).toBe("/2");
+    replacement.emitMessage({ id: replacement.lastJob.id, hash: "ok", numBytes: 3 });
+    await expect(p2).resolves.toEqual({ hash: "ok", numBytes: 3 });
+  });
+
+  it("keeps the worker when it exits cleanly with code zero", async () => {
+    const { factory, workers } = trackingFactory();
+    const pool = new HashWorkerPool(factory, 1);
+
+    const p1 = pool.hashFile("md5", "/1");
+    const worker = nthWorker(workers, 0);
+
+    worker.emitExit(0);
+
+    // The in-flight job still completes, and the worker stays in the pool.
+    worker.emitMessage({ id: worker.lastJob.id, hash: "ok", numBytes: 1 });
+    await expect(p1).resolves.toEqual({ hash: "ok", numBytes: 1 });
+
+    const p2 = pool.hashFile("md5", "/2");
+    expect(worker.posted).toHaveLength(2);
+    expect(worker.jobAt(1).filePath).toBe("/2");
+    worker.emitMessage({ id: worker.lastJob.id, hash: "ok2", numBytes: 2 });
+    await expect(p2).resolves.toEqual({ hash: "ok2", numBytes: 2 });
+  });
+
+  it("hands a queued job to the replacement worker after a crash", async () => {
+    const { factory, workers } = trackingFactory();
+    const pool = new HashWorkerPool(factory, 2);
+
+    const p1 = pool.hashFile("md5", "/1");
+    const p2 = pool.hashFile("md5", "/2");
+    const p3 = pool.hashFile("md5", "/3");
+
+    const w0 = nthWorker(workers, 0);
+    const w1 = nthWorker(workers, 1);
+    expect(w0.posted).toHaveLength(1);
+    expect(w1.posted).toHaveLength(1);
+
+    // w0 crashes while running /1; its promise rejects, the worker is dropped,
+    // and the replacement (being idle) takes the queued /3.
+    w0.emitError(new Error("boom"));
+    await expect(p1).rejects.toThrow("boom");
+    expect(workers).toHaveLength(3);
+
+    const w2 = nthWorker(workers, 2);
+    expect(w2.jobAt(0).filePath).toBe("/3");
+
+    w1.emitMessage({ id: w1.lastJob.id, hash: "h2", numBytes: 2 });
+    w2.emitMessage({ id: w2.lastJob.id, hash: "h3", numBytes: 3 });
+    await expect(p2).resolves.toEqual({ hash: "h2", numBytes: 2 });
+    await expect(p3).resolves.toEqual({ hash: "h3", numBytes: 3 });
   });
 });
