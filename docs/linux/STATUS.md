@@ -1,7 +1,7 @@
 # Linux native readiness — STATUS
 
-Last updated: 2026-09-08 (port of the fork's Linux commits landed; first
-baseline verify + first package attempt recorded).
+Last updated: 2026-09-08 (port of the fork's Linux commits landed; baseline
+verify + first full Linux artifact produced and its payload checked).
 
 ## Fixed baseline
 
@@ -46,7 +46,17 @@ upstream base. Only source + tests were taken; the fork's own
 
 Skipped from the fork, deliberately: 0001 and the 0008-workflow part — the fork
 branch workflows are replaced by `.github/workflows/linux-readiness.yml`
-(verify always; package gated by `docs/linux/PACKAGING-MARKER`).
+(verify always; package's heavy steps gated by the committed marker
+`docs/linux/PACKAGING-MARKER`, which is now deleted — see CI runs below).
+
+Additional fixes landed on the branch (not in the fork):
+
+- `52af44821` B-03 fix `USE_HARD_LINKS: "false"` so electron-builder's builder-util
+  copies unpacked modules instead of hard-linking them (EEXIST), plus the
+  deploy-tree native-module gate and the OS-split `extraResources` (B-01).
+- `33c3f770b` move the package gate to step-level `if` (works with the
+  validator), `c48de5070` treat loot as a warning (N-03 open, not a blocker),
+  `d3be75403` add `homepage` so electron-builder can build the rpm target.
 
 ## CI runs
 
@@ -58,16 +68,42 @@ branch workflows are replaced by `.github/workflows/linux-readiness.yml`
 | baseline package | 34163391340 | FAIL (Package Linux) | EEXIST hardlink on winapi.node → B-03; loot install dead-link → B-04 |
 | ported verify | 34165291581 | verify SUCCESS | all 7 ported commits + tests green on base 9c641bd78 |
 | ported package | 34165291581 | FAIL (gate) | native-module gate tripped on loot (N-03 open, no Linux build path); EEXIST had been the earlier blocker |
+| homepage fix | 34167843426 | SUCCESS (full) | verify + package green: zip (251 MB) + rpm (164 MB) + SHA256SUMS + build-metadata.json; artifact saved to T\artifacts\vortex-linux-d3be75403 |
+
+## Current state
+
+First full Linux artifact produced (run 34167843426):
+
+- `Vortex-1.0.0-linux.7.zip` (251 MB) + `Vortex-1.0.0-linux.7.x86_64.rpm`
+  (164 MB), `SHA256SUMS`, `build-metadata.json` (source_sha d3be75403,
+  upstream_base 9c641bd78, ubuntu-24.04, node 24.17.0, pnpm 11.10.0, CI URL).
+  Copies in `T\artifacts\vortex-linux-d3be754036f8b9e897c0262e1e584de7684824db\`.
+- Payload inspected from the zip: 55 locale packs at top level (B-01 verified),
+  `resources/app.asar` (224 MB, layout verified by
+  `scripts/verify-packaged-asar.mjs` in the package job), and in
+  `app.asar.unpacked` every required native module for linux-x64 —
+  winapi-bindings (`winapi.node`, the EEXIST victim), leveldown, drivelist,
+  @parcel/watcher, xxhash-addon, @nexusmods/fomod-installer-native,
+  @duckdb/node-api — all present as ELF .node binaries; `loot` correctly absent
+  (N-03, gated as a warning).
+- The package's heavy steps are now skipped by default (marker deleted).
+  `workflow_dispatch` re-runs them if a new artifact is ever wanted.
+
+## Remaining verification (needs a Linux host)
+
+These CANNOT be proven inside CI and must be run on a real Linux box with the
+extracted package (see TESTING.md / LINUX-TESTING-RU.md): app boot and window,
+game discovery/launch with Proton, FOMOD installer UI, BSA/BA2 install, nxm
+cold/warm protocol handling, tool (FNVEdit/loot) invocation — LOOT is
+unavailable until N-03 is ported.
 
 ## Next concrete step
 
-Get the first full LINUX ARTIFACT (zip + rpm) + SHA256SUMS + metadata from the
-(with loot reported absent, N-03) `package` job after relaxing the gate; then
-download, unpack on a Linux host and run the manual checks in TESTING.md / the
-packaged smoke list. While that CI runs: continue evaluating the remaining
-SUSPECTED audit items (R-03 non-Steam launchers, R-04 game-scoped paths) with
-new tests/fixtures, and start real porting work for N-03 (loot) only if a Linux
-libloot linkage proves tractable.
+On a Linux host: extract the zip, run `vortex` (chromium-sandbox needs
+`chrome-sandbox` to be root-owned mode 4755 after extraction, or start with
+`--no-sandbox` for a smoke test), step through the packaged smoke list, and
+record results. Parallel product work: N-03 (loot on Linux), R-03 (GOG/Heroic/
+Faugus/Bottles attach), R-04 (game-scoped prefix paths) — details in AUDIT.md.
 
 ## External blockers
 

@@ -22,7 +22,17 @@ Findings below were re-checked against base `9c641bd78f7f551df3645a0f5b2bf08fe65
 - FIXED in 63aef8b-wip: Windows runtime/NSIS resources moved under
   `win.extraResources`; top-level `extraResources` now only the shared
   `locales` entry, so Linux packages carry no Windows runtime payload.
-- Impact before fix: reused Windows redistributables baked into a Linux package.
+- VERIFIED (run 34167843426): packaged zip contains 55 top-level locale packs,
+  no Windows redistributables.
+
+### B-05 electron-builder needs metadata.homepage for Linux targets — CONFIRMED, FIXED
+- Package Linux failed with `? Please specify project homepage, see
+  .../configuration#Metadata-homepage` (run 34166488835). The Linux packager
+  requires the app metadata's `homepage` for the rpm artifact; `checkMetadata`
+  itself only demands name/version. The fork never hit this shape because
+  package steps ran with a pre-existing deployed dist.
+- FIXED (d3be75403): `homepage` added to `src/main/package.json` (metadata only;
+  Windows packaging is unaffected). VERIFIED: run 34167843426 built the rpm.
 
 ### B-02 GitHub workflow packaging — FIXED (this branch)
 - `.github/workflows/package.yml` is windows-latest only. `.github/workflows/
@@ -30,7 +40,7 @@ Findings below were re-checked against base `9c641bd78f7f551df3645a0f5b2bf08fe65
   ubuntu-24.04 for this branch only (never on upstream refs, no secrets, no
   signing, no release publishing).
 
-### B-03 electron-builder EEXIST on unpacked modules — CONFIRMED, FIXED
+### B-03 electron-builder EEXIST on unpacked modules — VERIFIED, FIXED
 - Packaging fails with `EEXIST: file already exists, link
   '.../winapi-bindings/build/Release/winapi.node' -> '.../app.asar.unpacked/...'
   winapi.node` (run 34163391340, Package Linux). Hard links are enabled on CI
@@ -39,6 +49,8 @@ Findings below were re-checked against base `9c641bd78f7f551df3645a0f5b2bf08fe65
   twice from the pnpm deploy layout throws.
 - FIXED: the packaging step sets `USE_HARD_LINKS: "false"` (the documented
   builder-util switch), making copies idempotent.
+- VERIFIED (run 34167843426): `winapi-bindings/build/Release/winapi.node`
+  present and unpacked in the zip payload.
 
 ### B-04 loot native module not built (silently) — CONFIRMED, GATED (product work open)
 - node-loot `install` = `prebuild-install -r napi -t 9 -a x64 || npm run
@@ -54,10 +66,12 @@ Findings below were re-checked against base `9c641bd78f7f551df3645a0f5b2bf08fe65
   (`libloot-dev` on Debian) via an injected/autogypi binding, or vendor a
   built `loot_api/libloot` for the target. Until then, LOOT sorting on Linux is
   unavailable and the package must not claim otherwise.
+- VERIFIED (run 34167843426): zip payload has no `loot/` slot; the gate's WARN
+  fired with the expected text.
 
 ## Runtime / game environment
 
-### R-01 Proton selection heuristic — FIXED (verification pending)
+### R-01 Proton selection heuristic — FIXED (unit-verified, runtime pending)
 - Base heuristic: `compatdata` presence + lexical `.sort().reverse()` over
   steamapps dirs.
 - FIXED (ported 07219b778): `detectProtonUsage` probes the game's
@@ -66,12 +80,13 @@ Findings below were re-checked against base `9c641bd78f7f551df3645a0f5b2bf08fe65
   numeric and searches all libraries; unavailable configured runners are not
   silently replaced; no unconditional `LD_PRELOAD` (caller environment
   preserved). Unit coverage in `util/linux/proton.test.ts`.
-- Verification pending: unit tests + packaged smoke on the new base (next CI).
+- Unit tests green in Linux CI (runs 34165291581, 34167843426). Runtime still
+  needs a packed app + a real Steam prefix.
 
-### R-02 Tool path ownership via string `startsWith` — FIXED (verification pending)
+### R-02 Tool path ownership via string `startsWith` — FIXED (unit-verified, runtime pending)
 - FIXED (ported bcd5af1bc): `StarterInfo` splits both paths into components and
   uses `contains`/boundary (`/Games/FooBar` is no longer a child of `/Games/Foo`);
-  `Foo`/`FooBar` fixtures in the test suite cover the regression.
+  `Foo`/`FooBar` fixtures in the test suite cover the regression. Green in CI.
 
 ### R-03 Non-Steam (GOG/Heroic/Faugus/Bottles) discovery — SUSPECTED
 - `extensions/gamestore-gog/src/index.ts` registers a Windows-only launcher.
@@ -80,19 +95,20 @@ Findings below were re-checked against base `9c641bd78f7f551df3645a0f5b2bf08fe65
   when launcher manifests are absent.
 - Test: fixture for manual attach (Dragon Age: Origins GOG + manual Wine prefix).
 
-### R-04 Game paths inside a Wine/Proton prefix — FIXED PARTIALLY (verification pending)
+### R-04 Game paths inside a Wine/Proton prefix — FIXED PARTIALLY (game-specific runtime pending)
 - Ported bcd5af1bc advances discovery/paths (Windows path separators, external
   tool prefix through its owning game). Game-specific registry/Documents
   mappings (DA:Origins, Bethesda) remain porting work; keep this row open as
-  SUSPECTED for those specific games until tested against a packed app.
+  SUSPECTED for those specific games until tested against a packed app. Unit
+  coverage landed green in CI.
 
-### R-05 Case-insensitive deployment on case-sensitive FS — FIXED (verification pending)
+### R-05 Case-insensitive deployment on case-sensitive FS — FIXED (unit-verified, runtime pending)
 - FIXED (ported 0005+0007): `util/linux/caseInsensitivePaths.ts` resolver,
   `LinkingDeployment.deployedPath`, destination-casing preservation for
   replacements/restoration and for external changes/fallback purge.
   Unit + fixture tests (incl. a disk-backed deploy/restore) added. The
   resolver rejects ambiguous trees (`Data`+`data`) instead of guessing.
-- Verification pending on the new base in Linux CI; real-game integration still
+- Green in Linux CI (runs 34165291581, 34167843426); real-game integration still
   needs a packed app + real install.
 
 ### R-06 Hardlink activation — SUSPECTED
@@ -107,16 +123,17 @@ Findings below were re-checked against base `9c641bd78f7f551df3645a0f5b2bf08fe65
   executable behind a wrapper that keeps the URI as one argument; APPIMAGE /
   execPath handled; unit tests incl. quoting. The same commit adds `rpm` to
   `linux.target`.
-- Still unverified: cold/warm start with a real desktop, mode transitions,
-  Flatpak registration path, and the packaged artifact's behaviour.
+- Unit-green in CI. Still unverified: cold/warm start with a real desktop, mode
+  transitions, Flatpak registration path, and the packaged artifact's behaviour.
 
 ## Native modules / installers
 
-### N-01 Native .node/.so in packaged app — SUSPECTED
+### N-01 Native .node/.so in packaged app — PARTIAL (presence verified, loadability pending)
 - Binary modules exist (fomod-installer-native, drivelist, leveldown,
-  winapi-bindings, xxhash-addon, @parcel/watcher). Their presence in the lockfile
-  does not prove loadability/function inside a packaged Linux Electron.
-- Test: packaged Electron smoke that actually loads and calls each module.
+  winapi-bindings, xxhash-addon, @parcel/watcher, @duckdb/node-api).
+- Presence verified in the zip payload (run 34167843426) as linux-x64 ELF
+  `.node` files (`winapi-bindings/.../winapi.node` etc). Loadability/function
+  inside a packaged Linux Electron still needs a packaged smoke.
 
 ### N-02 FOMOD — SUSPECTED
 - Native + IPC implementations exist. Actual XML conditions, optional choices,
@@ -132,10 +149,11 @@ Findings below were re-checked against base `9c641bd78f7f551df3645a0f5b2bf08fe65
 - Path forward: link against system `libloot` (Debian `libloot-dev`) via a
   vendor patch/autogypi binding, or vendor a built Linux `libloot`.
 
-### I-01 BSA/BA2 / gamebryo-archive-support — FIXED (verification pending)
+### I-01 BSA/BA2 / gamebryo-archive-support — FIXED (unit-verified, runtime pending)
 - 0009 (ported 71e15aad4) enables `gamebryo-archive-support` off-Windows and
   adds portable extraction path resolution (BSA/BA2 plugin). Unit coverage in
-  `archivePath.test.ts`. Packaged verification pending.
+  `archivePath.test.ts`, green in CI (run 34167843426). Runtime verification
+  with a real archive still pending.
 
 ## Flatpak
 

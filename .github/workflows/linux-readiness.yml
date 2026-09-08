@@ -208,7 +208,7 @@ jobs:
             "upstream_base_sha": "9c641bd78f7f551df3645a0f5b2bf08fe656e78f",
             "runner_os": "${{ runner.os }}",
             "runner_arch": "${{ runner.arch }}",
-            "runner_image": "${{ runner.image }}",
+            "runner_image": "ubuntu-24.04",
             "node": "24.17.0",
             "pnpm": "11.10.0",
             "ci_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

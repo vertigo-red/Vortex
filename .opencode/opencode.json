@@ -1,0 +1,26 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "read": "allow",
+    "edit": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow",
+    "lsp": "allow",
+    "skill": "allow",
+    "task": "allow",
+    "todowrite": "allow",
+    "question": "allow",
+    "webfetch": "allow",
+    "websearch": "allow",
+    "doom_loop": "deny",
+    "bash": "allow",
+    "external_directory": {
+      "*": "deny",
+      "C:/Users/vertigo.red/Documents/Vortex": "allow",
+      "C:/Users/vertigo.red/Documents/Vortex/**": "allow",
+      "C:/Users/vertigo.red/AppData/Local/Temp/vortex-linux-20260907-w1": "allow",
+      "C:/Users/vertigo.red/AppData/Local/Temp/vortex-linux-20260907-w1/**": "allow"
+    }
+  }
+}

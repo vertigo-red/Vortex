@@ -1,8 +1,0 @@
-Linux artifact packaging gate.
-
-The `.github/workflows/linux-readiness.yml` `package` job runs while this file
-exists in the tree. Delete this file in a commit to disable packaging for all
-pushes (manual `workflow_dispatch` still packages).
-
-Kept committed while the port produces artifacts; removed once the package job
-is stable to avoid paying the packaging cost on every port push.
