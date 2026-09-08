@@ -71,6 +71,9 @@ Additional fixes landed on the branch (not in the fork):
 | homepage fix | 34167843426 | SUCCESS (full) | verify + package green: zip (251 MB) + rpm (164 MB) + SHA256SUMS + build-metadata.json; artifact saved to T\artifacts\vortex-linux-d3be75403 |
 | marker removed, docs | 34189211483 | SUCCESS (verify) | verify-only run on f71b7144b; package steps skipped (monitoring) |
 | final docs (c3e2e4776) | 34189875767 | SUCCESS (verify) | final HEAD verify green; no open CI concern |
+| boot smoke, deb, win-regr | 34216983888 | FAIL | apt libasound2 (virtual pkg) on 24.04; WINEPREFIX backslash on Windows (caught by new verify-windows) |
+| WINEPREFIX fix | 34218309860 | SUCCESS (full) | verify + verify-windows + package green; Boot smoke + deb added |
+| AppImage + screenshot | 34220720010 | SUCCESS (full) | zip/rpm/deb/AppImage all built; Boot smoke OK with PNG; package only (marker again removed afterward) |
 
 ## Current state
 

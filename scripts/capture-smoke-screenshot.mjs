@@ -21,39 +21,50 @@ if (page == null) {
 }
 
 const ws = new WebSocket(page.webSocketDebuggerUrl);
-await Promise.race([new Promise((res, rej) => {
-  ws.addEventListener("open", res, { once: true });
-  ws.addEventListener("error", rej, { once: true });
-}), timeout(15000)]);
+await Promise.race([
+  new Promise((res, rej) => {
+    ws.addEventListener("open", res, { once: true });
+    ws.addEventListener("error", rej, { once: true });
+  }),
+  timeout(15000),
+]);
 
-const result = await Promise.race([
+let msgId = 0;
+const pending = new Map();
+const once = (type) =>
   new Promise((resolve, reject) => {
-    let resolved = false;
-    ws.addEventListener("message", (event) => {
+    ws.addEventListener("message", function handler(event) {
       const msg = JSON.parse(String(event.data));
-      if (msg.id === 2 && !resolved) {
-        resolved = true;
-        resolve(msg.result);
+      if (msg.id === type && msg.id != null) {
+        ws.removeEventListener("message", handler);
+        resolve(msg);
       }
     });
     ws.addEventListener("error", reject, { once: true });
-    ws.send(JSON.stringify({ id: 1, method: "Page.enable" }));
-    ws.send(JSON.stringify({
-      id: 2,
-      method: "Page.captureScreenshot",
-      params: { format: "png", captureBeyondViewport: true },
-    }));
-  }),
-  timeout(30000),
-]);
+  });
+
+// Step 1: Page.enable
+const enableP = once(1);
+ws.send(JSON.stringify({ id: 1, method: "Page.enable" }));
+await Promise.race([enableP, timeout(15000)]);
+
+// Step 2: wait for a moment for first paint, then captureScreenshot.
+const capP = once(2);
+await new Promise((r) => setTimeout(r, 1500));
+ws.send(JSON.stringify({
+  id: 2,
+  method: "Page.captureScreenshot",
+  params: { format: "png", captureBeyondViewport: true },
+}));
+const cap = await Promise.race([capP, timeout(30000)]);
 
 ws.close();
 
-if (result?.data == null) {
+if (cap?.result?.data == null) {
   console.error("no screenshot data");
   process.exit(3);
 }
 
 const { writeFileSync } = await import("node:fs");
-writeFileSync(out, Buffer.from(result.data, "base64"));
+writeFileSync(out, Buffer.from(cap.result.data, "base64"));
 console.log(`screenshot saved: ${out}`);
