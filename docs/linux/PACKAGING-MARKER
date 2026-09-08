@@ -1,3 +1,0 @@
-Temporary marker: present while Linux CI artifacts are wanted.
-The `package` job's heavy steps run only while this file exists
-(or with workflow_dispatch). Delete it once artifacts are no longer needed.
