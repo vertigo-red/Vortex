@@ -43,7 +43,7 @@ Linux-артефакт». Отчёт честный: зелёное — толь
 | 34163391340 | verify базы (исходный upstream source) | verify SUCCESS; package FAIL (EEXIST → B-03) |
 | 34165291581 | verify порта | verify SUCCESS (все перенесённые тесты) |
 | 34167843426 | **полный прогон порта** | **SUCCESS** — verify + package + проверки + артефакты |
-| 34189211483 | verify после снятия маркера | in_progress (ожидается SUCCESS) |
+| 34189211483 | verify после снятия маркера (f71b7144b) | SUCCESS |
 
 ## Артефакт
 
