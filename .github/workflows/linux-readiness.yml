@@ -284,7 +284,7 @@ jobs:
           DESKTOP=$(ls squashfs-root/*.desktop | head -n1)
           echo "--- embedded .desktop ---"
           cat "$DESKTOP"
-          grep -Eq '^Exec=.*vortex' "$DESKTOP"
+          grep -Eq '^Exec=AppRun' "$DESKTOP"
           ICON=$(find squashfs-root -maxdepth 2 -iname '*.png' | head -n1)
           test -n "$ICON"
           echo "embedded icon: $ICON"
