@@ -33,9 +33,13 @@ export function getCompatDataPath(steamAppsPath: string, appId: string): string 
 
 /**
  * Get the Wine prefix path within compatdata
+ *
+ * This value is handed to Wine/Proton as an environment variable, so it must
+ * use forward slashes on every host (path.posix also keeps the test matrix
+ * stable on Windows runners, where path.join would emit backslashes).
  */
 export function getWinePrefixPath(compatDataPath: string): string {
-  return path.join(compatDataPath, "pfx");
+  return path.posix.join(compatDataPath, "pfx");
 }
 
 /**

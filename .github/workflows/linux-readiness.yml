@@ -51,7 +51,7 @@ jobs:
       - name: Install native build dependencies
         # fontconfig/libarchive are build-time; the GUI/runtime set is what a
         # packaged Electron needs to actually start (used by the boot smoke).
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev rpm libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 libgl1 libgtk-3-0 xvfb
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev rpm libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0 libcairo2 libgl1 libgtk-3-0 xvfb
 
       - name: Cache native module builds
         uses: actions/cache@v6
@@ -145,7 +145,7 @@ jobs:
       - name: Install native build dependencies
         # fontconfig/libarchive are build-time; the GUI/runtime set is what a
         # packaged Electron needs to actually start (used by the boot smoke).
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev rpm libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 libgl1 libgtk-3-0 xvfb
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev rpm libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0 libcairo2 libgl1 libgtk-3-0 xvfb
 
       - name: Cache native module builds
         uses: actions/cache@v6
