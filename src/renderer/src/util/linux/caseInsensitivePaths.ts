@@ -3,7 +3,7 @@ import * as path from "node:path";
 
 /** Resolve Windows mod paths without renaming the game or the staging directory. */
 export class CaseInsensitivePathResolver {
-  private directories = new Map<string, Promise<Map<string, string>>>();
+  private directories = new Map<string, Promise<Map<string, string[]>>>();
   constructor(private root: string) {}
 
   public async resolve(relativePath: string): Promise<string> {
@@ -26,14 +26,22 @@ export class CaseInsensitivePathResolver {
       }
       const entries = await pending;
       const key = part.toLowerCase();
+      let candidates = entries.get(key);
       // Reserve new names before any await so concurrent files share one spelling.
-      if (!entries.has(key)) entries.set(key, part);
-      resolved.push(entries.get(key)!);
+      if (candidates === undefined) {
+        candidates = [part];
+        entries.set(key, candidates);
+      } else if (candidates.length > 1) {
+        throw new Error(
+          `Ambiguous Windows file names in "${parent}": ${candidates.map((name) => `"${name}"`).join(", ")}`,
+        );
+      }
+      resolved.push(candidates[0]);
     }
     return path.join(...resolved);
   }
 
-  private async readDirectory(directory: string): Promise<Map<string, string>> {
+  private async readDirectory(directory: string): Promise<Map<string, string[]>> {
     let names: string[];
     try {
       names = await fs.readdir(directory);
@@ -41,15 +49,15 @@ export class CaseInsensitivePathResolver {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") return new Map();
       throw err;
     }
-    const entries = new Map<string, string>();
+    const entries = new Map<string, string[]>();
     for (const name of names) {
       const key = name.toLowerCase();
-      if (entries.has(key) && entries.get(key) !== name) {
-        throw new Error(
-          `Ambiguous Windows file names in "${directory}": "${entries.get(key)}" and "${name}"`,
-        );
+      const candidates = entries.get(key);
+      if (candidates === undefined) {
+        entries.set(key, [name]);
+      } else {
+        candidates.push(name);
       }
-      entries.set(key, name);
     }
     return entries;
   }

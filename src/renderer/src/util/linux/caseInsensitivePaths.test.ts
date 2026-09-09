@@ -37,13 +37,24 @@ describe("Windows mod paths on Linux", () => {
     expect(await resolver.resolve("FILE.INI")).toBe("File.ini");
   });
   it.runIf(process.platform === "linux")(
-    "rejects ambiguous names before overwriting either file",
+    "ignores unrelated case collisions",
+    async () => {
+      await fs.writeFile(path.join(root, "Other"), "one");
+      await fs.writeFile(path.join(root, "other"), "two");
+      await fs.writeFile(path.join(root, "Game.exe"), "game");
+      expect(await new CaseInsensitivePathResolver(root).resolve("GAME.EXE")).toBe("Game.exe");
+    },
+  );
+  it.runIf(process.platform === "linux")(
+    "rejects ambiguity only for the requested component before overwriting either file",
     async () => {
       await fs.writeFile(path.join(root, "File.ini"), "one");
       await fs.writeFile(path.join(root, "file.ini"), "two");
       await expect(new CaseInsensitivePathResolver(root).resolve("FILE.INI")).rejects.toThrow(
         "Ambiguous",
       );
+      expect(await fs.readFile(path.join(root, "File.ini"), "utf8")).toBe("one");
+      expect(await fs.readFile(path.join(root, "file.ini"), "utf8")).toBe("two");
     },
   );
   it.each(["../outside", "Data/../../outside", "/absolute", "C:\\outside", "\\\\server\\share"])(
