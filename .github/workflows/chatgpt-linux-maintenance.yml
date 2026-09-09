@@ -1,0 +1,14 @@
+name: ChatGPT Linux one-shot maintenance retired
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retired:
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo retired
