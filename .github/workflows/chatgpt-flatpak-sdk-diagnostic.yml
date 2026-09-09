@@ -25,13 +25,42 @@ jobs:
         run: |
           set -euxo pipefail
           flatpak run --user --command=sh org.freedesktop.Sdk//25.08 -c '
-            echo === node24 bin ===
-            ls -la /usr/lib/sdk/node24/bin || true
-            echo === versions ===
-            /usr/lib/sdk/node24/bin/node --version
-            /usr/lib/sdk/node24/bin/npm --version || true
-            /usr/lib/sdk/node24/bin/corepack --version || true
-            /usr/lib/sdk/node24/bin/pnpm --version || true
-            echo === files ===
-            find /usr/lib/sdk/node24 -maxdepth 3 -iname "*pnpm*" -o -iname "*corepack*" | head -n 100
+            export PATH=/usr/lib/sdk/node24/bin:$PATH
+            node --version
+            npm --version
+            corepack --version
+            command -v pnpm || true
           '
+      - name: Test pnpm npm tarball as standalone CLI
+        run: |
+          set -euxo pipefail
+          curl -fsSL https://registry.npmjs.org/pnpm/-/pnpm-11.10.0.tgz -o "$PWD/pnpm-11.10.0.tgz"
+          rm -rf "$PWD/.diag-pnpm"
+          mkdir "$PWD/.diag-pnpm"
+          tar -xzf "$PWD/pnpm-11.10.0.tgz" -C "$PWD/.diag-pnpm"
+          flatpak run --user --filesystem="$PWD" --command=sh org.freedesktop.Sdk//25.08 -c '
+            export PATH=/usr/lib/sdk/node24/bin:$PATH
+            node "$PWD/.diag-pnpm/package/bin/pnpm.mjs" --version
+          '
+      - name: Test Corepack pack/cache-only offline workflow
+        run: |
+          set -euxo pipefail
+          rm -f "$PWD/corepack-pnpm-11.10.0.tgz"
+          rm -rf "$PWD/.diag-corepack-online" "$PWD/.diag-corepack-offline"
+          flatpak run --user --share=network --filesystem="$PWD" --command=sh org.freedesktop.Sdk//25.08 -c '
+            export PATH=/usr/lib/sdk/node24/bin:$PATH
+            export COREPACK_HOME="$PWD/.diag-corepack-online"
+            corepack pack pnpm@11.10.0 -o "$PWD/corepack-pnpm-11.10.0.tgz"
+            tar -tzf "$PWD/corepack-pnpm-11.10.0.tgz" | head -n 30
+          '
+          flatpak run --user --unshare=network --filesystem="$PWD" --command=sh org.freedesktop.Sdk//25.08 -c '
+            export PATH=/usr/lib/sdk/node24/bin:$PATH
+            export COREPACK_HOME="$PWD/.diag-corepack-offline"
+            export COREPACK_ENABLE_NETWORK=0
+            corepack install -g --cache-only "$PWD/corepack-pnpm-11.10.0.tgz"
+            corepack pnpm@11.10.0 --version
+          '
+      - name: Show archive hashes and sizes
+        run: |
+          sha256sum pnpm-11.10.0.tgz corepack-pnpm-11.10.0.tgz
+          du -h pnpm-11.10.0.tgz corepack-pnpm-11.10.0.tgz
