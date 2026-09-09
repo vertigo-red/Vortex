@@ -23,7 +23,9 @@ jobs:
         with:
           python-version: '3.11'
       - name: Apply pnpm migration
-        run: python scripts/chatgpt-flatpak-pnpm-migrate.py
+        run: |
+          python scripts/chatgpt-flatpak-pnpm-migrate.py
+          python scripts/chatgpt-flatpak-pnpm-multidoc.py
       - name: Generate Flatpak pnpm sources
         run: python flatpak/scripts/flatpak_sources.py --only pnpm --force
       - name: Verify migration
@@ -39,8 +41,10 @@ jobs:
           assert len(data) > 100, len(data)
           print('generated source entries:', len(data))
           PY
-          grep -RInE 'pnpm-lock.yaml|flatpak-pnpm|pnpm-store|electron-node-headers' flatpak/scripts flatpak/com.nexusmods.vortex.yaml flatpak/generated-sources.json | head -n 80
+          grep -RInE 'pnpm-lock.yaml|flatpak-pnpm|pnpm-store|electron-node-headers|multi-document' flatpak/scripts flatpak/com.nexusmods.vortex.yaml flatpak/generated-sources.json | head -n 80
           ! grep -RIn 'yarn.lock' flatpak/scripts flatpak/com.nexusmods.vortex.yaml
+          test ! -e flatpak/yarnrc
+          test ! -e flatpak/scripts/_flatpak_yarn_hash.py
       - name: Commit migration
         run: |
           git config user.name "github-actions[bot]"
@@ -52,7 +56,8 @@ jobs:
                   flatpak/scripts/_flatpak_workflow.py \
                   flatpak/com.nexusmods.vortex.yaml \
                   flatpak/generated-sources.json \
-                  flatpak/generated-sources.hash
+                  flatpak/generated-sources.hash \
+                  flatpak/yarnrc
           git diff --cached --check
           git commit -m "fix(flatpak): migrate offline build inputs to pnpm"
           git push origin HEAD:${GITHUB_REF_NAME}
