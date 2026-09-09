@@ -1,4 +1,4 @@
-name: ChatGPT Linux P0 deployment patch
+name: ChatGPT Linux P0 deployment follow-up
 
 on:
   push:
@@ -18,30 +18,27 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Apply guarded deployment containment patch
-        run: python scripts/chatgpt-linux-p0-deployment.py
+      - name: Apply final filesystem containment patch
+        run: python scripts/chatgpt-linux-p0-followup.py
       - name: Verify patch shape
         run: |
           git diff --check
           git diff --stat
-          grep -RInE 'assertPathMutation|assertDataMutation|SafePathBoundary' \
-            src/renderer/src/extensions/mod_management \
-            src/renderer/src/extensions/hardlink_activator \
-            src/renderer/src/extensions/move_activator \
-            src/renderer/src/extensions/symlink_activator \
-            src/renderer/src/extensions/symlink_activator_elevate \
-            src/shared/src/safePath.ts | head -n 160
-      - name: Commit deployment containment
+          grep -RInE 'SafePathBoundary|securityRoot|assertMutation' \
+            src/renderer/src/extensions/mod_management/LinkingDeployment.ts \
+            src/renderer/src/extensions/mod_management/util/externalChanges.ts \
+            src/renderer/src/extensions/mod_management/util/activationStore.ts \
+            src/renderer/src/extensions/mod_management/util/*Paths.test.ts | head -n 200
+      - name: Commit final containment fixes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/shared/src/safePath.ts \
-                  src/renderer/src/extensions/mod_management/LinkingDeployment.ts \
+          git add src/renderer/src/extensions/mod_management/LinkingDeployment.ts \
                   src/renderer/src/extensions/mod_management/LinkingDeployment.test.ts \
-                  src/renderer/src/extensions/hardlink_activator/index.ts \
-                  src/renderer/src/extensions/move_activator/index.ts \
-                  src/renderer/src/extensions/symlink_activator/index.ts \
-                  src/renderer/src/extensions/symlink_activator_elevate/index.ts
+                  src/renderer/src/extensions/mod_management/util/externalChanges.ts \
+                  src/renderer/src/extensions/mod_management/util/externalChangesPaths.test.ts \
+                  src/renderer/src/extensions/mod_management/util/activationStore.ts \
+                  src/renderer/src/extensions/mod_management/util/activationStorePaths.test.ts
           git diff --cached --check
-          git commit -m "fix(linux): enforce containment at deployment mutations"
+          git commit -m "fix(linux): close remaining filesystem mutation escapes"
           git push origin HEAD:${GITHUB_REF_NAME}
