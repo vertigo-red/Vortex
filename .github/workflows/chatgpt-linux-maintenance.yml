@@ -1,0 +1,49 @@
+name: ChatGPT Linux one-shot maintenance
+
+on:
+  push:
+    branches:
+      - linux/native-readiness-chatgpt-sol56-20260909
+    paths:
+      - .github/chatgpt-linux-maintenance-request
+
+permissions:
+  contents: write
+
+jobs:
+  maintain:
+    if: github.actor == 'vertigo-red'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge current upstream master without rewriting history
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/Nexus-Mods/Vortex.git
+          git fetch --no-tags upstream master
+          upstream_sha="$(git rev-parse FETCH_HEAD)"
+          echo "upstream_sha=${upstream_sha}"
+
+          if git merge-base --is-ancestor FETCH_HEAD HEAD; then
+            echo "Upstream is already merged"
+            exit 0
+          fi
+
+          if ! git merge --no-ff --no-edit FETCH_HEAD; then
+            echo "Merge conflicts:"
+            git diff --name-only --diff-filter=U
+            git merge --abort
+            exit 1
+          fi
+
+          # GitHub Actions' GITHUB_TOKEN has contents:write but not workflows:write.
+          # Preserve the branch's workflow files in this merge commit so the push is accepted.
+          # Upstream workflow deltas can be synced separately through the GitHub API.
+          first_parent="$(git rev-parse HEAD^1)"
+          git checkout "${first_parent}" -- .github/workflows
+          git commit --amend --no-edit
+          git diff-tree --check HEAD
+          git push origin HEAD:${GITHUB_REF_NAME}
