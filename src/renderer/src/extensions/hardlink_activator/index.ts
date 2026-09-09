@@ -17,6 +17,7 @@ import { installPathForGame } from "../../util/selectors";
 import type { IDiscoveryResult } from "../gamemode_management/types/IDiscoveryResult";
 import { getGame } from "../gamemode_management/util/getGame";
 import LinkingDeployment from "../mod_management/LinkingDeployment";
+import { probeHardlinkSupport } from "./hardlinkSupport";
 import type {
   IDeployedFile,
   IDeploymentMethod,
@@ -157,50 +158,32 @@ class DeploymentMethod extends LinkingDeployment {
       };
     }
 
-    const canary = path.join(installationPath, "__vortex_canary.tmp");
-
-    let res: IUnavailableReason;
-
-    try {
-      try {
-        fs.removeSync(canary + ".link");
-      } catch {
-        // nop
-      }
-      fs.writeFileSync(canary, "Should only exist temporarily, feel free to delete");
-      fs.linkSync(canary, canary + ".link");
-    } catch (err) {
-      // EMFILE shouldn't keep us from using hard linking
-      const code = getErrorCode(err);
-      if (code !== "EMFILE") {
-        // the error code we're actually getting is EISDIR, which makes no sense at all
-        res = {
-          description: (t) => t("Filesystem doesn't support hard links."),
-        };
-      }
-    }
-
-    try {
-      fs.removeSync(canary + ".link");
-      fs.removeSync(canary);
-    } catch {
-      // cleanup failed, this is almost certainly due to an AV jumping in to check these new files,
-      // I mean, why would I be able to create the files but not delete them?
-      // just try again later - can't do that synchronously though
+    const probe = probeHardlinkSupport(installationPath, modPaths[typeId]);
+    for (const cleanupPath of probe.cleanupFailures) {
       PromiseBB.delay(100)
-        .then(() => fs.removeAsync(canary + ".link"))
-        .then(() => fs.removeAsync(canary))
+        .then(() => fs.removeAsync(cleanupPath))
         .catch((err) => {
-          log(
-            "error",
-            "failed to clean up canary file. This indicates we were able to create " +
-              "a file in the target directory but not delete it",
-            { installationPath, message: getErrorMessageOrDefault(err) },
-          );
+          log("warn", "failed to clean up hardlink capability probe", {
+            path: cleanupPath,
+            message: getErrorMessageOrDefault(err),
+          });
         });
     }
 
-    return res;
+    if (!probe.supported) {
+      log("info", "hardlink deployment not supported for staging/game path pair", {
+        installationPath,
+        dataPath: modPaths[typeId],
+        errorCode: probe.errorCode,
+      });
+      return {
+        description: (t) =>
+          t("Hard links cannot be created between the mod staging folder and game directory."),
+        order: 5,
+      };
+    }
+
+    return undefined;
   }
 
   public finalize(
