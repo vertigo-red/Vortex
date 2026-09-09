@@ -1,0 +1,53 @@
+name: ChatGPT Linux one-shot maintenance
+
+on:
+  push:
+    branches:
+      - linux/native-readiness-chatgpt-sol56-20260909
+    paths:
+      - .github/chatgpt-linux-maintenance-request
+
+permissions:
+  contents: write
+
+jobs:
+  maintain:
+    if: github.actor == 'vertigo-red'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tighten stored-game validation error handling
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path("src/renderer/src/extensions/gamemode_management/index.ts")
+          text = p.read_text()
+          old = '''        .catch((err) => {\n          const code = getErrorCode(err);\n          if (code === "ENOENT") {\n            return PromiseBB.reject(err);\n          }\n          // if we can't stat the game directory for any other reason than it being missing\n          // (almost certainly permission error) we just assume the game is installed and\n          // can be launched through the store because that's how it works with the xbox store\n          // and we have to support that.\n          return PromiseBB.resolve();\n        })'''
+          new = '''        .catch((err) => {\n          const code = getErrorCode(err);\n          // Some launcher-owned installs cannot be read directly. Preserve that exception,\n          // but do not turn missing, ambiguous, or invalid Windows paths into valid games.\n          if (code === "EACCES" || code === "EPERM") {\n            return PromiseBB.resolve();\n          }\n          return PromiseBB.reject(err);\n        })'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"stored game catch: expected exactly one match, got {count}")
+          p.write_text(text.replace(old, new, 1))
+      - name: Commit validation fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/renderer/src/extensions/gamemode_management/index.ts
+          git diff --cached --check
+          git commit -m "fix(linux): preserve game path validation failures"
+          git push origin HEAD:${GITHUB_REF_NAME}
+      - name: Merge current upstream master without rewriting history
+        run: |
+          git remote add upstream https://github.com/Nexus-Mods/Vortex.git
+          git fetch --no-tags upstream master
+          upstream_sha="$(git rev-parse FETCH_HEAD)"
+          echo "upstream_sha=${upstream_sha}"
+          if ! git merge --no-ff --no-edit FETCH_HEAD; then
+            echo "Merge conflicts:"
+            git diff --name-only --diff-filter=U
+            git merge --abort
+            exit 1
+          fi
+          git push origin HEAD:${GITHUB_REF_NAME}
