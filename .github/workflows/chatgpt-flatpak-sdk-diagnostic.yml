@@ -1,0 +1,37 @@
+name: ChatGPT Flatpak Node SDK diagnostic
+
+on:
+  push:
+    branches:
+      - linux/native-readiness-chatgpt-sol56-20260909
+    paths:
+      - .github/chatgpt-flatpak-sdk-request
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Flatpak tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.freedesktop.Sdk//25.08 org.freedesktop.Sdk.Extension.node24//25.08
+      - name: Inspect Node24 SDK extension
+        run: |
+          set -euxo pipefail
+          flatpak run --user --command=sh org.freedesktop.Sdk//25.08 -c '
+            echo === node24 bin ===
+            ls -la /usr/lib/sdk/node24/bin || true
+            echo === versions ===
+            /usr/lib/sdk/node24/bin/node --version
+            /usr/lib/sdk/node24/bin/npm --version || true
+            /usr/lib/sdk/node24/bin/corepack --version || true
+            /usr/lib/sdk/node24/bin/pnpm --version || true
+            echo === files ===
+            find /usr/lib/sdk/node24 -maxdepth 3 -iname "*pnpm*" -o -iname "*corepack*" | head -n 100
+          '
