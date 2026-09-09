@@ -518,14 +518,12 @@ function removeDisappearedGames(
         .then(() => assertRequiredFiles(stored?.requiredFiles, gameId))
         .catch((err) => {
           const code = getErrorCode(err);
-          if (code === "ENOENT") {
-            return PromiseBB.reject(err);
+          // Some launcher-owned installs cannot be read directly. Preserve that exception,
+          // but do not turn missing, ambiguous, or invalid Windows paths into valid games.
+          if (code === "EACCES" || code === "EPERM") {
+            return PromiseBB.resolve();
           }
-          // if we can't stat the game directory for any other reason than it being missing
-          // (almost certainly permission error) we just assume the game is installed and
-          // can be launched through the store because that's how it works with the xbox store
-          // and we have to support that.
-          return PromiseBB.resolve();
+          return PromiseBB.reject(err);
         })
         .catch((err) => {
           const gameName = stored?.name ?? discovered[gameId].name;
