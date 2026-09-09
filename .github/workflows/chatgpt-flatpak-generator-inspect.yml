@@ -1,0 +1,54 @@
+name: ChatGPT Flatpak generator inspect
+
+on:
+  push:
+    branches:
+      - linux/native-readiness-chatgpt-sol56-20260909
+    paths:
+      - .github/chatgpt-flatpak-generator-inspect-request
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Install pinned generator
+        env:
+          PYTHONPATH: flatpak/scripts
+        run: |
+          python - <<'PY'
+          from _flatpak_env import ensure_venv
+          info = ensure_venv(install_packages=True)
+          print(info)
+          PY
+      - name: Inspect installed package
+        run: |
+          set -euxo pipefail
+          flatpak/.venv-flatpak/bin/pip show flatpak-node-generator || true
+          flatpak/.venv-flatpak/bin/pip freeze | grep -i flatpak || true
+          flatpak/.venv-flatpak/bin/python - <<'PY'
+          import flatpak_node_generator
+          import flatpak_node_generator.providers as providers
+          import pkgutil, pathlib
+          print('package=', flatpak_node_generator.__file__)
+          print('providers=', providers.__file__)
+          print('modules=', sorted(m.name for m in pkgutil.iter_modules(providers.__path__)))
+          root = pathlib.Path(providers.__file__).parent
+          for p in sorted(root.glob('*.py')):
+              print('FILE', p.name, p.stat().st_size)
+              if 'duckdb' in p.read_text(errors='ignore').lower():
+                  print('DUCKDB-MATCH', p.name)
+          try:
+              import flatpak_node_generator.providers.duckdb as duckdb
+              import inspect
+              print('duckdb module=', duckdb.__file__)
+              print(inspect.getsource(duckdb))
+          except Exception as exc:
+              print('duckdb import failed:', repr(exc))
+          PY
