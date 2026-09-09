@@ -152,15 +152,16 @@ class DeploymendMethod extends LinkingDeployment {
   }
 
   protected linkFile(linkPath: string, sourcePath: string, dirTags?: boolean): Promise<void> {
-    return this.ensureDir(path.dirname(linkPath), dirTags).then(() =>
-      fs
-        .symlinkAsync(sourcePath, linkPath)
-        .catch((err) =>
-          err.code !== "EEXIST"
-            ? Promise.reject(err)
-            : fs.removeAsync(linkPath).then(() => fs.symlinkAsync(sourcePath, linkPath)),
-        ),
-    );
+    return this.assertDataMutation(linkPath, true)
+      .then(() => fs.symlinkAsync(sourcePath, linkPath))
+      .catch((err) =>
+        err.code !== "EEXIST"
+          ? Promise.reject(err)
+          : this.assertDataMutation(linkPath, true)
+              .then(() => fs.removeAsync(linkPath))
+              .then(() => this.assertDataMutation(linkPath, true))
+              .then(() => fs.symlinkAsync(sourcePath, linkPath)),
+      );
   }
 
   protected unlinkFile(linkPath: string): Promise<void> {
@@ -190,7 +191,8 @@ class DeploymendMethod extends LinkingDeployment {
         .then((symlinkPath) => {
           const relPath = path.relative(installPath, symlinkPath);
           if (!relPath.startsWith("..") && !path.isAbsolute(relPath)) {
-            return fs.unlinkAsync(iterPath, { showDialogCallback });
+            return this.assertPathMutation(dataPath, iterPath, true)
+              .then(() => fs.unlinkAsync(iterPath, { showDialogCallback }));
           }
         })
         .catch((err) => {

@@ -99,12 +99,13 @@ export class SafePathBoundary {
   }
 
   /** Create a directory tree one component at a time while checking every raced entry. */
-  public async ensureDirectory(directory: string): Promise<void> {
+  public async ensureDirectory(directory: string): Promise<string[]> {
+    const created: string[] = [];
     const absoluteDirectory = this.assertLexical(directory);
     const relative = path.relative(this.root, absoluteDirectory);
     if (relative === "") {
       this.assertCanonical(await fs.realpath(this.root), this.root);
-      return;
+      return created;
     }
 
     let current = this.root;
@@ -118,6 +119,7 @@ export class SafePathBoundary {
         }
         try {
           await fs.mkdir(current);
+          created.push(current);
         } catch (mkdirErr) {
           if ((mkdirErr as NodeJS.ErrnoException).code !== "EEXIST") {
             throw mkdirErr;
@@ -134,6 +136,7 @@ export class SafePathBoundary {
         throw err;
       }
     }
+    return created;
   }
 
   private assertLexical(target: string): string {

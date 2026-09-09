@@ -275,27 +275,15 @@ class DeploymentMethod extends LinkingDeployment {
   }
 
   protected linkFile(linkPath: string, sourcePath: string, dirTags?: boolean): Promise<void> {
-    const dirName = path.dirname(linkPath);
-    return this.ensureDir(dirName, dirTags)
-      .then((created) =>
-        !created
-          ? // if the directory did exist, there is a chance the destination file already
-            // exists
-            fs
-              .removeAsync(linkPath)
-              .catch((err) =>
-                getErrorCode(err) === "ENOENT"
-                  ? Promise.resolve()
-                  : Promise.reject(unknownToError(err)),
-              )
-          : Promise.resolve(),
+    return this.assertDataMutation(linkPath, true)
+      .then(() => fs.removeAsync(linkPath))
+      .catch((err) =>
+        getErrorCode(err) === "ENOENT" ? Promise.resolve() : Promise.reject(unknownToError(err)),
       )
+      .then(() => this.assertDataMutation(linkPath, true))
       .then(() =>
         Promise.resolve(
-          this.emitOperation("link-file", {
-            source: sourcePath,
-            destination: linkPath,
-          }),
+          this.emitOperation("link-file", { source: sourcePath, destination: linkPath }),
         ),
       );
   }
@@ -321,7 +309,8 @@ class DeploymentMethod extends LinkingDeployment {
             .then((symlinkPath) =>
               path.relative(installPath, symlinkPath).startsWith("..")
                 ? PromiseBB.resolve()
-                : this.emitOperation("remove-link", { destination: iterPath }),
+                : this.assertPathMutation(dataPath, iterPath, true)
+                    .then(() => this.emitOperation("remove-link", { destination: iterPath })),
             )
             .catch((err) => {
               if (err.code === "ENOENT") {

@@ -260,8 +260,7 @@ class DeploymentMethod extends LinkingDeployment {
       // sanity check, don't link the links
       return Promise.resolve();
     }
-    const basePath = path.dirname(linkPath);
-    return this.ensureDir(basePath).then(() => this.createLink(sourcePath, linkPath));
+    return this.assertDataMutation(linkPath, true).then(() => this.createLink(sourcePath, linkPath));
   }
 
   protected unlinkFile(linkPath: string, sourcePath: string): PromiseBB<void> {
@@ -330,6 +329,7 @@ class DeploymentMethod extends LinkingDeployment {
       .catch({ code: "ENOENT" }, () =>
         fs.statAsync(sourcePath + LNK_EXT).then(() => this.restoreLink(sourcePath + LNK_EXT)),
       )
+      .then(() => this.assertInstallMutation(sourcePath + LNK_EXT, false))
       .then(() =>
         fs.writeFileAsync(sourcePath + LNK_EXT, linkInfo, {
           encoding: "utf-8",
@@ -344,16 +344,21 @@ class DeploymentMethod extends LinkingDeployment {
           fs.utimesAsync(sourcePath + LNK_EXT, stat.atime as any, stat.mtime as any),
         ),
       )
+      .then(() => this.assertInstallMutation(sourcePath, true))
+      .then(() => this.assertDataMutation(linkPath, true))
       .then(() => fs.renameAsync(sourcePath, linkPath));
   }
 
   private restoreLink(linkPath: string): PromiseBB<void> {
-    return fs.readFileAsync(linkPath, { encoding: "utf-8" }).then((data) => {
+    return PromiseBB.resolve(this.assertInstallRead(linkPath))
+      .then(() => fs.readFileAsync(linkPath, { encoding: "utf-8" }))
+      .then((data) => {
       try {
         const dat = JSON.parse(data);
         const outPath = linkPath.replace(this.mLnkExpression, "");
-        return fs
-          .renameAsync(dat.target, outPath)
+        return PromiseBB.resolve(this.assertDataMutation(dat.target, true))
+          .then(() => this.assertInstallMutation(outPath, true))
+          .then(() => fs.renameAsync(dat.target, outPath))
           .catch((err) =>
             err.code === "ENOENT"
               ? // file was deleted. Well, the user is the boss...
@@ -365,6 +370,7 @@ class DeploymentMethod extends LinkingDeployment {
                 ? fs.moveAsync(dat.target, outPath)
                 : PromiseBB.reject(err),
           )
+          .then(() => this.assertInstallMutation(linkPath, true))
           .then(() => fs.removeAsync(linkPath));
       } catch (err) {
         log("error", "invalid link", { linkPath, data });

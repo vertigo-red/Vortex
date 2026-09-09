@@ -277,8 +277,8 @@ class DeploymentMethod extends LinkingDeployment {
                 if (purged % 1000 === 0) {
                   onProgress?.(purged, total);
                 }
-                return fs
-                  .unlinkAsync(entry.filePath)
+                return PromiseBB.resolve(this.assertPathMutation(dataPath, entry.filePath, true))
+                  .then(() => fs.unlinkAsync(entry.filePath))
                   .catch((err) => log("warn", "failed to remove", entry.filePath));
               } else {
                 return PromiseBB.resolve();
@@ -286,18 +286,21 @@ class DeploymentMethod extends LinkingDeployment {
             }).then(() => undefined),
           );
         },
-        { details: true, skipHidden: false },
+        { details: true, skipHidden: false, skipLinks: process.platform === "linux" },
       ).then(() => queue);
     });
   }
 
   protected linkFile(linkPath: string, sourcePath: string, dirTags?: boolean): Promise<void> {
-    return this.ensureDir(path.dirname(linkPath), dirTags)
+    return this.assertDataMutation(linkPath, true)
       .then(() => fs.linkAsync(sourcePath, linkPath))
       .catch((err: unknown) =>
         getErrorCode(err) !== "EEXIST"
           ? Promise.reject(unknownToError(err))
-          : fs.removeAsync(linkPath).then(() => fs.linkAsync(sourcePath, linkPath)),
+          : this.assertDataMutation(linkPath, true)
+              .then(() => fs.removeAsync(linkPath))
+              .then(() => this.assertDataMutation(linkPath, true))
+              .then(() => fs.linkAsync(sourcePath, linkPath)),
       );
   }
 

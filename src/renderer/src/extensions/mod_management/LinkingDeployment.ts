@@ -1,6 +1,6 @@
 import * as path from "path";
 
-import { getErrorCode, getErrorMessageOrDefault } from "@vortex/shared";
+import { getErrorCode, getErrorMessageOrDefault, SafePathBoundary } from "@vortex/shared";
 import type { TFunction } from "i18next";
 import * as _ from "lodash";
 import type { IEntry } from "turbowalk";
@@ -86,6 +86,9 @@ abstract class LinkingActivator implements IDeploymentMethod {
   private mContext: IDeploymentContext;
   private mDirCache: Set<string>;
   private mPathResolver?: CaseInsensitivePathResolver;
+  private mDataPath?: string;
+  private mInstallationPath?: string;
+  private mSafeBoundaries = new Map<string, Promise<SafePathBoundary>>();
 
   constructor(
     id: string,
@@ -186,6 +189,8 @@ abstract class LinkingActivator implements IDeploymentMethod {
     }
 
     const context = this.mContext;
+    this.mDataPath = dataPath;
+    this.mInstallationPath = installationPath;
 
     let added: string[];
     let removed: string[];
@@ -355,6 +360,8 @@ abstract class LinkingActivator implements IDeploymentMethod {
         })
         .finally(() => {
           this.mDirCache = undefined;
+          this.mDataPath = undefined;
+          this.mInstallationPath = undefined;
         })
     );
   }
@@ -467,6 +474,8 @@ abstract class LinkingActivator implements IDeploymentMethod {
     }
     const game = getGame(gameId);
     const directoryCleaning = game.directoryCleaning || "tag";
+    this.mDataPath = dataPath;
+    this.mInstallationPath = installPath;
 
     // stat to ensure the target directory exists
     return Promise.resolve(
@@ -481,7 +490,10 @@ abstract class LinkingActivator implements IDeploymentMethod {
           }
           return Promise.reject(err);
         }),
-    );
+    ).finally(() => {
+      this.mDataPath = undefined;
+      this.mInstallationPath = undefined;
+    });
   }
 
   public postPurge(): PromiseLike<void> {
@@ -671,7 +683,81 @@ abstract class LinkingActivator implements IDeploymentMethod {
     return fs.lstatAsync(filePath);
   }
 
-  protected ensureDir(dirPath: string, dirTags?: boolean): Promise<boolean> {
+  private safeBoundary(root: string): Promise<SafePathBoundary> {
+    const key = path.resolve(root);
+    let pending = this.mSafeBoundaries.get(key);
+    if (pending === undefined) {
+      pending = SafePathBoundary.create(key);
+      this.mSafeBoundaries.set(key, pending);
+    }
+    return pending;
+  }
+
+  protected async assertPathMutation(
+    root: string,
+    target: string,
+    allowFinalSymlink: boolean = true,
+  ): Promise<void> {
+    if (process.platform !== "linux") return;
+    const boundary = await this.safeBoundary(root);
+    await boundary.assertMutation(target, { allowFinalSymlink });
+  }
+
+  protected async assertDataMutation(
+    target: string,
+    allowFinalSymlink: boolean = true,
+  ): Promise<void> {
+    if (process.platform !== "linux") return;
+    if (this.mDataPath === undefined) throw new Error("Deployment data root is not initialized");
+    await this.assertPathMutation(this.mDataPath, target, allowFinalSymlink);
+  }
+
+  protected async assertInstallMutation(
+    target: string,
+    allowFinalSymlink: boolean = true,
+  ): Promise<void> {
+    if (process.platform !== "linux") return;
+    if (this.mInstallationPath === undefined) {
+      throw new Error("Deployment staging root is not initialized");
+    }
+    await this.assertPathMutation(this.mInstallationPath, target, allowFinalSymlink);
+  }
+
+  protected async assertInstallRead(target: string): Promise<void> {
+    if (process.platform !== "linux") return;
+    if (this.mInstallationPath === undefined) {
+      throw new Error("Deployment staging root is not initialized");
+    }
+    const boundary = await this.safeBoundary(this.mInstallationPath);
+    await boundary.assertRead(target);
+  }
+
+  protected ensureDir(
+    dirPath: string,
+    dirTags?: boolean,
+    rootPath?: string,
+  ): Promise<boolean> {
+    if (process.platform === "linux" && rootPath !== undefined) {
+      return this.safeBoundary(rootPath).then(async (boundary) => {
+        if (this.mDirCache !== undefined && this.mDirCache.has(dirPath)) return false;
+        const created = await boundary.ensureDirectory(dirPath);
+        if (this.mDirCache === undefined) this.mDirCache = new Set<string>();
+        this.mDirCache.add(dirPath);
+        if (dirTags !== false) {
+          for (const createdPath of created) {
+            const tagPath = path.join(createdPath, LinkingActivator.NEW_TAG_NAME);
+            await boundary.assertMutation(tagPath);
+            await fs.writeFileAsync(
+              tagPath,
+              "This directory was created by Vortex deployment and will be removed " +
+                "during purging if it's empty",
+            );
+          }
+        }
+        return created.length > 0;
+      });
+    }
+
     let didCreate = false;
     const onDirCreated = (createdPath: string) => {
       didCreate = true;
@@ -682,17 +768,13 @@ abstract class LinkingActivator implements IDeploymentMethod {
           "This directory was created by Vortex deployment and will be removed " +
             "during purging if it's empty",
         );
-      } else {
-        return Promise.resolve();
       }
+      return Promise.resolve();
     };
-
     return Promise.resolve(
       this.mDirCache === undefined || !this.mDirCache.has(dirPath)
         ? fs.ensureDirAsync(dirPath, onDirCreated).then(() => {
-            if (this.mDirCache === undefined) {
-              this.mDirCache = new Set<string>();
-            }
+            if (this.mDirCache === undefined) this.mDirCache = new Set<string>();
             this.mDirCache.add(dirPath);
           })
         : Promise.resolve(),
@@ -746,7 +828,8 @@ abstract class LinkingActivator implements IDeploymentMethod {
       this.mContext.previousDeployment[key].source,
       this.mContext.previousDeployment[key].relPath,
     );
-    return Promise.resolve(this.unlinkFile(outputPath, sourcePath))
+    return this.assertPathMutation(dataPath, outputPath, true)
+      .then(() => this.unlinkFile(outputPath, sourcePath))
       .catch((err: unknown) =>
         // duck-typing is unavoidable here: symlink_activator_elevate rejects
         // with deserialized IPC objects that are not Error instances, so
@@ -759,7 +842,10 @@ abstract class LinkingActivator implements IDeploymentMethod {
       )
       .then(() =>
         restoreBackup
-          ? fs.renameAsync(outputPath + BACKUP_TAG, outputPath).catch(() => undefined)
+          ? this.assertPathMutation(dataPath, outputPath + BACKUP_TAG, true)
+              .then(() => this.assertPathMutation(dataPath, outputPath, true))
+              .then(() => fs.renameAsync(outputPath + BACKUP_TAG, outputPath))
+              .catch(() => undefined)
           : Promise.resolve(),
       )
       .then(() => {
@@ -804,7 +890,9 @@ abstract class LinkingActivator implements IDeploymentMethod {
           .then((link) =>
             link
               ? Promise.resolve(undefined) // don't re-create link that's already correct
-              : fs.renameAsync(fullOutputPath, fullOutputPath + BACKUP_TAG),
+              : this.assertPathMutation(dataPath, fullOutputPath, true)
+                  .then(() => this.assertPathMutation(dataPath, fullOutputPath + BACKUP_TAG, true))
+                  .then(() => fs.renameAsync(fullOutputPath, fullOutputPath + BACKUP_TAG)),
           )
           .catch((err: unknown) =>
             getErrorCode(err) === "ENOENT"
@@ -816,6 +904,8 @@ abstract class LinkingActivator implements IDeploymentMethod {
           );
 
     return backupProm
+      .then(() => this.ensureDir(path.dirname(fullOutputPath), dirTags, dataPath))
+      .then(() => this.assertPathMutation(dataPath, fullOutputPath, true))
       .then(() => this.linkFile(fullOutputPath, fullPath, dirTags))
       .then(() => {
         this.mContext.previousDeployment[key] = this.mContext.newDeployment[key];
@@ -866,7 +956,7 @@ abstract class LinkingActivator implements IDeploymentMethod {
         (entries) => {
           allEntries = allEntries.concat(entries);
         },
-        { recurse: false, skipHidden: false, skipLinks: false },
+        { recurse: false, skipHidden: false, skipLinks: process.platform === "linux" },
       ),
     )
       .then(() => {
@@ -900,7 +990,7 @@ abstract class LinkingActivator implements IDeploymentMethod {
                 await Promise.all(
                   files
                     .filter((entry) => path.extname(entry.filePath) === BACKUP_TAG)
-                    .map((entry) => this.restoreBackup(entry.filePath)),
+                    .map((entry) => this.restoreBackup(entry.filePath, baseDir)),
                 );
               } catch (err) {
                 if (err instanceof UserCanceled) {
@@ -932,8 +1022,14 @@ abstract class LinkingActivator implements IDeploymentMethod {
         empty && doRemove
           ? fs
               .statAsync(path.join(baseDir, LinkingActivator.NEW_TAG_NAME))
-              .then(() => fs.unlinkAsync(path.join(baseDir, LinkingActivator.NEW_TAG_NAME)))
-              .catch(() => fs.unlinkAsync(path.join(baseDir, LinkingActivator.OLD_TAG_NAME)))
+              .then(() => {
+                const tag = path.join(baseDir, LinkingActivator.NEW_TAG_NAME);
+                return this.assertPathMutation(baseDir, tag, true).then(() => fs.unlinkAsync(tag));
+              })
+              .catch(() => {
+                const tag = path.join(baseDir, LinkingActivator.OLD_TAG_NAME);
+                return this.assertPathMutation(baseDir, tag, true).then(() => fs.unlinkAsync(tag));
+              })
               .catch((err: unknown) => {
                 const code = getErrorCode(err);
                 if (code === "ENOENT") {
@@ -942,7 +1038,9 @@ abstract class LinkingActivator implements IDeploymentMethod {
                 throw err;
               })
               .then(() =>
-                fs.rmdirAsync(baseDir).catch((err) => {
+                this.assertPathMutation(path.dirname(baseDir), baseDir, true)
+                  .then(() => fs.rmdirAsync(baseDir))
+                  .catch((err) => {
                   log("error", "failed to remove directory, it was supposed to be empty", {
                     error: getErrorMessageOrDefault(err),
                     path: baseDir,
@@ -954,11 +1052,12 @@ abstract class LinkingActivator implements IDeploymentMethod {
       );
   }
 
-  private restoreBackup(backupPath: string): Promise<void> {
+  private restoreBackup(backupPath: string, rootPath: string): Promise<void> {
     const targetPath = backupPath.substr(0, backupPath.length - BACKUP_TAG.length);
     return Promise.resolve(
-      fs
-        .renameAsync(backupPath, targetPath)
+      this.assertPathMutation(rootPath, backupPath, true)
+        .then(() => this.assertPathMutation(rootPath, targetPath, true))
+        .then(() => fs.renameAsync(backupPath, targetPath))
         // where has it gone? Oh well, doesn't matter. We wouldn't even be trying to restore
         // it if it had been removed a bit earlier
         .catch((err: unknown) => {
@@ -993,8 +1092,11 @@ abstract class LinkingActivator implements IDeploymentMethod {
               )
               .then((res) =>
                 res.action === "Restore Vortex Backup"
-                  ? fs.removeAsync(targetPath).then(() => this.restoreBackup(backupPath))
-                  : fs.removeAsync(backupPath),
+                  ? this.assertPathMutation(rootPath, targetPath, true)
+                      .then(() => fs.removeAsync(targetPath))
+                      .then(() => this.restoreBackup(backupPath, rootPath))
+                  : this.assertPathMutation(rootPath, backupPath, true)
+                      .then(() => fs.removeAsync(backupPath)),
               );
           }
           throw err;
@@ -1022,7 +1124,7 @@ abstract class LinkingActivator implements IDeploymentMethod {
               .then((res) =>
                 res.action === "Really cancel"
                   ? Promise.reject(err)
-                  : this.restoreBackup(backupPath),
+                  : this.restoreBackup(backupPath, rootPath),
               );
           }
           throw err;

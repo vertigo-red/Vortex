@@ -170,3 +170,33 @@ it.runIf(process.platform === "linux")(
     }
   },
 );
+
+
+it.runIf(process.platform === "linux")(
+  "blocks deployment removal through a nested symlink escape",
+  async () => {
+    const root = await nativeFs.mkdtemp(path.join(os.tmpdir(), "vortex-deploy-boundary-"));
+    try {
+      const data = path.join(root, "game");
+      const staging = path.join(root, "staging");
+      const outside = path.join(root, "outside");
+      await nativeFs.mkdir(data);
+      await nativeFs.mkdir(staging);
+      await nativeFs.mkdir(outside);
+      const sentinel = path.join(outside, "sentinel.txt");
+      await nativeFs.writeFile(sentinel, "outside");
+      await nativeFs.symlink(outside, path.join(data, "Escape"));
+
+      const { activator } = setup();
+      const before = [{ relPath: "Escape/sentinel.txt", source: "mod", time: 1 }];
+      await activator.prepare(data, true, before, (value) => value);
+      const manifest = await activator.finalize("game", data, staging);
+
+      expect(activator.unlinked).toEqual([]);
+      expect(manifest).toEqual(before);
+      expect(await nativeFs.readFile(sentinel, "utf8")).toBe("outside");
+    } finally {
+      await nativeFs.rm(root, { recursive: true, force: true });
+    }
+  },
+);
