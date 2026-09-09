@@ -1,14 +1,5 @@
 /**
  * Linux-specific nxm:// registration for Vortex.
- *
- * This aligns with NexusMods.App behaviour:
- * - use `xdg-settings` for default handler assignment
- * - update desktop MIME cache with `update-desktop-database` when desktop files change
- * - generate a local dev desktop entry that uses `--download %u` like other Vortex builds
- *
- * ref: https://github.com/Nexus-Mods/NexusMods.App/blob/main/src/NexusMods.Backend/OS/LinuxInterop.Protocol.cs
- * ref: https://github.com/Nexus-Mods/NexusMods.App/blob/main/src/NexusMods.Backend/RuntimeDependency/XDGSettingsDependency.cs
- * ref: https://github.com/Nexus-Mods/NexusMods.App/blob/main/src/NexusMods.Backend/RuntimeDependency/UpdateDesktopDatabaseDependency.cs
  */
 
 import * as path from "path";
@@ -25,25 +16,21 @@ import {
 import { escapeDesktopExecFilePath, escapeDesktopFilePath } from "./desktopFileEscaping";
 
 const NXM_PROTOCOL = "nxm";
-const PACKAGE_DESKTOP_ID = "com.nexusmods.vortex.desktop";
+const PACKAGE_DESKTOP_ID = "vortex.desktop";
+const FLATPAK_DESKTOP_ID = "com.nexusmods.vortex.desktop";
 const DEV_DESKTOP_ID = "com.nexusmods.vortex.dev.desktop";
 const DEV_WRAPPER_FILE_NAME = "com.nexusmods.vortex.dev.sh";
 const PORTABLE_DESKTOP_ID = "com.nexusmods.vortex.portable.desktop";
+const PORTABLE_WRAPPER_FILE_NAME = "com.nexusmods.vortex.portable.sh";
 
-/**
- * Required registration inputs for Linux `nxm` routing.
- * These values are resolved by the Linux route dispatcher before calling this module.
- */
+type BuildKind = "flatpak" | "development" | "appimage" | "package" | "portable";
+
 export interface ILinuxNxmProtocolRegistrationOptions {
   setAsDefault: boolean;
   executablePath: string;
   appPath: string;
 }
 
-/**
- * Register Vortex as the handler for nxm:// protocol on Linux.
- * See file-level comment above for implementation details.
- */
 export function registerLinuxNxmProtocolHandler(
   options: ILinuxNxmProtocolRegistrationOptions,
 ): boolean {
@@ -52,22 +39,37 @@ export function registerLinuxNxmProtocolHandler(
   }
 
   const applicationsDir = applicationsDirectory();
-  const desktopId = desktopIdForCurrentBuild();
+  const buildKind = buildKindForCurrentBuild();
+  const desktopId = desktopIdForBuild(buildKind);
 
   let didChangeDesktopFiles = false;
-  if (desktopId === DEV_DESKTOP_ID) {
-    didChangeDesktopFiles = ensureDevDesktopEntry(
+  if (buildKind === "development") {
+    didChangeDesktopFiles = ensureDesktopEntry(
       applicationsDir,
       options.executablePath,
       options.appPath,
+      DEV_DESKTOP_ID,
     );
-  } else if (desktopId === PORTABLE_DESKTOP_ID) {
-    didChangeDesktopFiles = ensureDevDesktopEntry(
+  } else if (buildKind === "appimage") {
+    // Electron's process executable is inside AppImage's transient mount. APPIMAGE is the
+    // persistent path the user launched and is therefore the only safe value for a handler.
+    didChangeDesktopFiles = ensureDesktopEntry(
+      applicationsDir,
+      process.env.APPIMAGE!,
+      undefined,
+      PORTABLE_DESKTOP_ID,
+    );
+  } else if (buildKind === "portable") {
+    didChangeDesktopFiles = ensureDesktopEntry(
       applicationsDir,
       options.executablePath,
       undefined,
       PORTABLE_DESKTOP_ID,
     );
+  } else if (buildKind === "package") {
+    // RPM/DEB own vortex.desktop. Remove only legacy files that match the Vortex-generated
+    // signatures from older Linux builds; never touch package-managed desktop files.
+    didChangeDesktopFiles = removeLegacyPortableEntry(applicationsDir);
   }
 
   if (didChangeDesktopFiles) {
@@ -85,11 +87,6 @@ export function registerLinuxNxmProtocolHandler(
   return haveToRegister;
 }
 
-/**
- * Linux `nxm` deregistration intentionally does not remove desktop associations.
- *
- * As with previous behaviour, Linux deregistration is treated as external/system-managed.
- */
 export function deregisterLinuxNxmProtocolHandler(): void {
   if (process.platform === "linux") {
     log("debug", "linux protocol deregistration is handled externally", {
@@ -98,23 +95,29 @@ export function deregisterLinuxNxmProtocolHandler(): void {
   }
 }
 
-function isFlatpakBuild(): boolean {
-  return process.env.IS_FLATPAK === "true";
-}
-
 function isDevelopmentBuild(): boolean {
   return process.defaultApp === true || process.env.NODE_ENV === "development";
 }
 
-function desktopIdForCurrentBuild(): string {
-  if (isFlatpakBuild()) {
-    return PACKAGE_DESKTOP_ID;
-  }
+function packageDesktopEntryExists(): boolean {
+  const dataDirs = (process.env.XDG_DATA_DIRS || "/usr/local/share:/usr/share")
+    .split(path.delimiter)
+    .filter((entry) => entry.length > 0);
+  return dataDirs.some((dataDir) => fs.existsSync(path.join(dataDir, "applications", PACKAGE_DESKTOP_ID)));
+}
 
-  if (isDevelopmentBuild()) {
-    return DEV_DESKTOP_ID;
-  }
+function buildKindForCurrentBuild(): BuildKind {
+  if (process.env.IS_FLATPAK === "true") return "flatpak";
+  if (isDevelopmentBuild()) return "development";
+  if (process.env.APPIMAGE) return "appimage";
+  if (packageDesktopEntryExists()) return "package";
+  return "portable";
+}
 
+function desktopIdForBuild(kind: BuildKind): string {
+  if (kind === "flatpak") return FLATPAK_DESKTOP_ID;
+  if (kind === "development") return DEV_DESKTOP_ID;
+  if (kind === "package") return PACKAGE_DESKTOP_ID;
   return PORTABLE_DESKTOP_ID;
 }
 
@@ -122,30 +125,10 @@ function escapeShellScriptArgument(input: string): string {
   return input.replace(/(["\\$`])/g, "\\$1");
 }
 
-/**
- * Generate the wrapper script content for executing Vortex.
- *
- * Note(sewer): xdg-utils has issues with the 'generic' fallback for `.desktop` files
- *              which will be used in non-mainstream DEs like Hyprland, Sway, i3, etc.
- *              We'll use a hack to work around this.
- * ref: https://github.com/Nexus-Mods/NexusMods.App/blob/main/src/NexusMods.Backend/OS/LinuxInterop.Protocol.cs#L76-L83
- * ref: https://gitlab.freedesktop.org/xdg/xdg-utils/-/issues/279
- * ref: https://github.com/Nexus-Mods/NexusMods.App/issues/3293
- *
- * So, here we're creating a wrapper script that will be used to execute the App.
- *
- * Wrapper script content must be escaped for POSIX shell, not desktop-entry parsing.
- * The desktop-entry escaping rules are applied separately to Exec/TryExec fields.
- * Vortex adds `appPath` because Electron launches as: <electron> <appPath> ...
- */
 function generateWrapperScript(executablePath: string, appPath?: string): string {
   const command =
     `"${escapeShellScriptArgument(executablePath)}"` +
     (appPath ? ` "${escapeShellScriptArgument(appPath)}"` : "");
-  // Persist GTK/Electron environment variables used to run Vortex.
-  // This is needed for Nix, such that you can launch the desktop entry outside
-  // of the Nix devShell during development. For other environments, this will
-  // typically be unset and be a no-op.
   const electronEnvVars = [
     "XDG_DATA_DIRS",
     "GIO_EXTRA_MODULES",
@@ -158,28 +141,16 @@ function generateWrapperScript(executablePath: string, appPath?: string): string
   const electronEnvExports = electronEnvVars
     .map((varName) => {
       const value = process.env[varName];
-      if (value) {
-        return `export ${varName}="${escapeShellScriptArgument(value)}"`;
-      }
-      return null;
+      return value ? `export ${varName}="${escapeShellScriptArgument(value)}"` : null;
     })
     .filter((line): line is string => line !== null)
     .join("\n");
 
   return (
     "#!/bin/sh\n" +
-    // Environment variables like LD_LIBRARY_PATH and LD_PRELOAD carried over from the
-    // browser (e.g., Vivaldi) are a common cause of failures when launching external
-    // applications. It's standard practice to unset both to prevent library conflicts.
-    // This was encountered in practice on NixOS, where these variables caused
-    // Electron to load incompatible libraries, resulting in a segfault when launching
-    // Vortex from nxm:// links.
     "unset LD_LIBRARY_PATH\n" +
     "unset LD_PRELOAD\n" +
     (electronEnvExports ? electronEnvExports + "\n" : "") +
-    // Only pass --download when a parameter %u is provided (nxm:// links from browser).
-    // This matches Windows behaviour, which includes --download on all protocol handler calls,
-    // but does not on non-handler calls (e.g., when starting from the start menu).
     `if [ -n "$1" ]; then\n` +
     `  exec ${command} --download "$@"\n` +
     `else\n` +
@@ -190,61 +161,40 @@ function generateWrapperScript(executablePath: string, appPath?: string): string
 
 function writeFileIfChanged(filePath: string, content: string, mode?: number): boolean {
   let changed = true;
-
   try {
     changed = fs.readFileSync(filePath, { encoding: "utf8" }) !== content;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw err;
-    }
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }
-
-  if (changed) {
-    fs.outputFileSync(filePath, content, { encoding: "utf8" });
-  }
-
-  if (mode !== undefined) {
-    fs.chmodSync(filePath, mode);
-  }
-
+  if (changed) fs.outputFileSync(filePath, content, { encoding: "utf8" });
+  if (mode !== undefined) fs.chmodSync(filePath, mode);
   return changed;
 }
 
 function warnIfApplicationsPathNeedsEscaping(applicationsDir: string): void {
   if (escapeDesktopExecFilePath(applicationsDir) !== applicationsDir) {
-    // If XDG_DATA_HOME itself requires escaping, the wrapper workaround may still fail
-    // in affected xdg-utils fallback paths (outside our control).
-    // ref: https://gitlab.freedesktop.org/xdg/xdg-utils/-/issues/279
-    // ref: https://github.com/Nexus-Mods/NexusMods.App/issues/3293
-    // ref: https://github.com/Nexus-Mods/NexusMods.App/blob/main/src/NexusMods.Backend/OS/LinuxInterop.Protocol.cs#L121-L125
-    log("warn", "linux applications directory path requires escaping", {
-      applicationsDir,
-    });
+    log("warn", "linux applications directory path requires escaping", { applicationsDir });
   }
 }
 
-function ensureDevDesktopEntry(
+function ensureDesktopEntry(
   applicationsDir: string,
   executablePath: string,
-  appPath?: string,
-  desktopId: string = DEV_DESKTOP_ID,
+  appPath: string | undefined,
+  desktopId: string,
 ): boolean {
-  const wrapperPath = path.join(
-    applicationsDir,
-    desktopId === DEV_DESKTOP_ID ? DEV_WRAPPER_FILE_NAME : "com.nexusmods.vortex.portable.sh",
-  );
+  const wrapperFileName =
+    desktopId === DEV_DESKTOP_ID ? DEV_WRAPPER_FILE_NAME : PORTABLE_WRAPPER_FILE_NAME;
+  const wrapperPath = path.join(applicationsDir, wrapperFileName);
   const desktopFilePath = path.join(applicationsDir, desktopId);
 
   warnIfApplicationsPathNeedsEscaping(applicationsDir);
 
   const escapedWrapperPathExec = escapeDesktopExecFilePath(wrapperPath);
   const escapedWrapperPathTryExec = escapeDesktopFilePath(wrapperPath);
-
   const wrapperContent = generateWrapperScript(executablePath, appPath);
   const wrapperChanged = writeFileIfChanged(wrapperPath, wrapperContent, 0o755);
 
-  // The wrapper script adds --download conditionally when %u is provided.
-  // This matches Windows behaviour where --download is only passed for protocol URLs.
   const desktopFileContent =
     "[Desktop Entry]\n" +
     "Type=Application\n" +
@@ -254,7 +204,7 @@ function ensureDevDesktopEntry(
     "NoDisplay=true\n" +
     `Exec=${escapedWrapperPathExec} %u\n` +
     `TryExec=${escapedWrapperPathTryExec}\n` +
-    "Icon=com.nexusmods.vortex\n" +
+    "Icon=vortex\n" +
     "Terminal=false\n" +
     "Categories=Game;Utility;\n" +
     "MimeType=x-scheme-handler/nxm;\n" +
@@ -263,6 +213,39 @@ function ensureDevDesktopEntry(
     "Keywords=mod;mods;modding;nexus;games;skyrim;fallout;\n";
 
   const desktopChanged = writeFileIfChanged(desktopFilePath, desktopFileContent, 0o755);
-
   return wrapperChanged || desktopChanged;
+}
+
+function removeLegacyPortableEntry(applicationsDir: string): boolean {
+  const desktopPath = path.join(applicationsDir, PORTABLE_DESKTOP_ID);
+  const wrapperPath = path.join(applicationsDir, PORTABLE_WRAPPER_FILE_NAME);
+  let desktop: string;
+  let wrapper: string;
+  try {
+    desktop = fs.readFileSync(desktopPath, "utf8");
+    wrapper = fs.readFileSync(wrapperPath, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw err;
+  }
+
+  const expectedDesktopSignature =
+    desktop.includes("Name=Vortex\n") &&
+    desktop.includes("MimeType=x-scheme-handler/nxm;\n") &&
+    desktop.includes(PORTABLE_WRAPPER_FILE_NAME);
+  const expectedWrapperSignature =
+    wrapper.startsWith("#!/bin/sh\n") &&
+    wrapper.includes("unset LD_LIBRARY_PATH\n") &&
+    wrapper.includes("--download \"$@\"");
+  if (!expectedDesktopSignature || !expectedWrapperSignature) {
+    log("warn", "not removing unrecognized legacy portable nxm handler", {
+      desktopPath,
+      wrapperPath,
+    });
+    return false;
+  }
+
+  fs.removeSync(desktopPath);
+  fs.removeSync(wrapperPath);
+  return true;
 }
