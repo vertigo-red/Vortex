@@ -1,6 +1,6 @@
 import * as path from "path";
 
-import { getErrorCode, unknownToError } from "@vortex/shared";
+import { getErrorCode, SafePathBoundary, unknownToError } from "@vortex/shared";
 
 import { log } from "../../../logging";
 import type {
@@ -46,14 +46,26 @@ export async function applyFileActions(
     return lastDeployment;
   }
 
+  const sourceBoundary =
+    process.platform === "linux" ? await SafePathBoundary.create(sourcePath) : undefined;
+  const outputBoundary =
+    process.platform === "linux" ? await SafePathBoundary.create(outputPath) : undefined;
   const deployedPaths = new Map(
     lastDeployment.map((file) => [JSON.stringify([file.source, file.relPath]), file.deployedPath]),
   );
-  const destination = (entry: IFileEntry) =>
-    path.join(
-      outputPath,
-      deployedPaths.get(JSON.stringify([entry.source, entry.filePath])) ?? entry.filePath,
-    );
+  const destination = (entry: IFileEntry) => {
+    const relative =
+      deployedPaths.get(JSON.stringify([entry.source, entry.filePath])) ?? entry.filePath;
+    return outputBoundary !== undefined
+      ? outputBoundary.resolve(relative)
+      : path.join(outputPath, relative);
+  };
+  const sourceFile = (entry: IFileEntry) => {
+    const relative = path.join(entry.source, entry.filePath);
+    return sourceBoundary !== undefined
+      ? sourceBoundary.resolve(relative)
+      : path.join(sourcePath, relative);
+  };
 
   const actionGroups: { [type: string]: IFileEntry[] } = fileActions.reduce(
     (prev: { [type: string]: IFileEntry[] }, value) => {
@@ -75,32 +87,37 @@ export async function applyFileActions(
 
   // process the actions that the user selected in the dialog
   await Promise.all(
-    (actionGroups["drop"] || []).map((entry) =>
-      truthy(entry.filePath)
-        ? fs.removeAsync(destination(entry))
-        : Promise.reject(new Error("invalid file path")),
-    ),
+    (actionGroups["drop"] || []).map(async (entry) => {
+      if (!truthy(entry.filePath)) throw new Error("invalid file path");
+      const target = destination(entry);
+      await outputBoundary?.assertMutation(target, { allowFinalSymlink: true });
+      await fs.removeAsync(target);
+    }),
   );
 
   await Promise.all(
-    (actionGroups["delete"] || []).map((entry) =>
-      truthy(entry.filePath)
-        ? fs.removeAsync(path.join(sourcePath, entry.source, entry.filePath))
-        : Promise.reject(new Error("invalid file path")),
-    ),
+    (actionGroups["delete"] || []).map(async (entry) => {
+      if (!truthy(entry.filePath)) throw new Error("invalid file path");
+      const target = sourceFile(entry);
+      await sourceBoundary?.assertMutation(target, { allowFinalSymlink: true });
+      await fs.removeAsync(target);
+    }),
   );
 
   await Promise.all(
     (actionGroups["import"] || []).map((entry) => {
-      const source = path.join(sourcePath, entry.source, entry.filePath);
+      const source = sourceFile(entry);
       const deployed = destination(entry);
       // Very rarely we have a case where the files are links of each other
       // (or at least node reports that) so the copy would fail.
       // Instead of handling the errors (when we can't be sure if it's due to a bug in node.js
       // or the files are actually identical), delete the target first, that way the move
       // can't fail
-      return fs
-        .removeAsync(source)
+      return Promise.resolve()
+        .then(() => sourceBoundary?.assertMutation(source, { allowFinalSymlink: true }))
+        .then(() => fs.removeAsync(source))
+        .then(() => outputBoundary?.assertMutation(deployed, { allowFinalSymlink: true }))
+        .then(() => sourceBoundary?.assertMutation(source, { allowFinalSymlink: true }))
         .then(() => fs.moveAsync(deployed, source, { overwrite: true }))
         .catch((err: unknown) => {
           if (getErrorCode(err) === "ENOENT") {

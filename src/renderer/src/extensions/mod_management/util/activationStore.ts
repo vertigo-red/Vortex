@@ -1,7 +1,7 @@
 import * as path from "path";
 
 import type msgpackT from "@msgpack/msgpack";
-import { getErrorCode, getErrorMessageOrDefault, unknownToError } from "@vortex/shared";
+import { getErrorCode, getErrorMessageOrDefault, SafePathBoundary, unknownToError } from "@vortex/shared";
 import { sync as writeAtomicSync } from "write-file-atomic";
 
 import { showDialog } from "../../../actions/notifications";
@@ -100,25 +100,25 @@ function readManifest(data: string | Buffer): IDeploymentManifest {
   return repairManifest(parsed);
 }
 
-export function purgeDeployedFiles(basePath: string, files: IDeployedFile[]): Promise<void> {
-  return Promise.all(
-    files.map((file) => {
-      const fullPath = path.join(basePath, file.deployedPath ?? file.relPath);
-      return fs
-        .statAsync(fullPath)
-        .then((stats) => {
-          // the timestamp from stat has ms precision but the one from the manifest doesn't
-          return stats.mtime.getTime() - file.time < 1000
-            ? fs.unlinkAsync(fullPath)
-            : Promise.resolve();
-        })
-        .catch((err: unknown) => {
-          if (getErrorCode(err) !== "ENOENT") {
-            return Promise.reject(err);
-          } // otherwise ignore
-        });
+export async function purgeDeployedFiles(basePath: string, files: IDeployedFile[]): Promise<void> {
+  const boundary =
+    process.platform === "linux" ? await SafePathBoundary.create(basePath) : undefined;
+  await Promise.all(
+    files.map(async (file) => {
+      const relative = file.deployedPath ?? file.relPath;
+      const fullPath = boundary !== undefined ? boundary.resolve(relative) : path.join(basePath, relative);
+      try {
+        const stats = await fs.statAsync(fullPath);
+        // the timestamp from stat has ms precision but the one from the manifest doesn't
+        if (stats.mtime.getTime() - file.time < 1000) {
+          await boundary?.assertMutation(fullPath, { allowFinalSymlink: true });
+          await fs.unlinkAsync(fullPath);
+        }
+      } catch (err) {
+        if (getErrorCode(err) !== "ENOENT") throw err;
+      }
     }),
-  ).then(() => undefined);
+  );
 }
 
 function queryPurgeTextSafe(t: TFunction) {

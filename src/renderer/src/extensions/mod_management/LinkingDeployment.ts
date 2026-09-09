@@ -934,6 +934,7 @@ abstract class LinkingActivator implements IDeploymentMethod {
     restoreBackups: boolean,
     directoryCleaning: DirectoryCleaningMode,
     reportMissing: boolean = true,
+    securityRoot: string = baseDir,
   ): Promise<boolean> {
     // recursively go through directories and remove empty ones !if! we encountered a
     // __delete_if_empty file in the hierarchy so far
@@ -972,6 +973,7 @@ abstract class LinkingActivator implements IDeploymentMethod {
               restoreBackups,
               directoryCleaning,
               false,
+              securityRoot,
             );
             if (!removed) {
               empty = false;
@@ -990,7 +992,7 @@ abstract class LinkingActivator implements IDeploymentMethod {
                 await Promise.all(
                   files
                     .filter((entry) => path.extname(entry.filePath) === BACKUP_TAG)
-                    .map((entry) => this.restoreBackup(entry.filePath, baseDir)),
+                    .map((entry) => this.restoreBackup(entry.filePath, securityRoot)),
                 );
               } catch (err) {
                 if (err instanceof UserCanceled) {
@@ -1024,11 +1026,11 @@ abstract class LinkingActivator implements IDeploymentMethod {
               .statAsync(path.join(baseDir, LinkingActivator.NEW_TAG_NAME))
               .then(() => {
                 const tag = path.join(baseDir, LinkingActivator.NEW_TAG_NAME);
-                return this.assertPathMutation(baseDir, tag, true).then(() => fs.unlinkAsync(tag));
+                return this.assertPathMutation(securityRoot, tag, true).then(() => fs.unlinkAsync(tag));
               })
               .catch(() => {
                 const tag = path.join(baseDir, LinkingActivator.OLD_TAG_NAME);
-                return this.assertPathMutation(baseDir, tag, true).then(() => fs.unlinkAsync(tag));
+                return this.assertPathMutation(securityRoot, tag, true).then(() => fs.unlinkAsync(tag));
               })
               .catch((err: unknown) => {
                 const code = getErrorCode(err);
@@ -1038,7 +1040,7 @@ abstract class LinkingActivator implements IDeploymentMethod {
                 throw err;
               })
               .then(() =>
-                this.assertPathMutation(path.dirname(baseDir), baseDir, true)
+                this.assertPathMutation(securityRoot, baseDir, true)
                   .then(() => fs.rmdirAsync(baseDir))
                   .catch((err) => {
                   log("error", "failed to remove directory, it was supposed to be empty", {
