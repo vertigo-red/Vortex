@@ -31,6 +31,7 @@ import * as fs from "../../util/fs";
 import GameStoreHelper from "../../util/GameStoreHelper";
 import { isContributed } from "../../util/isContributed";
 import local from "../../util/local";
+import { resolveToolExecutable, verifyToolRequiredFiles } from "../../util/linux/toolPaths";
 import { showError } from "../../util/message";
 import opn from "../../util/opn";
 import { activeGameId, activeProfile } from "../../util/selectors";
@@ -182,20 +183,14 @@ function refreshGameInfo(store: Redux.Store<IState>, gameId: string): PromiseBB<
 }
 
 function verifyGamePath(game: IGame, gamePath: string): PromiseBB<void> {
-  return PromiseBB.map(game.requiredFiles || [], (file) =>
-    PromiseBB.resolve(fsExtra.stat(path.join(gamePath, file))),
-  )
-    .then(() => undefined)
-    .catch((err) => {
-      // if the error is anything other than "the file doesn't exist" we assume
-      // the file is there and can't be accessed because of permissions or something.
-      // If the game gets started through the launcher, that may be completely valid
-      // so this isn't the place to report an error.
-      if (err.code !== "ENOENT") {
-        return undefined;
-      }
-      return PromiseBB.reject(err);
-    });
+  return PromiseBB.resolve(verifyToolRequiredFiles(game, gamePath)).catch((err) => {
+    // Launchers may own unreadable installations, but missing or ambiguous paths must
+    // remain validation failures.
+    if (err.code === "EACCES" || err.code === "EPERM") {
+      return undefined;
+    }
+    return PromiseBB.reject(err);
+  });
 }
 
 function searchDepth(files: string[]): number {
@@ -316,9 +311,18 @@ function browseGameLocation(api: IExtensionApi, gameId: string): PromiseBB<void>
             }
             return manualGameStoreSelection(api, corrected);
           })
-          .then(({ corrected, store }) => {
+          .then(({ corrected, store }) =>
+            PromiseBB.resolve(resolveToolExecutable(game, corrected)).then((resolvedExecutable) => ({
+              corrected,
+              store,
+              resolvedExecutable,
+            })),
+          )
+          .then(({ corrected, store, resolvedExecutable }) => {
             let executable = game.executable(corrected);
-            if (executable === game.executable()) {
+            if (resolvedExecutable !== executable) {
+              executable = resolvedExecutable;
+            } else if (executable === game.executable()) {
               executable = undefined;
             }
             // different paths depending on whether the game was previously detected
@@ -490,17 +494,19 @@ function removeDisappearedGames(
     if (requiredFiles === undefined) {
       return PromiseBB.resolve();
     }
-    return PromiseBB.map(requiredFiles, (file) =>
-      fsExtra.stat(path.join(discovered[gameId].path, file)),
-    )
-      .then(() => undefined)
-      .catch((err) => {
-        if (err.code === "ENOENT") {
-          return PromiseBB.reject(err);
-        } else {
-          return PromiseBB.resolve();
-        }
-      });
+    const game = getGame(gameId);
+    const validation =
+      game !== undefined
+        ? verifyToolRequiredFiles(game, discovered[gameId].path)
+        : Promise.all(requiredFiles.map((file) => fsExtra.stat(path.join(discovered[gameId].path, file)))).then(
+            () => undefined,
+          );
+    return PromiseBB.resolve(validation).catch((err) => {
+      if (err.code === "EACCES" || err.code === "EPERM") {
+        return undefined;
+      }
+      return PromiseBB.reject(err);
+    });
   };
 
   return PromiseBB.map(

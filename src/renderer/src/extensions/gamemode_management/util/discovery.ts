@@ -19,8 +19,7 @@ import GameStoreHelper from "../../../util/GameStoreHelper";
 import type { Normalize } from "../../../util/getNormalizeFunc";
 import getNormalizeFunc from "../../../util/getNormalizeFunc";
 import getVortexPath from "../../../util/getVortexPath";
-import { resolveWindowsPath } from "../../../util/linux/caseInsensitivePaths";
-import { isWindowsExecutable } from "../../../util/linux/proton";
+import { resolveToolExecutable, verifyToolRequiredFiles } from "../../../util/linux/toolPaths";
 import { log } from "../../../util/log";
 import StarterInfo from "../../../util/StarterInfo";
 import { getSafe } from "../../../util/storeHelper";
@@ -258,14 +257,10 @@ function handleDiscoveredGame(
     executable: exe !== game.executable() ? exe : undefined,
     store,
   };
-  const executablePath =
-    process.platform === "linux" && isWindowsExecutable(exe)
-      ? resolveWindowsPath(resolvedPath, exe)
-      : Promise.resolve(path.join(resolvedPath, exe));
-  return Bluebird.resolve(executablePath)
+  return Bluebird.resolve(resolveToolExecutable(game, resolvedPath))
     .then((resolvedExecutable) => {
-      if (process.platform === "linux" && isWindowsExecutable(exe)) {
-        disco.executable = path.relative(resolvedPath, resolvedExecutable);
+      if (resolvedExecutable !== exe) {
+        disco.executable = resolvedExecutable;
       }
       onDiscoveredGame(game.id, disco);
       return getNormalizeFunc(resolvedPath);
@@ -460,18 +455,7 @@ function walk(
 }
 
 function verifyToolDir(tool: ITool, testPath: string): Bluebird<void> {
-  return Bluebird.mapSeries(
-    tool.requiredFiles,
-    // our fs overload would try to acquire access to the directory if it's locked, which
-    // is not something we want at this point because we don't even know yet if the user
-    // wants to manage the game at all.
-    (fileName: string) =>
-      Bluebird.resolve(
-        process.platform === "linux" && isWindowsExecutable(tool.executable(testPath))
-          ? resolveWindowsPath(testPath, fileName)
-          : Promise.resolve(path.join(testPath, fileName)),
-      ).then((resolved) => fsExtra.stat(resolved)),
-  ).then(() => undefined);
+  return Bluebird.resolve(verifyToolRequiredFiles(tool, testPath));
 }
 
 export function assertToolDir(tool: ITool, testPath: string): Bluebird<string> {
