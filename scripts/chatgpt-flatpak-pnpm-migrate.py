@@ -99,8 +99,6 @@ replacements = [
     ('choices=("all", "yarn", "nuget")', 'choices=("all", "pnpm", "nuget")'),
     ('run_yarn = args.only in {"all", "yarn"}', 'run_pnpm = args.only in {"all", "pnpm"}'),
     ('if run_yarn:', 'if run_pnpm:'),
-    ('output=Path(DEFAULT_YARN_OUTPUT)', 'output=Path(DEFAULT_PNPM_OUTPUT)'),
-    ('hash_file=Path(DEFAULT_YARN_HASH_FILE)', 'hash_file=Path(DEFAULT_PNPM_HASH_FILE)'),
     ('recursive=True,\n            force=args.force,', 'recursive=False,\n            force=args.force,'),
 ]
 for old, new in replacements:
@@ -228,3 +226,7 @@ if old_sources not in text:
     raise SystemExit("manifest sources block did not match")
 text = text.replace(old_sources, new_sources, 1)
 manifest.write_text(text, encoding="utf-8")
+
+yarnrc = ROOT / "flatpak/yarnrc"
+if yarnrc.exists():
+    yarnrc.unlink()
