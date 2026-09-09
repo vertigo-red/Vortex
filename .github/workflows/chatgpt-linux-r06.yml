@@ -1,0 +1,37 @@
+name: ChatGPT Linux R06 hardlink probe
+
+on:
+  push:
+    branches:
+      - linux/native-readiness-chatgpt-sol56-20260909
+    paths:
+      - .github/chatgpt-linux-r06-request
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor == 'vertigo-red'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Apply R-06 patch
+        run: python scripts/chatgpt-linux-r06.py
+      - name: Verify patch
+        run: |
+          git diff --check
+          grep -RInE 'probeHardlinkSupport|EXDEV|game-data' \
+            src/renderer/src/extensions/hardlink_activator
+      - name: Commit R-06
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/renderer/src/extensions/hardlink_activator/index.ts \
+                  src/renderer/src/extensions/hardlink_activator/hardlinkSupport.ts \
+                  src/renderer/src/extensions/hardlink_activator/hardlinkSupport.test.ts
+          git diff --cached --check
+          git commit -m "fix(linux): probe hardlinks across staging and game paths"
+          git push origin HEAD:${GITHUB_REF_NAME}
