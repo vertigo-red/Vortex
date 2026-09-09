@@ -1,0 +1,86 @@
+name: ChatGPT Linux one-shot patch
+
+on:
+  push:
+    branches:
+      - linux/native-readiness-chatgpt-sol56-20260909
+    paths:
+      - .github/chatgpt-linux-patch-request
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor == 'vertigo-red'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply Windows-path-semantics integration
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, got {count}")
+              return text.replace(old, new, 1)
+
+          index = Path("src/renderer/src/extensions/gamemode_management/index.ts")
+          text = index.read_text()
+          text = replace_once(
+              text,
+              'import local from "../../util/local";\nimport { showError } from "../../util/message";',
+              'import local from "../../util/local";\nimport { resolveToolExecutable, verifyToolRequiredFiles } from "../../util/linux/toolPaths";\nimport { showError } from "../../util/message";',
+              "index import",
+          )
+          text = replace_once(
+              text,
+              '''function verifyGamePath(game: IGame, gamePath: string): PromiseBB<void> {\n  return PromiseBB.map(game.requiredFiles || [], (file) =>\n    PromiseBB.resolve(fsExtra.stat(path.join(gamePath, file))),\n  )\n    .then(() => undefined)\n    .catch((err) => {\n      // if the error is anything other than "the file doesn't exist" we assume\n      // the file is there and can't be accessed because of permissions or something.\n      // If the game gets started through the launcher, that may be completely valid\n      // so this isn't the place to report an error.\n      if (err.code !== "ENOENT") {\n        return undefined;\n      }\n      return PromiseBB.reject(err);\n    });\n}''',
+              '''function verifyGamePath(game: IGame, gamePath: string): PromiseBB<void> {\n  return PromiseBB.resolve(verifyToolRequiredFiles(game, gamePath)).catch((err) => {\n    // Launchers may own unreadable installations, but missing or ambiguous paths must\n    // remain validation failures.\n    if (err.code === "EACCES" || err.code === "EPERM") {\n      return undefined;\n    }\n    return PromiseBB.reject(err);\n  });\n}''',
+              "manual verifyGamePath",
+          )
+          text = replace_once(
+              text,
+              '''          .then(({ corrected, store }) => {\n            let executable = game.executable(corrected);\n            if (executable === game.executable()) {\n              executable = undefined;\n            }''',
+              '''          .then(({ corrected, store }) =>\n            PromiseBB.resolve(resolveToolExecutable(game, corrected)).then((resolvedExecutable) => ({\n              corrected,\n              store,\n              resolvedExecutable,\n            })),\n          )\n          .then(({ corrected, store, resolvedExecutable }) => {\n            let executable = game.executable(corrected);\n            if (resolvedExecutable !== executable) {\n              executable = resolvedExecutable;\n            } else if (executable === game.executable()) {\n              executable = undefined;\n            }''',
+              "manual executable casing",
+          )
+          old_assert = '''  const assertRequiredFiles = (requiredFiles: string[], gameId: string): PromiseBB<void> => {\n    if (requiredFiles === undefined) {\n      return PromiseBB.resolve();\n    }\n    return PromiseBB.map(requiredFiles, (file) =>\n      fsExtra.stat(path.join(discovered[gameId].path, file)),\n    )\n      .then(() => undefined)\n      .catch((err) => {\n        if (err.code === "ENOENT") {\n          return PromiseBB.reject(err);\n        } else {\n          return PromiseBB.resolve();\n        }\n      });\n  };'''
+          new_assert = '''  const assertRequiredFiles = (requiredFiles: string[], gameId: string): PromiseBB<void> => {\n    if (requiredFiles === undefined) {\n      return PromiseBB.resolve();\n    }\n    const game = getGame(gameId);\n    const validation =\n      game !== undefined\n        ? verifyToolRequiredFiles(game, discovered[gameId].path)\n        : Promise.all(requiredFiles.map((file) => fsExtra.stat(path.join(discovered[gameId].path, file)))).then(\n            () => undefined,\n          );\n    return PromiseBB.resolve(validation).catch((err) => {\n      if (err.code === "EACCES" || err.code === "EPERM") {\n        return undefined;\n      }\n      return PromiseBB.reject(err);\n    });\n  };'''
+          text = replace_once(text, old_assert, new_assert, "stored-game revalidation")
+          index.write_text(text)
+
+          discovery = Path("src/renderer/src/extensions/gamemode_management/util/discovery.ts")
+          text = discovery.read_text()
+          text = replace_once(
+              text,
+              'import { resolveWindowsPath } from "../../../util/linux/caseInsensitivePaths";\nimport { isWindowsExecutable } from "../../../util/linux/proton";',
+              'import { resolveToolExecutable, verifyToolRequiredFiles } from "../../../util/linux/toolPaths";',
+              "discovery imports",
+          )
+          text = replace_once(
+              text,
+              '''  const executablePath =\n    process.platform === "linux" && isWindowsExecutable(exe)\n      ? resolveWindowsPath(resolvedPath, exe)\n      : Promise.resolve(path.join(resolvedPath, exe));\n  return Bluebird.resolve(executablePath)\n    .then((resolvedExecutable) => {\n      if (process.platform === "linux" && isWindowsExecutable(exe)) {\n        disco.executable = path.relative(resolvedPath, resolvedExecutable);\n      }''',
+              '''  return Bluebird.resolve(resolveToolExecutable(game, resolvedPath))\n    .then((resolvedExecutable) => {\n      if (resolvedExecutable !== exe) {\n        disco.executable = resolvedExecutable;\n      }''',
+              "discovery executable",
+          )
+          text = replace_once(
+              text,
+              '''function verifyToolDir(tool: ITool, testPath: string): Bluebird<void> {\n  return Bluebird.mapSeries(\n    tool.requiredFiles,\n    // our fs overload would try to acquire access to the directory if it's locked, which\n    // is not something we want at this point because we don't even know yet if the user\n    // wants to manage the game at all.\n    (fileName: string) =>\n      Bluebird.resolve(\n        process.platform === "linux" && isWindowsExecutable(tool.executable(testPath))\n          ? resolveWindowsPath(testPath, fileName)\n          : Promise.resolve(path.join(testPath, fileName)),\n      ).then((resolved) => fsExtra.stat(resolved)),\n  ).then(() => undefined);\n}''',
+              '''function verifyToolDir(tool: ITool, testPath: string): Bluebird<void> {\n  return Bluebird.resolve(verifyToolRequiredFiles(tool, testPath));\n}''',
+              "discovery required files",
+          )
+          discovery.write_text(text)
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/renderer/src/extensions/gamemode_management/index.ts \
+                  src/renderer/src/extensions/gamemode_management/util/discovery.ts
+          git diff --cached --check
+          git commit -m "fix(linux): apply Windows path semantics to game validation"
+          git push origin HEAD:${GITHUB_REF_NAME}
