@@ -18,10 +18,11 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
-      - name: Install pinned generator
+      - name: Apply migration locally and install pinned generator
         env:
           PYTHONPATH: flatpak/scripts
         run: |
+          python scripts/chatgpt-flatpak-pnpm-migrate.py
           python - <<'PY'
           from _flatpak_env import ensure_venv
           info = ensure_venv(install_packages=True)
