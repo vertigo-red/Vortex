@@ -98,6 +98,15 @@ modules:
       - pnpm install --offline --frozen-lockfile
       - pnpm --filter @vortex/main exec electron-rebuild
 
+      # The main Nx build normally downloads level_pivot DuckDB extensions.
+      # Flatpak builds have no network access, so materialize the two pinned
+      # compressed sources into the exact cache paths the build task checks.
+      - |
+        mkdir -p src/main/build/duckdb-extensions/v1.5.1/linux_amd64
+        mkdir -p src/main/build/duckdb-extensions/v1.5.1/windows_amd64
+        gzip -dc flatpak-duckdb/level_pivot-linux_amd64.duckdb_extension.gz > src/main/build/duckdb-extensions/v1.5.1/linux_amd64/level_pivot.duckdb_extension
+        gzip -dc flatpak-duckdb/level_pivot-windows_amd64.duckdb_extension.gz > src/main/build/duckdb-extensions/v1.5.1/windows_amd64/level_pivot.duckdb_extension
+
       # Follow the native Linux packaging pipeline: build the workspace, create
       # the deploy tree, rebuild native addons in that tree, then ask
       # electron-builder only for the unpacked Linux payload used by Flatpak.
@@ -122,5 +131,15 @@ modules:
         url: https://registry.npmjs.org/pnpm/-/pnpm-11.10.0.tgz
         sha256: 620b6605ea4f62fc56a6d0a98733f479071d0321e03e486b522c7e9a74617431
         dest: flatpak-pnpm
+      - type: file
+        url: https://nexus-mods.github.io/duckdb-level-pivot/current_release/v1.5.1/linux_amd64/level_pivot.duckdb_extension.gz
+        sha256: f822a37826e1975557aeffbb30fc1a79ad4a1048b455a429ba0b6bf031013065
+        dest: flatpak-duckdb
+        dest-filename: level_pivot-linux_amd64.duckdb_extension.gz
+      - type: file
+        url: https://nexus-mods.github.io/duckdb-level-pivot/current_release/v1.5.1/windows_amd64/level_pivot.duckdb_extension.gz
+        sha256: 68d730e53a1a582e2b27adda6decad5e1b9c5fc58083e871208b8095042e0ca4
+        dest: flatpak-duckdb
+        dest-filename: level_pivot-windows_amd64.duckdb_extension.gz
       - generated-sources.json
       - generated-nuget-sources.json
