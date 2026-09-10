@@ -104,12 +104,15 @@ modules:
         </configuration>
         EOF
 
-      # Install strictly from the generated store and the committed frozen
-      # lockfile. Node 24.20.0 is supplied above as a hash-pinned Flatpak source;
-      # pnpm's --no-runtime keeps the synthetic node@runtime lock entry valid
-      # while skipping only its managed download/bin-linking path.
-      - pnpm install --offline --frozen-lockfile --no-runtime
-      - pnpm --filter @vortex/main exec electron-rebuild
+      # flatpak-node-generator stores Electron headers in the XDG node-gyp
+      # cache. electron-rebuild still expects ~/.electron-gyp, and Flatpak
+      # requires the symlink and rebuild to live in the same build command.
+      # This also covers the rebuild invoked by src/main/postinstall.mjs.
+      - |
+        rm -rf "$HOME/.electron-gyp"
+        ln -s "$XDG_CACHE_HOME/node-gyp" "$HOME/.electron-gyp"
+        pnpm install --offline --frozen-lockfile --no-runtime
+        pnpm --filter @vortex/main exec electron-rebuild
 
       # The main Nx build normally downloads level_pivot DuckDB extensions.
       # Flatpak builds have no network access, so materialize the two pinned
@@ -125,7 +128,11 @@ modules:
       # electron-builder only for the unpacked Linux payload used by Flatpak.
       - pnpm run build
       - pnpm nx run @vortex/main:publish
-      - cd src/main/dist && ./node_modules/.bin/electron-rebuild
+      - |
+        rm -rf "$HOME/.electron-gyp"
+        ln -s "$XDG_CACHE_HOME/node-gyp" "$HOME/.electron-gyp"
+        cd src/main/dist
+        ./node_modules/.bin/electron-rebuild
       - cd src/main/dist && USE_HARD_LINKS=false ./node_modules/.bin/electron-builder --config ./electron-builder.config.json --publish never --linux dir
 
       # Install the launcher, desktop file, icon, and metainfo into the Flatpak image.
