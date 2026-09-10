@@ -8,6 +8,10 @@ on:
       - .github/chatgpt-flatpak-build-request
   workflow_dispatch:
 
+concurrency:
+  group: chatgpt-flatpak-build-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
