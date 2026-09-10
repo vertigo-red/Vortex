@@ -117,7 +117,9 @@ modules:
       # flatpak-node-generator stores Electron headers in the XDG node-gyp
       # cache. electron-rebuild still expects ~/.electron-gyp. Install first
       # with Vortex's rebuild deferred, then stage FOMOD's Linux companion
-      # library from its pinned npm package before rebuilding native addons.
+      # library from its pinned npm package before rebuilding Linux native addons.
+      # winapi-bindings is intentionally excluded: its binding.gyp has sources
+      # only under OS=="win", so it is not a Linux native addon.
       - |
         rm -rf "$HOME/.electron-gyp"
         ln -s "$XDG_CACHE_HOME/node-gyp" "$HOME/.electron-gyp"
@@ -130,7 +132,7 @@ modules:
         cp -f "$fomod_dir/prebuilds/linux-x64/ModInstaller.Native.so" "$fomod_dir/ModInstaller.Native.so"
 
         cd src/main
-        ./node_modules/.bin/electron-rebuild
+        ./node_modules/.bin/electron-rebuild --only @nexusmods/fomod-installer-native,drivelist,leveldown,xxhash-addon,@parcel/watcher
 
       # The main Nx build normally downloads level_pivot DuckDB extensions.
       # Flatpak builds have no network access, so materialize the two pinned
@@ -142,7 +144,7 @@ modules:
         gzip -dc flatpak-duckdb/level_pivot-windows_amd64.duckdb_extension.gz > src/main/build/duckdb-extensions/v1.5.1/windows_amd64/level_pivot.duckdb_extension
 
       # Follow the native Linux packaging pipeline: build the workspace, create
-      # the deploy tree, rebuild native addons in that tree, then ask
+      # the deploy tree, rebuild Linux native addons in that tree, then ask
       # electron-builder only for the unpacked Linux payload used by Flatpak.
       - pnpm run build
       - pnpm nx run @vortex/main:publish
@@ -150,7 +152,7 @@ modules:
         rm -rf "$HOME/.electron-gyp"
         ln -s "$XDG_CACHE_HOME/node-gyp" "$HOME/.electron-gyp"
         cd src/main/dist
-        ./node_modules/.bin/electron-rebuild
+        ./node_modules/.bin/electron-rebuild --only @nexusmods/fomod-installer-native,drivelist,leveldown,xxhash-addon,@parcel/watcher
       - cd src/main/dist && USE_HARD_LINKS=false ./node_modules/.bin/electron-builder --config ./electron-builder.config.json --publish never --linux dir
 
       # Install the launcher, desktop file, icon, and metainfo into the Flatpak image.
