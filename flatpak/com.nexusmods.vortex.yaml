@@ -22,6 +22,11 @@ build-options:
     npm_config_offline: "true"
     XDG_CACHE_HOME: /run/build/vortex/flatpak-node/cache
 
+    # pnpm 11 re-verifies every frozen lockfile entry against registry metadata.
+    # That pass cannot run inside Flatpak's offline build sandbox. Trust only the
+    # already-reviewed frozen lockfile here; Flatpak still verifies source hashes.
+    PNPM_CONFIG_TRUST_LOCKFILE: "true"
+
     # Dotnet SDK settings for build-time tools (runtime DOTNET_ROOT is set via finish-args).
     DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     DOTNET_NOLOGO: "1"
