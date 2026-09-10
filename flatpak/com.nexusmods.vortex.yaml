@@ -93,26 +93,6 @@ modules:
         chmod +x .flatpak-bin/pnpm
         test "$(pnpm --version)" = "11.10.0"
 
-      # pnpm treats runtime.onFail=download as a managed runtime dependency and
-      # downloads Node even when the matching executable is already on PATH.
-      # Flatpak supplies that exact Node archive above, so keep the version
-      # requirements but validate the external runtime instead of downloading it.
-      # This edits only flatpak-builder's private source copy.
-      - |
-        node <<'EOF'
-        const fs = require('node:fs')
-        const path = 'package.json'
-        const manifest = JSON.parse(fs.readFileSync(path, 'utf8'))
-        for (const section of ['engines', 'devEngines']) {
-          const runtime = manifest[section]?.runtime
-          if (runtime?.name !== 'node' || runtime.version !== '24.20.0') {
-            throw new Error(`Unexpected ${section}.runtime configuration`)
-          }
-          runtime.onFail = 'error'
-        }
-        fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`)
-        EOF
-
       - |
         cat > NuGet.Config <<'EOF'
         <?xml version="1.0" encoding="utf-8"?>
@@ -124,8 +104,11 @@ modules:
         </configuration>
         EOF
 
-      # Install strictly from the store generated from pnpm-lock.yaml.
-      - pnpm install --offline --frozen-lockfile
+      # Install strictly from the generated store and the committed frozen
+      # lockfile. Node 24.20.0 is supplied above as a hash-pinned Flatpak source;
+      # pnpm's --no-runtime keeps the synthetic node@runtime lock entry valid
+      # while skipping only its managed download/bin-linking path.
+      - pnpm install --offline --frozen-lockfile --no-runtime
       - pnpm --filter @vortex/main exec electron-rebuild
 
       # The main Nx build normally downloads level_pivot DuckDB extensions.
