@@ -54,14 +54,26 @@ jobs:
           print('manifest structure OK')
           PY
 
-      - name: Build Flatpak
+      - name: Download Flatpak sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          flatpak-builder \
+            --user \
+            --install-deps-from=flathub \
+            --download-only \
+            --force-clean \
+            _flatpak-build \
+            flatpak/com.nexusmods.vortex.yaml
+
+      - name: Build Flatpak offline
         shell: bash
         run: |
           set +e
           set -o pipefail
           flatpak-builder \
             --user \
-            --install-deps-from=flathub \
+            --disable-download \
             --force-clean \
             --repo=flatpak-repo \
             _flatpak-build \
@@ -69,7 +81,7 @@ jobs:
             2>&1 | tee /tmp/flatpak-builder.log
           status=${PIPESTATUS[0]}
           tail -n 350 /tmp/flatpak-builder.log > /tmp/flatpak-builder-tail.log
-          echo "=== flatpak-builder tail ==="
+          echo "=== flatpak-builder offline tail ==="
           cat /tmp/flatpak-builder-tail.log
           exit "$status"
 
