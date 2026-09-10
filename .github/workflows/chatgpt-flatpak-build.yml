@@ -22,6 +22,14 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
+      - name: Restore Flatpak source cache
+        uses: actions/cache@v6
+        with:
+          path: .flatpak-builder/downloads
+          key: flatpak-downloads-${{ runner.os }}-${{ hashFiles('flatpak/generated-sources.json', 'flatpak/generated-nuget-sources.json') }}
+          restore-keys: |
+            flatpak-downloads-${{ runner.os }}-
+
       - name: Install Flatpak tooling
         run: |
           sudo apt-get update
