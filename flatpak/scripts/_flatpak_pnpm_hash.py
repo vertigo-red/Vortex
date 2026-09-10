@@ -23,15 +23,31 @@ def collect_lockfiles(lockfile: Path, recursive: bool) -> List[Path]:
     return [lockfile]
 
 
+def _hash_file(digest: "hashlib._Hash", path: Path, label: str) -> None:
+    contents = path.read_bytes()
+    digest.update(f"{label}:{path.name}\n".encode("utf-8"))
+    digest.update(f"size:{len(contents)}\n".encode("utf-8"))
+    digest.update(contents)
+    digest.update(b"\n")
+
+
 def compute_sources_hash(lockfile: Path, recursive: bool) -> Tuple[str, List[Path]]:
     root = repo_root()
     lockfiles = collect_lockfiles(lockfile=lockfile, recursive=recursive)
 
     digest = hashlib.sha256()
-    digest.update(b"flatpak-generated-pnpm-sources-hash-v2\n")
+    digest.update(b"flatpak-generated-pnpm-sources-hash-v3\n")
     digest.update(
         f"generator:{FLATPAK_NODE_GENERATOR_GIT_COMMIT}\n".encode("utf-8")
     )
+
+    # The committed generated source graph depends on both the upstream
+    # flatpak-node-generator and our pnpm-11 compatibility adapter. Hash the
+    # adapter implementation itself so changes to multi-document/runtime
+    # normalization cannot silently reuse a stale generated-sources.json.
+    scripts_dir = Path(__file__).resolve().parent
+    _hash_file(digest, Path(__file__).resolve(), "adapter")
+    _hash_file(digest, scripts_dir / "flatpak_sources.py", "adapter")
 
     for path in lockfiles:
         relative = path.relative_to(root).as_posix()
