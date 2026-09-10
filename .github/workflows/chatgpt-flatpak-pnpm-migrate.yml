@@ -31,12 +31,18 @@ jobs:
           set +e
           python flatpak/scripts/flatpak_sources.py --only pnpm --force > /tmp/flatpak-pnpm-generator.log 2>&1
           status=$?
-          if [ "$status" -ne 0 ]; then
-            echo "=== flatpak-node-generator failure tail ==="
-            tail -n 220 /tmp/flatpak-pnpm-generator.log
-            exit "$status"
-          fi
-          tail -n 40 /tmp/flatpak-pnpm-generator.log
+          tail -n 220 /tmp/flatpak-pnpm-generator.log > /tmp/flatpak-pnpm-generator-tail.log
+          echo "=== flatpak-node-generator tail ==="
+          cat /tmp/flatpak-pnpm-generator-tail.log
+          exit "$status"
+      - name: Upload generator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-pnpm-generator-tail
+          path: /tmp/flatpak-pnpm-generator-tail.log
+          if-no-files-found: warn
+          retention-days: 7
       - name: Verify migration
         run: |
           set -euxo pipefail
