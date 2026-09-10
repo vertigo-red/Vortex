@@ -39,7 +39,69 @@ old_function = '''def generate_sources(
     run_command(cmd, cwd=root)
 '''
 
-new_function = '''def _project_lockfile_for_generator(lockfile: Path) -> Optional[Path]:
+new_function = '''def _block_end(lines: List[str], start: int, indent: int) -> int:
+    """Return the first line outside a YAML indentation block."""
+    index = start + 1
+    while index < len(lines):
+        line = lines[index]
+        if line.strip():
+            line_indent = len(line) - len(line.lstrip(" "))
+            if line_indent <= indent:
+                break
+        index += 1
+    return index
+
+
+def _strip_pnpm_managed_runtimes(project_document: str) -> tuple[str, int]:
+    """Remove pnpm runtime protocol entries from the generator-only lockfile.
+
+    pnpm 11 encodes ``devEngines.runtime`` as e.g. ``node@runtime:24.20.0``.
+    flatpak-node-generator currently interprets that as a normal npm package
+    and constructs an invalid registry URL such as
+    ``node/-/node-runtime:24.20.0.tgz``. Flatpak provides Node through the
+    org.freedesktop.Sdk.Extension.node24 SDK extension, so runtime artifacts
+    must not be part of the generated npm source graph.
+
+    Only the temporary lockfile passed to flatpak-node-generator is changed;
+    the repository pnpm-lock.yaml remains byte-for-byte untouched for pnpm's
+    own frozen-lockfile validation.
+    """
+    lines = project_document.splitlines(keepends=True)
+    output: List[str] = []
+    removed = 0
+    index = 0
+
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip(" ")) if stripped else -1
+
+        # packages:/snapshots: entries such as:
+        #   node@runtime:24.20.0:
+        if indent == 2 and "@runtime:" in stripped and stripped.endswith(":"):
+            index = _block_end(lines, index, indent)
+            removed += 1
+            continue
+
+        # Root importer dependency such as:
+        #       node:
+        #         specifier: runtime:24.20.0
+        #         version: runtime:24.20.0
+        if indent == 6 and stripped.endswith(":"):
+            end = _block_end(lines, index, indent)
+            block = "".join(lines[index:end])
+            if re.search(r"(?m)^\\s+(?:specifier|version):\\s+runtime:", block):
+                index = end
+                removed += 1
+                continue
+
+        output.append(line)
+        index += 1
+
+    return "".join(output), removed
+
+
+def _project_lockfile_for_generator(lockfile: Path) -> Optional[Path]:
     """Extract pnpm's project lockfile document for single-document consumers.
 
     pnpm 11 writes an environment lockfile document first (package-manager and
@@ -63,6 +125,15 @@ new_function = '''def _project_lockfile_for_generator(lockfile: Path) -> Optiona
     if "\\npackages:" not in project_document:
         raise ValueError(f"Final pnpm lockfile document has no packages section: {lockfile}")
 
+    project_document, removed_runtime_blocks = _strip_pnpm_managed_runtimes(
+        project_document
+    )
+    print(
+        "pnpm multi-document lockfile detected; removed "
+        f"{removed_runtime_blocks} pnpm-managed runtime block(s) from the "
+        "generator-only project document"
+    )
+
     with tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
@@ -78,8 +149,8 @@ new_function = '''def _project_lockfile_for_generator(lockfile: Path) -> Optiona
         temporary_path = Path(temp.name)
 
     print(
-        "pnpm multi-document lockfile detected; using the final project "
-        f"document for flatpak-node-generator: {temporary_path.name}"
+        "using the final project document for flatpak-node-generator: "
+        f"{temporary_path.name}"
     )
     return temporary_path
 
