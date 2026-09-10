@@ -1,0 +1,91 @@
+name: ChatGPT Flatpak build validation
+
+on:
+  push:
+    branches:
+      - linux/native-readiness-chatgpt-sol56-20260909
+    paths:
+      - .github/chatgpt-flatpak-build-request
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flatpak-build:
+    if: github.repository == 'vertigo-red/Vortex' && github.ref_name == 'linux/native-readiness-chatgpt-sol56-20260909'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install Flatpak tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak --version
+          flatpak-builder --version
+
+      - name: Validate manifest
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          path = Path('flatpak/com.nexusmods.vortex.yaml')
+          data = yaml.safe_load(path.read_text(encoding='utf-8'))
+          assert data['app-id'] == 'com.nexusmods.vortex'
+          assert data['runtime-version'] == '25.08'
+          assert 'org.freedesktop.Sdk.Extension.node24' in data['sdk-extensions']
+          assert 'generated-sources.json' in data['modules'][-1]['sources']
+          assert 'generated-nuget-sources.json' in data['modules'][-1]['sources']
+          print('manifest structure OK')
+          PY
+
+      - name: Build Flatpak
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          flatpak-builder \
+            --user \
+            --install-deps-from=flathub \
+            --force-clean \
+            --repo=flatpak-repo \
+            _flatpak-build \
+            flatpak/com.nexusmods.vortex.yaml \
+            2>&1 | tee /tmp/flatpak-builder.log
+          status=${PIPESTATUS[0]}
+          tail -n 350 /tmp/flatpak-builder.log > /tmp/flatpak-builder-tail.log
+          echo "=== flatpak-builder tail ==="
+          cat /tmp/flatpak-builder-tail.log
+          exit "$status"
+
+      - name: Upload Flatpak diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-builder-tail
+          path: /tmp/flatpak-builder-tail.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Build test bundle
+        run: |
+          flatpak build-bundle \
+            flatpak-repo \
+            Vortex-linux-native-test.flatpak \
+            com.nexusmods.vortex
+          ls -lh Vortex-linux-native-test.flatpak
+
+      - name: Upload test bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vortex-linux-native-flatpak
+          path: Vortex-linux-native-test.flatpak
+          if-no-files-found: error
+          retention-days: 7
