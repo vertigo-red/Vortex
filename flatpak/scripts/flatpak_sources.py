@@ -71,9 +71,11 @@ def _strip_pnpm_managed_runtimes(project_document: str) -> tuple[str, int]:
         stripped = line.strip()
         indent = len(line) - len(line.lstrip(" ")) if stripped else -1
 
-        # packages:/snapshots: entries such as:
+        # packages:/snapshots: entries such as either:
         #   node@runtime:24.20.0:
-        if indent == 2 and "@runtime:" in stripped and stripped.endswith(":"):
+        #   node@runtime:24.20.0: {}
+        # Both are pnpm metadata for devEngines.runtime, not npm packages.
+        if indent == 2 and "@runtime:" in stripped:
             index = _block_end(lines, index, indent)
             removed += 1
             continue
