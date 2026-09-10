@@ -72,13 +72,14 @@ modules:
     build-commands:
       # Steps match `.github/workflows/package.yml` where possible.
 
-      # Bootstrap the exact pnpm version pinned by package.json. The tarball is
-      # fetched by flatpak-builder before the network-isolated build starts.
+      # Bootstrap the exact pnpm version pinned by package.json. The archive
+      # source uses Flatpak's default strip-components=1, so npm's leading
+      # package/ directory is removed under flatpak-pnpm.
       - |
         mkdir -p .flatpak-bin
         cat > .flatpak-bin/pnpm <<'EOF'
         #!/bin/sh
-        exec node /run/build/vortex/flatpak-pnpm/package/bin/pnpm.cjs "$@"
+        exec node /run/build/vortex/flatpak-pnpm/bin/pnpm.cjs "$@"
         EOF
         chmod +x .flatpak-bin/pnpm
         test "$(pnpm --version)" = "11.10.0"
