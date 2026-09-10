@@ -30,7 +30,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: .flatpak-builder/downloads
-          key: flatpak-downloads-${{ runner.os }}-${{ hashFiles('flatpak/generated-sources.json', 'flatpak/generated-nuget-sources.json') }}
+          key: flatpak-downloads-${{ runner.os }}-${{ hashFiles('flatpak/com.nexusmods.vortex.yaml', 'flatpak/generated-sources.json', 'flatpak/generated-nuget-sources.json') }}
           restore-keys: |
             flatpak-downloads-${{ runner.os }}-
 
