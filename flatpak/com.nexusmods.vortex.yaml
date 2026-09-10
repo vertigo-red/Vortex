@@ -30,6 +30,16 @@ build-options:
     # already-reviewed frozen lockfile here; Flatpak still verifies source hashes.
     PNPM_CONFIG_TRUST_LOCKFILE: "true"
 
+    # pnpm 11 normally auto-runs install before pnpm run/exec when it decides
+    # node_modules needs verification. The sandbox already uses the hash-pinned
+    # Node runtime above, so an implicit runtime download would violate offline builds.
+    PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: "false"
+
+    # src/main/postinstall.mjs otherwise starts electron-rebuild while pnpm is
+    # still running dependency lifecycle scripts. Stage FOMOD's companion .so
+    # after install completes, then rebuild explicitly below.
+    VORTEX_ELECTRON_REBUILD: "defer"
+
     # Dotnet SDK settings for build-time tools (runtime DOTNET_ROOT is set via finish-args).
     DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     DOTNET_NOLOGO: "1"
@@ -105,14 +115,22 @@ modules:
         EOF
 
       # flatpak-node-generator stores Electron headers in the XDG node-gyp
-      # cache. electron-rebuild still expects ~/.electron-gyp, and Flatpak
-      # requires the symlink and rebuild to live in the same build command.
-      # This also covers the rebuild invoked by src/main/postinstall.mjs.
+      # cache. electron-rebuild still expects ~/.electron-gyp. Install first
+      # with Vortex's rebuild deferred, then stage FOMOD's Linux companion
+      # library from its pinned npm package before rebuilding native addons.
       - |
         rm -rf "$HOME/.electron-gyp"
         ln -s "$XDG_CACHE_HOME/node-gyp" "$HOME/.electron-gyp"
         pnpm install --offline --frozen-lockfile --no-runtime
-        pnpm --filter @vortex/main exec electron-rebuild
+
+        fomod_pkg="$(find node_modules/.pnpm -path '*/node_modules/@nexusmods/fomod-installer-native/package.json' -print -quit)"
+        test -n "$fomod_pkg"
+        fomod_dir="$(dirname "$fomod_pkg")"
+        test -f "$fomod_dir/prebuilds/linux-x64/ModInstaller.Native.so"
+        cp -f "$fomod_dir/prebuilds/linux-x64/ModInstaller.Native.so" "$fomod_dir/ModInstaller.Native.so"
+
+        cd src/main
+        ./node_modules/.bin/electron-rebuild
 
       # The main Nx build normally downloads level_pivot DuckDB extensions.
       # Flatpak builds have no network access, so materialize the two pinned
