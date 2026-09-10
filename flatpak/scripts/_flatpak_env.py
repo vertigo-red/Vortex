@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 
-FLATPAK_NODE_GENERATOR_GIT_COMMIT = "216a52efa4fcaaf6612147ffe53d9b70c97addfc"
+FLATPAK_NODE_GENERATOR_GIT_COMMIT = "1fc32195e3e60fe5c97f0af646dec7a99df5962b"
 # Note(sewer): Keep this pinned to a known-good upstream commit.
 # Currently, PyPI release fails due to
 # "Unknown playwright browser chromium-headless-shell".
