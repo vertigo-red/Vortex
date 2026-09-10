@@ -42,7 +42,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "24.17.0"
+          node-version: "24.20.0"
           cache: "pnpm"
 
       - name: Fix pnpm node-gyp permissions
@@ -73,8 +73,14 @@ jobs:
       - name: Rebuild Electron native modules
         run: pnpm --filter @vortex/main exec electron-rebuild
 
-      - name: Verify workspace
-        run: pnpm run verify
+      - name: Format workspace
+        run: pnpm run format
+
+      - name: Build workspace
+        run: pnpm run build
+
+      - name: Test workspace
+        run: pnpm run test
 
   verify-windows:
     # Regression gate: the port touches cross-platform code (deployment,
@@ -98,14 +104,20 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "24.17.0"
+          node-version: "24.20.0"
           cache: "pnpm"
 
       - name: Install workspace
         run: pnpm install --frozen-lockfile
 
-      - name: Verify workspace
-        run: pnpm run verify
+      - name: Format workspace
+        run: pnpm run format
+
+      - name: Build workspace
+        run: pnpm run build
+
+      - name: Test workspace
+        run: pnpm run test
 
   package:
     needs: verify
@@ -136,7 +148,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "24.17.0"
+          node-version: "24.20.0"
           cache: "pnpm"
 
       - name: Fix pnpm node-gyp permissions
@@ -151,8 +163,8 @@ jobs:
         uses: actions/cache@v6
         with:
           path: |
-            node_modules/.pnpm/@nexusmods+fomod-installer-native@*/node_modules/@nexusmods+fomod-installer-native/build
-            node_modules/.pnpm/@nexusmods+fomod-installer-native@*/node_modules/@nexusmods+fomod-installer-native/bin
+            node_modules/.pnpm/@nexusmods+fomod-installer-native@*/node_modules/@nexusmods/fomod-installer-native/build
+            node_modules/.pnpm/@nexusmods+fomod-installer-native@*/node_modules/@nexusmods/fomod-installer-native/bin
             node_modules/.pnpm/drivelist@*/node_modules/drivelist/build
             node_modules/.pnpm/drivelist@*/node_modules/drivelist/bin
             node_modules/.pnpm/leveldown@*/node_modules/leveldown/build
@@ -340,7 +352,7 @@ jobs:
             "runner_os": "${{ runner.os }}",
             "runner_arch": "${{ runner.arch }}",
             "runner_image": "ubuntu-24.04",
-            "node": "24.17.0",
+            "node": "24.20.0",
             "pnpm": "11.10.0",
             "ci_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           }
