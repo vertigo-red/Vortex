@@ -13,7 +13,10 @@ sdk-extensions:
   - org.freedesktop.Sdk.Extension.dotnet9
 
 build-options:
-  prepend-path: /run/build/vortex/.flatpak-bin:/usr/lib/sdk/node24/bin:/usr/lib/sdk/dotnet9/bin
+  # The workspace requires exactly Node 24.20.0. Put the hash-pinned Node
+  # source ahead of the SDK extension so pnpm never needs its online runtime
+  # downloader inside the offline Flatpak build sandbox.
+  prepend-path: /run/build/vortex/flatpak-node-runtime/bin:/run/build/vortex/.flatpak-bin:/usr/lib/sdk/node24/bin:/usr/lib/sdk/dotnet9/bin
   append-ld-library-path: /usr/lib/sdk/dotnet9/lib
   env:
     # Flatpak builds run offline. flatpak-node-generator populates the pnpm
@@ -81,6 +84,7 @@ modules:
       # source uses Flatpak's default strip-components=1, so npm's leading
       # package/ directory is removed under flatpak-pnpm.
       - |
+        test "$(node --version)" = "v24.20.0"
         mkdir -p .flatpak-bin
         cat > .flatpak-bin/pnpm <<'EOF'
         #!/bin/sh
@@ -132,6 +136,10 @@ modules:
     sources:
       - type: dir
         path: ..
+      - type: archive
+        url: https://nodejs.org/download/release/v24.20.0/node-v24.20.0-linux-x64.tar.gz
+        sha256: 855d581f8a4eb1a8117e3426de25fe02770592febcfb31369aee1ffbfee9e8ec
+        dest: flatpak-node-runtime
       - type: archive
         url: https://registry.npmjs.org/pnpm/-/pnpm-11.10.0.tgz
         sha256: 620b6605ea4f62fc56a6d0a98733f479071d0321e03e486b522c7e9a74617431
