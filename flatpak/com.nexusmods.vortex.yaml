@@ -78,7 +78,7 @@ modules:
         mkdir -p .flatpak-bin
         cat > .flatpak-bin/pnpm <<'EOF'
         #!/bin/sh
-        exec node /run/build/vortex/flatpak-pnpm/package/bin/pnpm.mjs "$@"
+        exec node /run/build/vortex/flatpak-pnpm/package/bin/pnpm.cjs "$@"
         EOF
         chmod +x .flatpak-bin/pnpm
         test "$(pnpm --version)" = "11.10.0"
