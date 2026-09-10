@@ -1,0 +1,36 @@
+name: ChatGPT DuckDB extension source hash
+
+on:
+  push:
+    branches:
+      - linux/native-readiness-chatgpt-sol56-20260909
+    paths:
+      - .github/chatgpt-duckdb-source-hash-request
+
+permissions:
+  contents: read
+
+jobs:
+  hash:
+    if: github.repository == 'vertigo-red/Vortex'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download pinned DuckDB extension inputs
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/duckdb-sources
+          base=https://nexus-mods.github.io/duckdb-level-pivot/current_release/v1.5.1
+          curl -fL --retry 3 "$base/linux_amd64/level_pivot.duckdb_extension.gz" -o /tmp/duckdb-sources/level_pivot-linux_amd64.gz
+          curl -fL --retry 3 "$base/windows_amd64/level_pivot.duckdb_extension.gz" -o /tmp/duckdb-sources/level_pivot-windows_amd64.gz
+          sha256sum /tmp/duckdb-sources/*.gz | tee /tmp/duckdb-sources/SHA256SUMS
+          gzip -t /tmp/duckdb-sources/*.gz
+          ls -lh /tmp/duckdb-sources
+
+      - name: Upload hashes
+        uses: actions/upload-artifact@v4
+        with:
+          name: duckdb-extension-source-hashes
+          path: /tmp/duckdb-sources/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
