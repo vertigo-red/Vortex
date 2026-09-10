@@ -14,8 +14,8 @@ sdk-extensions:
 
 build-options:
   # The workspace requires exactly Node 24.20.0. Put the hash-pinned Node
-  # source ahead of the SDK extension so pnpm never needs its online runtime
-  # downloader inside the offline Flatpak build sandbox.
+  # source ahead of the SDK extension and use it as the externally managed
+  # build runtime inside the offline Flatpak sandbox.
   prepend-path: /run/build/vortex/flatpak-node-runtime/bin:/run/build/vortex/.flatpak-bin:/usr/lib/sdk/node24/bin:/usr/lib/sdk/dotnet9/bin
   append-ld-library-path: /usr/lib/sdk/dotnet9/lib
   env:
@@ -92,6 +92,27 @@ modules:
         EOF
         chmod +x .flatpak-bin/pnpm
         test "$(pnpm --version)" = "11.10.0"
+
+      # pnpm treats runtime.onFail=download as a managed runtime dependency and
+      # downloads Node even when the matching executable is already on PATH.
+      # Flatpak supplies that exact Node archive above, so keep the version
+      # requirements but validate the external runtime instead of downloading it.
+      # This edits only flatpak-builder's private source copy.
+      - |
+        node <<'EOF'
+        const fs = require('node:fs')
+        const path = 'package.json'
+        const manifest = JSON.parse(fs.readFileSync(path, 'utf8'))
+        for (const section of ['engines', 'devEngines']) {
+          const runtime = manifest[section]?.runtime
+          if (runtime?.name !== 'node' || runtime.version !== '24.20.0') {
+            throw new Error(`Unexpected ${section}.runtime configuration`)
+          }
+          runtime.onFail = 'error'
+        }
+        fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`)
+        EOF
+
       - |
         cat > NuGet.Config <<'EOF'
         <?xml version="1.0" encoding="utf-8"?>
