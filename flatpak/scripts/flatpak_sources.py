@@ -25,6 +25,7 @@ from _flatpak_pnpm_hash import (
 DEFAULT_LOCKFILE = "pnpm-lock.yaml"
 DEFAULT_PNPM_OUTPUT = "flatpak/generated-sources.json"
 DEFAULT_PNPM_HASH_FILE = "flatpak/generated-sources.hash"
+DEFAULT_PNPM_STORE_VERSION = "v11"
 DEFAULT_NUGET_SEARCH_ROOT = "extensions"
 DEFAULT_NUGET_OUTPUT = "flatpak/generated-nuget-sources.json"
 DEFAULT_NUGET_HASH_FILE = "flatpak/generated-nuget-sources.hash"
@@ -171,6 +172,8 @@ def generate_sources(
             "-o",
             str(output),
             "--electron-node-headers",
+            "--pnpm-store-version",
+            DEFAULT_PNPM_STORE_VERSION,
         ]
         if recursive:
             if lockfiles is None:
