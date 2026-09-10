@@ -1,0 +1,151 @@
+name: ChatGPT workspace build diagnostics
+
+on:
+  push:
+    branches:
+      - linux/native-readiness-chatgpt-sol56-20260909
+    paths:
+      - .github/chatgpt-build-targets-request
+  workflow_dispatch:
+
+concurrency:
+  group: chatgpt-build-targets-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-linux:
+    if: github.repository == 'vertigo-red/Vortex' && github.ref_name == 'linux/native-readiness-chatgpt-sol56-20260909'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      NX_DAEMON: false
+      VORTEX_ELECTRON_REBUILD: defer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - uses: pnpm/action-setup@v6.0.9
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.20.0"
+          cache: pnpm
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+      - name: Build targets
+        id: build
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm nx run-many -t build --output-style=static 2>&1 | tee build.log
+      - name: Lint targets
+        id: lint
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm nx run-many -t lint --output-style=static 2>&1 | tee lint.log
+      - name: Typecheck targets
+        id: typecheck
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm nx run-many -t typecheck --output-style=static 2>&1 | tee typecheck.log
+      - name: Generate assets
+        id: assets
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm run assets 2>&1 | tee assets.log
+      - name: Upload Linux diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-build-linux
+          path: |
+            build.log
+            lint.log
+            typecheck.log
+            assets.log
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Fail on target errors
+        if: always() && (steps.build.outcome != 'success' || steps.lint.outcome != 'success' || steps.typecheck.outcome != 'success' || steps.assets.outcome != 'success')
+        run: exit 1
+
+  diagnose-windows:
+    if: github.repository == 'vertigo-red/Vortex' && github.ref_name == 'linux/native-readiness-chatgpt-sol56-20260909'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      NX_DAEMON: false
+      VORTEX_ELECTRON_REBUILD: defer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: pnpm/action-setup@v6.0.9
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.20.0"
+          cache: pnpm
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+      - name: Build targets
+        id: build
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          pnpm nx run-many -t build --output-style=static 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Lint targets
+        id: lint
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          pnpm nx run-many -t lint --output-style=static 2>&1 | Tee-Object -FilePath lint.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Typecheck targets
+        id: typecheck
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          pnpm nx run-many -t typecheck --output-style=static 2>&1 | Tee-Object -FilePath typecheck.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Generate assets
+        id: assets
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          pnpm run assets 2>&1 | Tee-Object -FilePath assets.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload Windows diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-build-windows
+          path: |
+            build.log
+            lint.log
+            typecheck.log
+            assets.log
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Fail on target errors
+        if: always() && (steps.build.outcome != 'success' || steps.lint.outcome != 'success' || steps.typecheck.outcome != 'success' || steps.assets.outcome != 'success')
+        shell: pwsh
+        run: exit 1
