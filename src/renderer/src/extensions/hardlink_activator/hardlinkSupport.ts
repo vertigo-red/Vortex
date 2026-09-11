@@ -28,7 +28,7 @@ export function probeHardlinkSupport(
   const name = `.__vortex_hardlink_probe-${process.pid}-${randomUUID()}`;
   const source = path.join(sourceDir, name);
   const destination = path.join(destinationDir, name);
-  let supported = false;
+  let supported: boolean;
   let errorCode: string;
 
   try {
