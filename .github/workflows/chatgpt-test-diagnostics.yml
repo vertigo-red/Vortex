@@ -50,19 +50,35 @@ jobs:
       - name: Rebuild Electron native modules
         run: pnpm --filter @vortex/main exec electron-rebuild
 
-      - name: Test workspace
+      - name: Unit test targets
+        id: unit
+        continue-on-error: true
+        timeout-minutes: 15
         shell: bash
         run: |
           set -o pipefail
-          pnpm run test 2>&1 | tee test-workspace-linux.log
+          pnpm nx run-many -t test --exclude @vortex/e2e --outputStyle=stream 2>&1 | tee test-unit-linux.log
 
-      - name: Upload Linux test log
+      - name: Integration test targets
+        id: integration
+        continue-on-error: true
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm nx run-many -t test:integration --exclude @vortex/e2e --outputStyle=stream 2>&1 | tee test-integration-linux.log
+
+      - name: Upload Linux test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-workspace-linux
-          path: test-workspace-linux.log
+          path: test-*-linux.log
           if-no-files-found: error
+
+      - name: Fail on Linux test errors
+        if: always() && (steps.unit.outcome != 'success' || steps.integration.outcome != 'success')
+        run: exit 1
 
   windows:
     runs-on: windows-latest
@@ -87,17 +103,35 @@ jobs:
       - name: Install workspace
         run: pnpm install --frozen-lockfile
 
-      - name: Test workspace
+      - name: Unit test targets
+        id: unit
+        continue-on-error: true
+        timeout-minutes: 20
         shell: pwsh
         run: |
-          pnpm run test 2>&1 | Tee-Object -FilePath test-workspace-windows.log
+          pnpm nx run-many -t test --exclude @vortex/e2e --outputStyle=stream 2>&1 | Tee-Object -FilePath test-unit-windows.log
           $exitCode = $LASTEXITCODE
           exit $exitCode
 
-      - name: Upload Windows test log
+      - name: Integration test targets
+        id: integration
+        continue-on-error: true
+        timeout-minutes: 20
+        shell: pwsh
+        run: |
+          pnpm nx run-many -t test:integration --exclude @vortex/e2e --outputStyle=stream 2>&1 | Tee-Object -FilePath test-integration-windows.log
+          $exitCode = $LASTEXITCODE
+          exit $exitCode
+
+      - name: Upload Windows test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-workspace-windows
-          path: test-workspace-windows.log
+          path: test-*-windows.log
           if-no-files-found: error
+
+      - name: Fail on Windows test errors
+        if: always() && (steps.unit.outcome != 'success' || steps.integration.outcome != 'success')
+        shell: pwsh
+        run: exit 1
