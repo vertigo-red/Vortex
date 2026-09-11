@@ -16,6 +16,7 @@ vi.mock("../../util/api", () => ({
   UserCanceled: class extends Error {},
 }));
 vi.mock("../../util/fs", () => ({
+  ensureDirAsync: vi.fn(() => Promise.resolve()),
   renameAsync: (from: string, to: string) => nativeFs.rename(from, to),
 }));
 vi.mock("../../logging", () => ({ log: vi.fn() }));
@@ -187,7 +188,6 @@ it.runIf(process.platform === "linux")(
     }
   },
 );
-
 
 it.runIf(process.platform === "linux")(
   "blocks deployment removal through a nested symlink escape",
