@@ -138,7 +138,7 @@ modules:
         cp -f "$fomod_dir/prebuilds/linux-x64/ModInstaller.Native.so" "$fomod_dir/ModInstaller.Native.so"
 
         electron_version="$(node -p "require('./src/main/node_modules/electron/package.json').version")"
-        ./src/main/node_modules/.bin/electron-rebuild --version "$electron_version" --module-dir "$PWD/extensions/theme-switcher/node_modules" --only font-scanner
+        ./src/main/node_modules/.bin/electron-rebuild --version "$electron_version" --module-dir "$PWD/extensions/theme-switcher" --only font-scanner
 
         cd src/main
         ./node_modules/.bin/electron-rebuild --only @nexusmods/fomod-installer-native,drivelist,leveldown,xxhash-addon,@parcel/watcher
