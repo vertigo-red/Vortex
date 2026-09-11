@@ -13,7 +13,7 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "lib": ["ESNext"],
-    "types": [],
+    "types": ["node"],
     "allowJs": false,
     "isolatedDeclarations": true
   }
