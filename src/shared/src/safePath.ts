@@ -10,6 +10,10 @@ export class PathContainmentError extends Error {
   }
 }
 
+function hasErrnoCode(error: unknown, code: string): boolean {
+  return error instanceof Error && "code" in error && error.code === code;
+}
+
 function isWithin(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   return (
@@ -91,7 +95,7 @@ export class SafePathBoundary {
       const canonicalTarget = await fs.realpath(absoluteTarget);
       this.assertCanonical(canonicalTarget, absoluteTarget);
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      if (hasErrnoCode(err, "ENOENT")) {
         return;
       }
       throw err;
@@ -114,14 +118,14 @@ export class SafePathBoundary {
       try {
         await fs.lstat(current);
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        if (!hasErrnoCode(err, "ENOENT")) {
           throw err;
         }
         try {
           await fs.mkdir(current);
           created.push(current);
         } catch (mkdirErr) {
-          if ((mkdirErr as NodeJS.ErrnoException).code !== "EEXIST") {
+          if (!hasErrnoCode(mkdirErr, "EEXIST")) {
             throw mkdirErr;
           }
         }
@@ -131,8 +135,9 @@ export class SafePathBoundary {
       this.assertCanonical(canonicalCurrent, current);
       const stats = await fs.stat(current);
       if (!stats.isDirectory()) {
-        const err = new Error(`Path component is not a directory: "${current}"`) as NodeJS.ErrnoException;
-        err.code = "ENOTDIR";
+        const err = Object.assign(new Error(`Path component is not a directory: "${current}"`), {
+          code: "ENOTDIR",
+        });
         throw err;
       }
     }
