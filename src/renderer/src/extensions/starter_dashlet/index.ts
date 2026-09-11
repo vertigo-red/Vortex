@@ -8,6 +8,7 @@ import type { IState } from "@/types/api";
 import type { IExtensionApi, IExtensionContext } from "../../types/IExtensionContext";
 import type { ITestResult } from "../../types/ITestResult";
 import * as fs from "../../util/fs";
+import { applyCompatibilityRunner } from "../../util/linux/compatibilityRunner";
 import { activeGameId } from "../../util/selectors";
 import type { IStarterInfo } from "../../util/StarterInfo";
 import { getSafe } from "../../util/storeHelper";
@@ -114,6 +115,12 @@ const onDeploymentEvent = async (api: IExtensionApi): Promise<void> => {
 const toolsValidation = memoize(validateTools);
 function init(context: IExtensionContext): boolean {
   context.registerReducer(["settings", "interface"], settingsReducer);
+
+  // Deployment/conflict start hooks run first. Once they have approved the launch, wrap an
+  // explicitly configured non-Steam Windows target in Wine/UMU/Proton on native Linux.
+  context.registerStartHook(150, "linux-compatibility-runner", (input) =>
+    PromiseBB.resolve(applyCompatibilityRunner(input)),
+  );
 
   const onGetValidTools = (starters: IStarterInfo[], gameMode: string) =>
     toolsValidation(context.api, starters, gameMode);
