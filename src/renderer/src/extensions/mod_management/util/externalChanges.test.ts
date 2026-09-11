@@ -1,3 +1,7 @@
+import * as nativeFs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -11,7 +15,8 @@ import { MERGED_PATH } from "../modMerging";
 
 // Mock fs. applyFileActions inside dealWithExternalChanges calls into it
 // whenever any auto-resolved changes are present. Real fs ops would fail in a
-// unit test, so make every call a no-op.
+// unit test, so make every call a no-op. SafePathBoundary intentionally still
+// uses node:fs/promises against real temporary roots on Linux.
 vi.mock("../../../util/fs", () => ({
   removeAsync: vi.fn(() => Promise.resolve()),
   moveAsync: vi.fn(() => Promise.resolve()),
@@ -106,20 +111,29 @@ function makeApi(opts: { externalChanges: IFileChange[]; activeSession?: unknown
   return { api, activator };
 }
 
-const FAKE_STAGING = "C:\\staging";
-const FAKE_MOD_PATHS = { "": "C:\\game\\Data" };
+let temporaryRoot: string;
+let stagingPath: string;
+let modPaths: { [typeId: string]: string };
+
 // dealWithExternalChanges iterates over lastDeployment keys (modTypes) to
 // dispatch applyFileActions; the per-entry contents don't matter once changes
 // are produced by the (mocked) activator.
 const FAKE_LAST_DEPLOYMENT: { [typeId: string]: IDeployedFile[] } = { "": [] };
 
 describe("dealWithExternalChanges", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     showExternalChangesCalls.length = 0;
+    temporaryRoot = await nativeFs.mkdtemp(path.join(os.tmpdir(), "vortex-external-changes-"));
+    stagingPath = path.join(temporaryRoot, "staging");
+    const gamePath = path.join(temporaryRoot, "game");
+    await nativeFs.mkdir(stagingPath);
+    await nativeFs.mkdir(path.join(gamePath, "Data"), { recursive: true });
+    modPaths = { "": gamePath };
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.clearAllMocks();
+    await nativeFs.rm(temporaryRoot, { recursive: true, force: true });
   });
 
   it("auto-resolves __merged changes regardless of recentChanges", async () => {
@@ -131,8 +145,8 @@ describe("dealWithExternalChanges", () => {
       api,
       activator,
       "test-profile",
-      FAKE_STAGING,
-      FAKE_MOD_PATHS,
+      stagingPath,
+      modPaths,
       FAKE_LAST_DEPLOYMENT,
       new Set(),
     );
@@ -153,8 +167,8 @@ describe("dealWithExternalChanges", () => {
       api,
       activator,
       "test-profile",
-      FAKE_STAGING,
-      FAKE_MOD_PATHS,
+      stagingPath,
+      modPaths,
       FAKE_LAST_DEPLOYMENT,
       new Set(),
     );
@@ -171,8 +185,8 @@ describe("dealWithExternalChanges", () => {
       api,
       activator,
       "test-profile",
-      FAKE_STAGING,
-      FAKE_MOD_PATHS,
+      stagingPath,
+      modPaths,
       FAKE_LAST_DEPLOYMENT,
       undefined,
     );
@@ -243,8 +257,8 @@ describe("dealWithExternalChanges", () => {
       api,
       activator,
       "test-profile",
-      FAKE_STAGING,
-      FAKE_MOD_PATHS,
+      stagingPath,
+      modPaths,
       FAKE_LAST_DEPLOYMENT,
       snapshot,
     );
