@@ -1,0 +1,103 @@
+name: ChatGPT workspace test diagnostics
+
+on:
+  push:
+    branches:
+      - "linux/native-readiness-chatgpt-sol56-20260909"
+  workflow_dispatch:
+
+concurrency:
+  group: chatgpt-test-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NX_DAEMON: false
+      VORTEX_ELECTRON_REBUILD: defer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: "recursive"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - uses: pnpm/action-setup@v6.0.9
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.20.0"
+          cache: "pnpm"
+
+      - name: Fix pnpm node-gyp permissions
+        run: find "$PNPM_HOME" -path '*/node-gyp/gyp/gyp_main.py' -exec chmod +x {} \;
+
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libarchive-dev libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0 libcairo2 libgl1 libgtk-3-0 xvfb
+
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+
+      - name: Rebuild Electron native modules
+        run: pnpm --filter @vortex/main exec electron-rebuild
+
+      - name: Test workspace
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm run test 2>&1 | tee test-workspace-linux.log
+
+      - name: Upload Linux test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-workspace-linux
+          path: test-workspace-linux.log
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      NX_DAEMON: false
+      VORTEX_ELECTRON_REBUILD: defer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: "recursive"
+
+      - uses: pnpm/action-setup@v6.0.9
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.20.0"
+          cache: "pnpm"
+
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+
+      - name: Test workspace
+        shell: pwsh
+        run: |
+          pnpm run test 2>&1 | Tee-Object -FilePath test-workspace-windows.log
+          $exitCode = $LASTEXITCODE
+          exit $exitCode
+
+      - name: Upload Windows test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-workspace-windows
+          path: test-workspace-windows.log
+          if-no-files-found: error
