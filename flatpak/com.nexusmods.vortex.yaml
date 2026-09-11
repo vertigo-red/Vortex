@@ -109,10 +109,13 @@ modules:
         <configuration>
           <packageSources>
             <clear />
-            <add key="offline" value="flatpak-nuget-sources" />
+            <add key="offline" value="/run/build/vortex/flatpak-nuget-sources" />
           </packageSources>
         </configuration>
         EOF
+        # dotnetprobe carries a project-local nuget.config with <clear/>, which
+        # otherwise overrides this sandbox's offline source with nuget.org.
+        cp -f NuGet.Config tools/dotnetprobe/nuget.config
 
       # flatpak-node-generator stores Electron headers in the XDG node-gyp
       # cache. electron-rebuild still expects ~/.electron-gyp. Install first
