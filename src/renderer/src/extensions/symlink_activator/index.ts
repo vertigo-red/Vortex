@@ -155,7 +155,7 @@ class DeploymendMethod extends LinkingDeployment {
     return this.assertDataMutation(linkPath, true)
       .then(() => fs.symlinkAsync(sourcePath, linkPath))
       .catch((err) =>
-        err.code !== "EEXIST"
+        getErrorCode(err) !== "EEXIST"
           ? Promise.reject(err)
           : this.assertDataMutation(linkPath, true)
               .then(() => fs.removeAsync(linkPath))
@@ -180,7 +180,6 @@ class DeploymendMethod extends LinkingDeployment {
     let canceled = false;
 
     const showDialogCallback = () => !canceled;
-
     // purge by removing all symbolic links that point to a file inside the install directory
     return walk(dataPath, (iterPath: string, stats: fs.Stats) => {
       if (canceled || !stats.isSymbolicLink()) {
