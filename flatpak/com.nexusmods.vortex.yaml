@@ -153,14 +153,18 @@ modules:
         gzip -dc flatpak-duckdb/level_pivot-windows_amd64.duckdb_extension.gz > src/main/build/duckdb-extensions/v1.5.1/windows_amd64/level_pivot.duckdb_extension
 
       # Follow the native Linux packaging pipeline: build the workspace, create
-      # the deploy tree, rebuild Linux native addons in that tree, then ask
-      # electron-builder only for the unpacked Linux payload used by Flatpak.
+      # the deploy tree, restore FOMOD's companion library that pnpm deploy does
+      # not retain at the package root, rebuild Linux native addons there, then
+      # ask electron-builder only for the unpacked Linux payload used by Flatpak.
       - pnpm run build
       - pnpm nx run @vortex/main:publish
       - |
         rm -rf "$HOME/.electron-gyp"
         ln -s "$XDG_CACHE_HOME/node-gyp" "$HOME/.electron-gyp"
         cd src/main/dist
+        fomod_dir="$PWD/node_modules/@nexusmods/fomod-installer-native"
+        test -f "$fomod_dir/prebuilds/linux-x64/ModInstaller.Native.so"
+        cp -f "$fomod_dir/prebuilds/linux-x64/ModInstaller.Native.so" "$fomod_dir/ModInstaller.Native.so"
         ./node_modules/.bin/electron-rebuild --only @nexusmods/fomod-installer-native,drivelist,leveldown,xxhash-addon,@parcel/watcher
       - cd src/main/dist && USE_HARD_LINKS=false ./node_modules/.bin/electron-builder --config ./electron-builder.config.json --publish never --linux dir
 
