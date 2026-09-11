@@ -120,7 +120,7 @@ jobs:
         run: pnpm run test
 
   package:
-    needs: verify
+    needs: [verify, verify-windows]
     # The job always runs (cheap until the marker test). The expensive
     # packaging steps are gated individually: hashFiles is evaluated at step
     # level, which the workflow validator accepts, and it is deterministic --
