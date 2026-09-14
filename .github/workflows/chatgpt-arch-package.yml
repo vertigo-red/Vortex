@@ -145,12 +145,31 @@ jobs:
           zstd -t "$PKG"
           bsdtar -tf "$PKG" | tee dist/arch-package-contents.txt
           grep -qx '\.PKGINFO' dist/arch-package-contents.txt
+          grep -qx '\.INSTALL' dist/arch-package-contents.txt
+          grep -qx 'opt/Vortex/vortex' dist/arch-package-contents.txt
           grep -Eq '(^|/)usr/share/applications/.+\.desktop$' dist/arch-package-contents.txt
           grep -Eq '(^|/)usr/share/icons/' dist/arch-package-contents.txt
-          grep -Eq '(^|/)usr/bin/' dist/arch-package-contents.txt
+
           bsdtar -xOf "$PKG" .PKGINFO | tee dist/ARCH-PKGINFO.txt
           grep -q '^pkgname = ' dist/ARCH-PKGINFO.txt
           grep -q '^pkgver = ' dist/ARCH-PKGINFO.txt
+          grep -q '^arch = x86_64$' dist/ARCH-PKGINFO.txt
+
+          # electron-builder/FPM installs the CLI launcher from .INSTALL rather
+          # than storing an untracked duplicate symlink in the tar payload.
+          bsdtar -xOf "$PKG" .INSTALL | tee dist/ARCH-INSTALL.txt
+          grep -Fq '/opt/Vortex/vortex' dist/ARCH-INSTALL.txt
+          grep -Fq '/usr/bin/vortex' dist/ARCH-INSTALL.txt
+          bsdtar -xOf "$PKG" usr/share/applications/vortex.desktop | tee dist/ARCH-DESKTOP.txt
+          grep -Fq 'Exec=/opt/Vortex/vortex %U' dist/ARCH-DESKTOP.txt
+
+          # Parse the finished zstd package with Arch Linux's own pacman.
+          PKG_BASENAME=$(basename "$PKG")
+          docker run --rm \
+            -v "$PWD/dist:/pkg:ro" \
+            archlinux:base \
+            pacman -Qp "/pkg/$PKG_BASENAME" | tee dist/arch-pacman-query.txt
+
           sha256sum "$PKG" | tee dist/ARCH-SHA256SUMS
 
       - name: Upload Arch package
@@ -161,9 +180,12 @@ jobs:
           path: |
             dist/*.pkg.tar.zst
             dist/ARCH-PKGINFO.txt
+            dist/ARCH-INSTALL.txt
+            dist/ARCH-DESKTOP.txt
             dist/ARCH-SHA256SUMS
             dist/arch-package-file.txt
             dist/arch-package-contents.txt
+            dist/arch-pacman-query.txt
             dist/arch-tar-stream-sha256.txt
             arch-package-build.log
           if-no-files-found: warn
