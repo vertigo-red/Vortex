@@ -1,0 +1,154 @@
+name: ChatGPT Arch package
+
+on:
+  push:
+    branches:
+      - linux/native-readiness-chatgpt-sol56-20260909
+    paths:
+      - .github/workflows/chatgpt-arch-package.yml
+      - .github/chatgpt-arch-build-request
+      - src/main/electron-builder.config.json
+  workflow_dispatch:
+
+concurrency:
+  group: chatgpt-arch-package-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  arch-package:
+    if: github.repository == 'vertigo-red/Vortex' && github.ref_name == 'linux/native-readiness-chatgpt-sol56-20260909'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      NX_DAEMON: false
+      VORTEX_ELECTRON_REBUILD: defer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - uses: pnpm/action-setup@v6.0.9
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.20.0"
+          cache: pnpm
+
+      - name: Fix pnpm node-gyp permissions
+        run: find "$PNPM_HOME" -path '*/node-gyp/gyp/gyp_main.py' -exec chmod +x {} \;
+
+      - name: Install Arch package build dependencies
+        # electron-builder 24 uses FPM for the pacman target. FPM needs
+        # bsdtar to generate .MTREE and zstd for a real .pkg.tar.zst stream.
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libfontconfig1-dev libarchive-dev libarchive-tools zstd
+
+      - name: Cache native module builds
+        uses: actions/cache@v6
+        with:
+          path: |
+            node_modules/.pnpm/@nexusmods+fomod-installer-native@*/node_modules/@nexusmods/fomod-installer-native/build
+            node_modules/.pnpm/@nexusmods+fomod-installer-native@*/node_modules/@nexusmods/fomod-installer-native/bin
+            node_modules/.pnpm/drivelist@*/node_modules/drivelist/build
+            node_modules/.pnpm/drivelist@*/node_modules/drivelist/bin
+            node_modules/.pnpm/leveldown@*/node_modules/leveldown/build
+            node_modules/.pnpm/xxhash-addon@*/node_modules/xxhash-addon/bin
+            node_modules/.pnpm/@parcel+watcher@*/node_modules/@parcel/watcher/build
+            node_modules/.pnpm/@parcel+watcher@*/node_modules/@parcel/watcher/bin
+          key: linux-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'src/main/postinstall.mjs') }}
+
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        env:
+          NODE_ENV: production
+        run: pnpm run build
+
+      - name: Prepare deployment
+        env:
+          NODE_ENV: production
+          VORTEX_ELECTRON_REBUILD: "skip"
+        run: pnpm nx run @vortex/main:publish
+
+      - name: Rebuild packaged native modules
+        working-directory: src/main/dist
+        run: npx --no-install electron-rebuild
+
+      - name: Verify native modules in deploy tree
+        working-directory: src/main/dist
+        run: |
+          set -euo pipefail
+          failures=0
+          for pkg in "winapi-bindings" "leveldown" "drivelist" "@parcel/watcher" "xxhash-addon" "@nexusmods/fomod-installer-native"; do
+            if find "node_modules/$pkg" -name '*.node' -print -quit 2>/dev/null | grep -q .; then
+              echo "OK: $pkg"
+            else
+              echo "ERROR: no native addon found for $pkg"
+              failures=$((failures + 1))
+            fi
+          done
+          if find "node_modules/loot" -name '*.node' -print -quit 2>/dev/null | grep -q .; then
+            echo "OK: loot"
+          else
+            echo "WARN: loot has no Linux .node (N-03, LOOT sorting unavailable)"
+          fi
+          exit "$failures"
+
+      - name: Build Arch pkg.tar.zst
+        working-directory: src/main/dist
+        env:
+          USE_HARD_LINKS: "false"
+        run: |
+          set -euxo pipefail
+          npx --no-install electron-builder \
+            --config ./electron-builder.config.json \
+            --linux pacman \
+            --x64 \
+            --publish never 2>&1 | tee ../../../arch-package-build.log
+
+      - name: Verify packaged dependencies
+        run: node scripts/verify-packaged-asar.mjs --asar dist/linux-unpacked/resources/app.asar
+
+      - name: Verify Arch package format and payload
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PKG=$(find dist -maxdepth 1 -type f -name '*.pkg.tar.zst' -print -quit)
+          test -n "$PKG"
+          file "$PKG" | tee dist/arch-package-file.txt
+          file "$PKG" | grep -qi 'Zstandard compressed data'
+          bsdtar -tf "$PKG" | tee dist/arch-package-contents.txt
+          grep -qx '\.PKGINFO' dist/arch-package-contents.txt
+          grep -Eq '(^|/)usr/share/applications/.+\.desktop$' dist/arch-package-contents.txt
+          grep -Eq '(^|/)usr/share/icons/' dist/arch-package-contents.txt
+          grep -Eq '(^|/)usr/bin/' dist/arch-package-contents.txt
+          bsdtar -xOf "$PKG" .PKGINFO | tee dist/ARCH-PKGINFO.txt
+          grep -q '^pkgname = ' dist/ARCH-PKGINFO.txt
+          grep -q '^pkgver = ' dist/ARCH-PKGINFO.txt
+          sha256sum "$PKG" | tee dist/ARCH-SHA256SUMS
+
+      - name: Upload Arch package
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vortex-arch-${{ github.sha }}
+          path: |
+            dist/*.pkg.tar.zst
+            dist/ARCH-PKGINFO.txt
+            dist/ARCH-SHA256SUMS
+            dist/arch-package-file.txt
+            dist/arch-package-contents.txt
+            arch-package-build.log
+          if-no-files-found: warn
+          retention-days: 30
