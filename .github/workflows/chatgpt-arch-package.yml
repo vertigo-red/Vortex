@@ -8,6 +8,10 @@ on:
       - .github/workflows/chatgpt-arch-package.yml
       - .github/chatgpt-arch-build-request
       - src/main/electron-builder.config.json
+      - src/main/prepare-dist-package.mjs
+      - src/main/src/cli.ts
+      - src/main/src/protocolArguments.ts
+      - src/main/src/protocolArguments.test.ts
   workflow_dispatch:
 
 concurrency:
@@ -71,6 +75,9 @@ jobs:
       - name: Install workspace
         run: pnpm install --frozen-lockfile
 
+      - name: Test nxm protocol CLI fallback
+        run: pnpm --dir src/main exec vitest run --config ./vitest.config.ts src/protocolArguments.test.ts
+
       - name: Build workspace
         env:
           NODE_ENV: production
@@ -81,6 +88,12 @@ jobs:
           NODE_ENV: production
           VORTEX_ELECTRON_REBUILD: "skip"
         run: pnpm nx run @vortex/main:publish
+
+      - name: Verify Linux icon staging
+        run: |
+          set -euxo pipefail
+          file src/main/dist/linux-icons/256x256.png | tee linux-icon-staging.txt
+          grep -Fq '256 x 256' linux-icon-staging.txt
 
       - name: Rebuild packaged native modules
         working-directory: src/main/dist
@@ -148,7 +161,11 @@ jobs:
           grep -qx '\.INSTALL' dist/arch-package-contents.txt
           grep -qx 'opt/Vortex/vortex' dist/arch-package-contents.txt
           grep -Eq '(^|/)usr/share/applications/.+\.desktop$' dist/arch-package-contents.txt
-          grep -Eq '(^|/)usr/share/icons/' dist/arch-package-contents.txt
+          grep -qx 'usr/share/icons/hicolor/256x256/apps/vortex.png' dist/arch-package-contents.txt
+          if grep -Eq '(^|/)usr/share/icons/hicolor/0x0/apps/vortex\.png$' dist/arch-package-contents.txt; then
+            echo 'ERROR: Vortex icon is still packaged under invalid hicolor/0x0 path'
+            exit 1
+          fi
 
           bsdtar -xOf "$PKG" .PKGINFO | tee dist/ARCH-PKGINFO.txt
           grep -q '^pkgname = ' dist/ARCH-PKGINFO.txt
@@ -162,6 +179,11 @@ jobs:
           grep -Fq '/usr/bin/vortex' dist/ARCH-INSTALL.txt
           bsdtar -xOf "$PKG" usr/share/applications/vortex.desktop | tee dist/ARCH-DESKTOP.txt
           grep -Fq 'Exec=/opt/Vortex/vortex %U' dist/ARCH-DESKTOP.txt
+          grep -Fq 'MimeType=x-scheme-handler/nxm;' dist/ARCH-DESKTOP.txt
+
+          bsdtar -xOf "$PKG" usr/share/icons/hicolor/256x256/apps/vortex.png > dist/ARCH-ICON.png
+          file dist/ARCH-ICON.png | tee dist/arch-icon-file.txt
+          grep -Fq '256 x 256' dist/arch-icon-file.txt
 
           # Parse the finished zstd package with Arch Linux's own pacman.
           PKG_BASENAME=$(basename "$PKG")
@@ -185,8 +207,10 @@ jobs:
             dist/ARCH-SHA256SUMS
             dist/arch-package-file.txt
             dist/arch-package-contents.txt
+            dist/arch-icon-file.txt
             dist/arch-pacman-query.txt
             dist/arch-tar-stream-sha256.txt
+            linux-icon-staging.txt
             arch-package-build.log
           if-no-files-found: warn
           retention-days: 30

@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -46,6 +46,18 @@ async function prepareWin() {
   );
 }
 
+async function prepareLinux() {
+  // electron-builder derives the hicolor directory from the PNG filename.
+  // A plain "vortex.png" is interpreted as 0x0, so stage the existing 256px
+  // source icon under its canonical Linux size name before packaging.
+  const iconDir = resolve(MAIN_DIR, "linux-icons");
+  await mkdir(iconDir, { recursive: true });
+  await copyFile(
+    resolve(MAIN_DIR, "../../../assets/images/vortex.png"),
+    resolve(iconDir, "256x256.png"),
+  );
+}
+
 async function main() {
   const json = await readFile(MAIN_PACKAGE_PATH, "utf8");
   const mainPkg = JSON.parse(json);
@@ -62,6 +74,8 @@ async function main() {
 
   if (process.platform === "win32") {
     await prepareWin();
+  } else if (process.platform === "linux") {
+    await prepareLinux();
   }
 }
 

@@ -43,7 +43,7 @@
   },
   "linux": {
     "target": ["zip", "rpm", "deb", "AppImage"],
-    "icon": "../../../assets/images/vortex.png",
+    "icon": "./linux-icons",
     "category": "Network;Development;Game;",
     "synopsis": "Mod Manager",
     "description": "The elegant, powerful, and open-source mod manager from Nexus Mods.",

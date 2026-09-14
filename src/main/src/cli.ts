@@ -7,6 +7,7 @@ import { app, BrowserWindow } from "electron";
 
 import { getVortexPath } from "./getVortexPath";
 import { log } from "./logging";
+import { applyNxmProtocolArgument } from "./protocolArguments";
 
 const ARG_COUNTS: Record<string, number> = {
   "-d": 1,
@@ -179,6 +180,8 @@ export function updateStartupSettings(updater: (current: IParameters) => IParame
 }
 
 export function parseCommandline(argv: string[], electronIsShitHack: boolean): IParameters {
+  const originalArgv = argv;
+
   // lets look and replace epic stuff?!
   argv = transformEpicArguments(argv);
 
@@ -223,7 +226,7 @@ export function parseCommandline(argv: string[], electronIsShitHack: boolean): I
     )
     .option(
       "-s, --set <path=value>",
-      "Change a value in the state. Please be very careful " +
+      "Change a value in state. Please be very careful " +
         "with this, incorrect use will break Vortex and you may " +
         "lose data",
       assign,
@@ -272,7 +275,7 @@ export function parseCommandline(argv: string[], electronIsShitHack: boolean): I
 
   return {
     ...getStartupSettings(),
-    ...commandLine,
+    ...applyNxmProtocolArgument(commandLine, originalArgv),
   };
 }
 
