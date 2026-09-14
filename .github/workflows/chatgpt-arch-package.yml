@@ -47,11 +47,12 @@ jobs:
         run: find "$PNPM_HOME" -path '*/node-gyp/gyp/gyp_main.py' -exec chmod +x {} \;
 
       - name: Install Arch package build dependencies
-        # electron-builder 24 uses FPM for the pacman target. FPM needs
-        # bsdtar to generate .MTREE and zstd for a real .pkg.tar.zst stream.
+        # electron-builder 24 bundles FPM 1.9.3. It can create a valid pacman
+        # archive with xz but does not support zstd. Build xz first, then
+        # transcode only the outer compression layer to Arch's modern zstd.
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          libfontconfig1-dev libarchive-dev libarchive-tools zstd
+          libfontconfig1-dev libarchive-dev libarchive-tools xz-utils zstd
 
       - name: Cache native module builds
         uses: actions/cache@v6
@@ -117,6 +118,19 @@ jobs:
             --x64 \
             --publish never 2>&1 | tee ../../../arch-package-build.log
 
+          PKG_XZ=$(find ../../../dist -maxdepth 1 -type f -name '*.pkg.tar.xz' -print -quit)
+          test -n "$PKG_XZ"
+          PKG_ZST="${PKG_XZ%.xz}.zst"
+
+          # The Arch package is a tar archive plus an outer compressor. Keep
+          # the tar byte stream identical and replace only xz with zstd.
+          xz -dc "$PKG_XZ" | zstd -T0 -19 --no-progress -o "$PKG_ZST"
+          XZ_TAR_SHA=$(xz -dc "$PKG_XZ" | sha256sum | awk '{print $1}')
+          ZST_TAR_SHA=$(zstd -dc "$PKG_ZST" | sha256sum | awk '{print $1}')
+          test "$XZ_TAR_SHA" = "$ZST_TAR_SHA"
+          printf 'tar-stream-sha256=%s\n' "$ZST_TAR_SHA" | tee ../../../dist/arch-tar-stream-sha256.txt
+          rm -f "$PKG_XZ"
+
       - name: Verify packaged dependencies
         run: node scripts/verify-packaged-asar.mjs --asar dist/linux-unpacked/resources/app.asar
 
@@ -128,6 +142,7 @@ jobs:
           test -n "$PKG"
           file "$PKG" | tee dist/arch-package-file.txt
           file "$PKG" | grep -qi 'Zstandard compressed data'
+          zstd -t "$PKG"
           bsdtar -tf "$PKG" | tee dist/arch-package-contents.txt
           grep -qx '\.PKGINFO' dist/arch-package-contents.txt
           grep -Eq '(^|/)usr/share/applications/.+\.desktop$' dist/arch-package-contents.txt
@@ -149,6 +164,7 @@ jobs:
             dist/ARCH-SHA256SUMS
             dist/arch-package-file.txt
             dist/arch-package-contents.txt
+            dist/arch-tar-stream-sha256.txt
             arch-package-build.log
           if-no-files-found: warn
           retention-days: 30

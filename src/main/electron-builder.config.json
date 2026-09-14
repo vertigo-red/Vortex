@@ -51,8 +51,7 @@
     "mimeTypes": ["x-scheme-handler/nxm"]
   },
   "pacman": {
-    "artifactName": "${productName}-${version}-${arch}.pkg.tar.zst",
-    "fpm": ["--pacman-compression=zstd"]
+    "artifactName": "${productName}-${version}-${arch}.pkg.tar.xz"
   },
   "extraResources": [
     {
