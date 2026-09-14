@@ -3,6 +3,8 @@ const { fs, util } = require("@nexusmods/vortex-api");
 const { Builder, parseStringPromise } = require("xml2js");
 const winapi = require("winapi-bindings");
 
+const { mergeAddInItems } = require("./mergeAddins");
+
 const ADDINS_FILE = "AddIns.xml";
 const STEAM_ID = 17450;
 const STEAM_ID_ULTIMATE_EDITION = 47810;
@@ -59,7 +61,7 @@ function addinsPath() {
   if (_ADDINS_PATH === undefined) {
     _ADDINS_PATH = path.join(
       util.getVortexPath("documents"),
-      "Bioware",
+      "BioWare",
       "Dragon Age",
       "Settings",
       ADDINS_FILE,
@@ -144,7 +146,7 @@ function merge(filePath, mergeDir) {
     .then(() => readAddinsData(mergeDir))
     .then(
       async (addinsData) =>
-        new Promise(async (resolve, reject) => {
+        new Promise(async (resolve) => {
           try {
             const data = await parseStringPromise(addinsData);
             return resolve(data);
@@ -154,26 +156,19 @@ function merge(filePath, mergeDir) {
         }),
     )
     .then(async (addinsData) => {
-      const list = addinsData?.AddInsList?.AddInItem;
-      const manifestList =
-        manifest?.Manifest?.AddInsList !== undefined
-          ? manifest.Manifest.AddInsList.reduce((accum, add) => {
-              accum = accum.concat(...add?.AddInItem);
-              return accum;
-            }, [])
-          : [];
-      if (list === undefined) {
+      const mergedAddins = mergeAddInItems(addinsData, manifest);
+      if (mergedAddins === undefined) {
         return Promise.reject(
           new util.ProcessCanceled(
             `Addins file is invalid - "${path.join(mergeDir, "Settings", ADDINS_FILE)}"`,
           ),
         );
       }
-      addinsData.AddInsList.AddInItem = [].concat([...list], [...manifestList]);
+
       const destPath = path.join(mergeDir, "Settings");
       return fs.ensureDirWritableAsync(destPath).then(async () => {
         const builder = new Builder();
-        const xml = builder.buildObject(addinsData);
+        const xml = builder.buildObject(mergedAddins);
         return fs.writeFileAsync(path.join(destPath, ADDINS_FILE), xml, { encoding: "utf-8" });
       });
     });
