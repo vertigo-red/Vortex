@@ -42,13 +42,17 @@
     "installerHeaderIcon": "nsis/icon.ico"
   },
   "linux": {
-    "target": ["zip", "rpm", "deb", "AppImage"],
+    "target": ["zip", "rpm", "deb", "AppImage", "pacman"],
     "icon": "../../../assets/images/vortex.png",
     "category": "Network;Development;Game;",
     "synopsis": "Mod Manager",
     "description": "The elegant, powerful, and open-source mod manager from Nexus Mods.",
     "maintainer": "Black Tree Gaming Ltd. <support@nexusmods.com> (https://www.nexusmods.com/)",
     "mimeTypes": ["x-scheme-handler/nxm"]
+  },
+  "pacman": {
+    "artifactName": "${productName}-${version}-${arch}.pkg.tar.zst",
+    "fpm": ["--pacman-compression=zstd"]
   },
   "extraResources": [
     {
