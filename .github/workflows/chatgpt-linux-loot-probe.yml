@@ -69,18 +69,44 @@ jobs:
           cp "$LIBLOOT_SO" node-loot/loot_api/libloot.so.0
           ln -sfn libloot.so.0 node-loot/loot_api/libloot.so
 
-      - name: Build legacy node-loot against Linux libloot
+      - name: Patch and build legacy node-loot for Linux
         working-directory: node-loot
         run: |
           set -euxo pipefail
           python3 - <<'PY'
           from pathlib import Path
+
           path = Path('binding.gyp')
           text = path.read_text()
           old = '"libraries": [\n                "-l../loot_api/libloot"\n            ],'
           new = '"libraries": [\n                "<(module_root_dir)/loot_api/libloot.so"\n            ],'
           if old not in text:
               raise SystemExit('expected node-loot libraries stanza not found')
+          path.write_text(text.replace(old, new, 1))
+
+          path = Path('src/napi_helpers.h')
+          text = path.read_text()
+          include_anchor = '#include <napi.h>\n'
+          if include_anchor not in text:
+              raise SystemExit('expected napi include not found')
+          text = text.replace(include_anchor, '#include <napi.h>\n#ifndef _WIN32\n#include <codecvt>\n#include <locale>\n#endif\n', 1)
+          old = '''#ifdef _WIN32
+template<>
+std::wstring fromNAPI(const Napi::Value &info) {
+  return u8Tou16(info.ToString().Utf8Value());
+}
+#endif'''
+          new = '''template<>
+std::wstring fromNAPI(const Napi::Value &info) {
+#ifdef _WIN32
+  return u8Tou16(info.ToString().Utf8Value());
+#else
+  std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+  return converter.from_bytes(info.ToString().Utf8Value());
+#endif
+}'''
+          if old not in text:
+              raise SystemExit('expected Windows-only wstring conversion not found')
           path.write_text(text.replace(old, new, 1))
           PY
           npm install --ignore-scripts
