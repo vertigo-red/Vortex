@@ -1,0 +1,123 @@
+name: ChatGPT Linux LOOT probe
+
+on:
+  push:
+    branches:
+      - linux/native-readiness-chatgpt-sol56-20260909
+    paths:
+      - .github/workflows/chatgpt-linux-loot-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-loot-probe:
+    if: github.repository == 'vertigo-red/Vortex' && github.ref_name == 'linux/native-readiness-chatgpt-sol56-20260909'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      LIBLOOT_COMMIT: 7104c92bef8990316482dc79a9f42ecddf58953e
+      NODE_LOOT_COMMIT: f558b3579d3a515ee92f08849818ba1b98bfdf2c
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.20.0"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake python3 pkg-config
+          rustup toolchain install 1.89.0 --profile minimal --no-self-update
+          rustup default 1.89.0
+          rustc --version
+          cmake --version
+          node --version
+
+      - name: Fetch pinned LOOT sources
+        run: |
+          set -euxo pipefail
+          git init libloot
+          git -C libloot remote add origin https://github.com/loot/libloot.git
+          git -C libloot fetch --depth 1 origin "$LIBLOOT_COMMIT"
+          git -C libloot checkout --detach FETCH_HEAD
+          test "$(git -C libloot rev-parse HEAD)" = "$LIBLOOT_COMMIT"
+
+          git init node-loot
+          git -C node-loot remote add origin https://github.com/Nexus-Mods/node-loot.git
+          git -C node-loot fetch --depth 1 origin "$NODE_LOOT_COMMIT"
+          git -C node-loot checkout --detach FETCH_HEAD
+          test "$(git -C node-loot rev-parse HEAD)" = "$NODE_LOOT_COMMIT"
+
+      - name: Build libloot 0.29.3 for Linux
+        run: |
+          set -euxo pipefail
+          cmake -S libloot/cpp -B libloot/cpp/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCPACK_PACKAGE_VERSION=0.29.3 \
+            -DLIBLOOT_BUILD_TESTS=OFF \
+            -DLIBLOOT_INSTALL_DOCS=OFF \
+            -DRUST_TARGET=x86_64-unknown-linux-gnu
+          cmake --build libloot/cpp/build --parallel 2
+          find libloot/cpp/build -maxdepth 2 -type f -name 'libloot.so*' -print
+          LIBLOOT_SO=$(find libloot/cpp/build -maxdepth 2 -type f -name 'libloot.so*' -print -quit)
+          test -n "$LIBLOOT_SO"
+          file "$LIBLOOT_SO"
+          readelf -d "$LIBLOOT_SO" | tee libloot-dynamic.txt
+          cp "$LIBLOOT_SO" node-loot/loot_api/libloot.so.0
+          ln -sfn libloot.so.0 node-loot/loot_api/libloot.so
+
+      - name: Build legacy node-loot against Linux libloot
+        working-directory: node-loot
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('binding.gyp')
+          text = path.read_text()
+          old = '"libraries": [\n                "-l../loot_api/libloot"\n            ],'
+          new = '"libraries": [\n                "<(module_root_dir)/loot_api/libloot.so"\n            ],'
+          if old not in text:
+              raise SystemExit('expected node-loot libraries stanza not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          npm install --ignore-scripts
+          npx autogypi
+          npx node-gyp rebuild
+          file build/Release/node-loot.node
+          readelf -d build/Release/node-loot.node | tee ../node-loot-dynamic.txt
+          ldd build/Release/node-loot.node | tee ../node-loot-ldd.txt
+
+      - name: Smoke-load native addon
+        working-directory: node-loot
+        run: |
+          set -euxo pipefail
+          export LD_LIBRARY_PATH="$PWD/loot_api${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          node - <<'NODE'
+          const loot = require('./build/Release/node-loot.node');
+          console.log(Object.keys(loot).sort());
+          if (typeof loot.Loot !== 'function') throw new Error('Loot constructor missing');
+          if (typeof loot.IsCompatible !== 'function') throw new Error('IsCompatible missing');
+          console.log('IsCompatible(0,29,3)=', loot.IsCompatible(0, 29, 3));
+          NODE
+
+      - name: Run legacy node-loot tests on Linux
+        working-directory: node-loot
+        run: |
+          set -euxo pipefail
+          export LD_LIBRARY_PATH="$PWD/loot_api${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          npm test
+
+      - name: Upload probe diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-loot-probe-${{ github.sha }}
+          path: |
+            libloot-dynamic.txt
+            node-loot-dynamic.txt
+            node-loot-ldd.txt
+          if-no-files-found: warn
+          retention-days: 14
