@@ -16,7 +16,6 @@ const ARG_COUNTS: Record<string, number> = {
   "--download": 1,
   "--install": 1,
   "--install-archive": 1,
-  "--start-minimized": 1,
   "--game": 1,
   "--profile": 1,
   "--get": 1,
@@ -44,20 +43,21 @@ const electronExecutable = process.platform === "win32" ? "electron.exe" : "elec
 // switches expect an argument and as long as the
 // command line passed in is valid, we should be able to reconstruct it.
 function electronIsShitArgumentSort(argv: string[]): string[] {
-  const firstArgumentIdx = argv.findIndex((arg, idx) => idx > 1 && !arg.startsWith("-"));
-  const switches = argv.slice(1, firstArgumentIdx - 1);
-  const args = argv.slice(firstArgumentIdx);
-  let nextArg = 0;
-
   const executable = argv[0];
   if (!executable) return [];
-
-  const res = [executable];
-  if (executable.includes(electronExecutable)) {
-    // did I say we have no positional arguments? Well, electron does...
-    const next = args[nextArg];
-    if (next) res.push(next);
-    nextArg++;
+  const development = executable.includes(electronExecutable);
+  // Packaged argv already has the synthetic node executable followed by Vortex.
+  const switchStart = development ? 1 : 2;
+  const firstArgumentIdx = argv.findIndex((arg, idx) => idx >= switchStart && !arg.startsWith("-"));
+  const argumentStart = firstArgumentIdx === -1 ? argv.length : firstArgumentIdx;
+  const switches = argv.slice(switchStart, argumentStart);
+  const args = argv.slice(argumentStart);
+  const res = argv.slice(0, switchStart);
+  let nextArg = 0;
+  if (development && args[0] !== undefined) {
+    // Chromium also moves the development application's positional path after switches.
+    res.push(args[0]);
+    nextArg = 1;
   }
 
   switches.forEach((sw) => {
@@ -113,7 +113,7 @@ const SKIP_ARGS: Record<string, number> = {
   "-d": 1,
   "--download": 1,
   "-i": 1,
-  "--start-minimized": 1,
+  "--start-minimized": 0,
   "--game": 1,
   "--profile": 1,
   "--install": 1,
@@ -181,11 +181,6 @@ export function updateStartupSettings(updater: (current: IParameters) => IParame
 }
 
 export function parseCommandline(argv: string[], electronIsShitHack: boolean): IParameters {
-  const protocolIndex = argv.findIndex(
-    (arg, index) => index > 0 && /^nxm:\/\//i.test(arg) && ARG_COUNTS[argv[index - 1] ?? ""] !== 1,
-  );
-  const protocolDownload = protocolIndex === -1 ? undefined : argv[protocolIndex];
-  argv = argv.filter((_arg, index) => index !== protocolIndex);
   // lets look and replace epic stuff?!
   argv = transformEpicArguments(argv);
 
@@ -197,6 +192,13 @@ export function parseCommandline(argv: string[], electronIsShitHack: boolean): I
   if (electronIsShitHack) {
     argv = electronIsShitArgumentSort(argv);
   }
+
+  // Identify positional protocol links after Chromium's reordered arguments are restored.
+  const protocolIndex = argv.findIndex(
+    (arg, index) => index > 1 && /^nxm:\/\//i.test(arg) && ARG_COUNTS[argv[index - 1] ?? ""] !== 1,
+  );
+  const protocolDownload = protocolIndex === -1 ? undefined : argv[protocolIndex];
+  argv = argv.filter((_arg, index) => index !== protocolIndex);
 
   let version: string = "1.0.0";
   try {

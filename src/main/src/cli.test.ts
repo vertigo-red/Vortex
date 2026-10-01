@@ -23,6 +23,32 @@ describe("desktop protocol arguments", () => {
   it("preserves an explicit --download argument", () => {
     expect(parseCommandline(["/opt/Vortex/vortex", "--download", url], false).download).toBe(url);
   });
+  it("preserves a wrapper download when Vortex is already running", () => {
+    expect(parseCommandline(["/opt/Vortex/vortex", "--download", url], true).download).toBe(url);
+  });
+  it("reconstructs Chromium-reordered switches and values", () => {
+    const args = parseCommandline(
+      ["/opt/Vortex/vortex", "--download", "--user-data", url, "/custom/profile"],
+      true,
+    );
+    expect(args.download).toBe(url);
+    expect(args.userData).toBe("/custom/profile");
+  });
+  it("preserves the development app path after reordered switches", () => {
+    const executable =
+      process.platform === "win32" ? "C:\\Electron\\electron.exe" : "/usr/bin/electron";
+    expect(
+      parseCommandline([executable, "--download", "/Vortex/src/main", url], true).download,
+    ).toBe(url);
+  });
+  it("keeps a Boolean switch separate from a positional link", () => {
+    const args = parseCommandline(["/opt/Vortex/vortex", "--start-minimized", url], true);
+    expect(args.download).toBe(url);
+    expect(args.startMinimized).toBe(true);
+    expect(
+      filterArgs(["/opt/Vortex/vortex", "--start-minimized", "--user-data", "/custom"]),
+    ).toEqual(["--user-data", "/custom"]);
+  });
   it("preserves an explicit --install argument", () => {
     expect(parseCommandline(["/opt/Vortex/vortex", "--install", url], false).install).toBe(url);
   });
