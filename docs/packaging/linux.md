@@ -20,14 +20,18 @@ pnpm run package:linux
 The root packaging command builds the workspace, deploys the runtime dependencies,
 and invokes electron-builder for Linux x86-64. Outputs land in `dist/`:
 
-- `vortex-<version>-x64.deb` for Debian/Ubuntu package installation and removal.
-- `vortex-<version>-x64.rpm` for RPM distributions.
-- `vortex-<version>-x64.AppImage` for running without a package installation.
-- `vortex-<version>-x64.tar.gz` for manual extraction.
+- `vortex-<version>-<arch>.deb` for Debian/Ubuntu package installation and removal.
+- `vortex-<version>-<arch>.rpm` for RPM distributions.
+- `vortex-<version>-<arch>.AppImage` for running without a package installation.
+- `vortex-<version>-<arch>.tar.gz` for manual extraction.
 
 The version is the `src/main/package.json` placeholder until it is changed for
 packaging, as described in [Windows packaging](windows.md). Linux packages exclude
-Windows redistributable installers and include the Linux LOOT library. The Windows
+Windows redistributable installers and include the Linux LOOT library. Archive
+names use the target's architecture spelling (for example, `x86_64` for AppImage
+and `x64` for tar.gz). The Linux command disables electron-builder's CI hardlink
+optimization, which otherwise collides on hoisted native module paths, and uses
+compression level 5 for archives. The Windows
 release updater is disabled on Linux because its resolver selects `.exe` installers;
 update these packages through the installation method used to install them.
 
@@ -83,7 +87,12 @@ matching, executable wrapper argument handling, AppImage registration, positiona
 Nexus links, XDG paths and the updater platform gate. Tests of shell wrappers run
 real local processes; they do not start a game or migrate an existing Wine prefix.
 
-Passing those tests does not prove a complete modding session works. In particular:
+CI also verifies the packaged dependency versions and starts the unpacked Linux
+binary under Xvfb with isolated XDG directories. The startup check reads the
+rendered navigation and saves `dist/linux-startup.png`. Chromium's sandbox is
+disabled for that isolated CI process; this is not a default application flag.
+
+Passing those checks does not prove a complete modding session works. In particular:
 
 - Game-specific Registry discovery, Windows configuration/save paths, script
   extenders and executable dependencies require per-game validation. Windows-only

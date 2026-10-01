@@ -24,7 +24,7 @@
     "sbom": "pnpm node ./sbom.mjs",
     "download-duckdb-extensions": "node --import tsx ./download-duckdb-extensions.ts",
     "generate:unleash": "pnpm node src/unleash/trim-spec.mjs && pnpm exec openapi-typescript src/unleash/openapi-slim.json --immutable --output src/unleash/schema.d.ts && pnpm exec oxfmt ./src/unleash/*.json ./src/unleash/schema.d.ts",
-    "package:linux": "cd ./dist && pnpm electron-builder --config ./electron-builder.config.json --linux --x64 --publish never"
+    "package:linux": "cd ./dist && pnpm cross-env USE_HARD_LINKS=false ELECTRON_BUILDER_COMPRESSION_LEVEL=5 pnpm electron-builder --config ./electron-builder.config.json --linux --x64 --publish never"
   },
   "nx": {
     "targets": {
