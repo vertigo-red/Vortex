@@ -9,6 +9,10 @@ import { initUpdater, isUpdaterActive } from "./updater";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubGlobal(
+    "process",
+    Object.create(process, { platform: { value: "win32", configurable: true } }),
+  );
   // a developer machine may have the dev-updater opt-in persisted in the user
   // environment; tests must never depend on ambient env
   vi.stubEnv("VORTEX_DEV_UPDATER", "");
@@ -17,9 +21,21 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("isUpdaterActive", () => {
+  it("never offers Windows installers to native Linux, even with the development opt-in", () => {
+    vi.stubGlobal(
+      "process",
+      Object.create(process, { platform: { value: "linux", configurable: true } }),
+    );
+    expect(isUpdaterActive("regular")).toBe(false);
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VORTEX_DEV_UPDATER", "1");
+    expect(isUpdaterActive("regular")).toBe(false);
+  });
+
   it("is on for a regular install outside development", () => {
     expect(isUpdaterActive("regular")).toBe(true);
   });

@@ -64,11 +64,20 @@ async function prepareWin() {
   }
 }
 
+async function prepareLinux() {
+  const lootRelease = resolve(DIST_DIR, "assets", "loot", "build", "Release");
+  for (const file of ["node-loot.node", "libloot.so.0"]) {
+    await access(resolve(lootRelease, file)).catch(() => {
+      throw new Error(`missing Linux loot runtime asset: ${resolve(lootRelease, file)}`);
+    });
+  }
+}
+
 async function main() {
   const json = await readFile(MAIN_PACKAGE_PATH, "utf8");
   const mainPkg = JSON.parse(json);
 
-  mainPkg["name"] = "Vortex";
+  mainPkg["name"] = process.platform === "linux" ? "vortex" : "Vortex";
   mainPkg["main"] = mainPkg.main.replace(/^build\//, "");
 
   // NOTE(erri120): this is the minimal amount of bullshit required to get the piece of shit software called "electron-builder" to work with PNPM.
@@ -84,6 +93,8 @@ async function main() {
 
   if (process.platform === "win32") {
     await prepareWin();
+  } else if (process.platform === "linux") {
+    await prepareLinux();
   }
 }
 

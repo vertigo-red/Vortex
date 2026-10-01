@@ -28,6 +28,8 @@ const NXM_PROTOCOL = "nxm";
 const PACKAGE_DESKTOP_ID = "com.nexusmods.vortex.desktop";
 const DEV_DESKTOP_ID = "com.nexusmods.vortex.dev.desktop";
 const DEV_WRAPPER_FILE_NAME = "com.nexusmods.vortex.dev.sh";
+const NATIVE_DESKTOP_ID = "com.nexusmods.vortex.native.desktop";
+const NATIVE_WRAPPER_FILE_NAME = "com.nexusmods.vortex.native.sh";
 
 /**
  * Required registration inputs for Linux `nxm` routing.
@@ -59,6 +61,14 @@ export function registerLinuxNxmProtocolHandler(
       applicationsDir,
       options.executablePath,
       options.appPath,
+      true,
+    );
+  } else if (desktopId === NATIVE_DESKTOP_ID) {
+    didChangeDesktopFiles = ensureDevDesktopEntry(
+      applicationsDir,
+      process.env.APPIMAGE || options.executablePath,
+      undefined,
+      false,
     );
   }
 
@@ -72,9 +82,7 @@ export function registerLinuxNxmProtocolHandler(
 
   const previousHandler = getDefaultUrlSchemeHandler(NXM_PROTOCOL);
   const haveToRegister = previousHandler !== desktopId;
-  setDefaultUrlSchemeHandler(NXM_PROTOCOL, desktopId);
-
-  return haveToRegister;
+  return setDefaultUrlSchemeHandler(NXM_PROTOCOL, desktopId) && haveToRegister;
 }
 
 /**
@@ -107,7 +115,7 @@ function desktopIdForCurrentBuild(): string {
     return DEV_DESKTOP_ID;
   }
 
-  return PACKAGE_DESKTOP_ID;
+  return NATIVE_DESKTOP_ID;
 }
 
 function escapeShellScriptArgument(input: string): string {
@@ -130,7 +138,7 @@ function escapeShellScriptArgument(input: string): string {
  * The desktop-entry escaping rules are applied separately to Exec/TryExec fields.
  * Vortex adds `appPath` because Electron launches as: <electron> <appPath> ...
  */
-function generateWrapperScript(executablePath: string, appPath: string): string {
+export function generateWrapperScript(executablePath: string, appPath?: string): string {
   // Persist GTK/Electron environment variables used to run Vortex.
   // This is needed for Nix, such that you can launch the desktop entry outside
   // of the Nix devShell during development. For other environments, this will
@@ -154,6 +162,9 @@ function generateWrapperScript(executablePath: string, appPath: string): string 
     })
     .filter((line): line is string => line !== null)
     .join("\n");
+  const launch =
+    `"${escapeShellScriptArgument(executablePath)}"` +
+    (appPath === undefined ? "" : ` "${escapeShellScriptArgument(appPath)}"`);
 
   return (
     "#!/bin/sh\n" +
@@ -170,9 +181,9 @@ function generateWrapperScript(executablePath: string, appPath: string): string 
     // This matches Windows behaviour, which includes --download on all protocol handler calls,
     // but does not on non-handler calls (e.g., when starting from the start menu).
     `if [ -n "$1" ]; then\n` +
-    `  exec "${escapeShellScriptArgument(executablePath)}" "${escapeShellScriptArgument(appPath)}" --download "$@"\n` +
+    `  exec ${launch} --download "$@"\n` +
     `else\n` +
-    `  exec "${escapeShellScriptArgument(executablePath)}" "${escapeShellScriptArgument(appPath)}"\n` +
+    `  exec ${launch}\n` +
     `fi\n`
   );
 }
@@ -215,10 +226,17 @@ function warnIfApplicationsPathNeedsEscaping(applicationsDir: string): void {
 function ensureDevDesktopEntry(
   applicationsDir: string,
   executablePath: string,
-  appPath: string,
+  appPath: string | undefined,
+  development: boolean,
 ): boolean {
-  const wrapperPath = path.join(applicationsDir, DEV_WRAPPER_FILE_NAME);
-  const desktopFilePath = path.join(applicationsDir, DEV_DESKTOP_ID);
+  const wrapperPath = path.join(
+    applicationsDir,
+    development ? DEV_WRAPPER_FILE_NAME : NATIVE_WRAPPER_FILE_NAME,
+  );
+  const desktopFilePath = path.join(
+    applicationsDir,
+    development ? DEV_DESKTOP_ID : NATIVE_DESKTOP_ID,
+  );
 
   warnIfApplicationsPathNeedsEscaping(applicationsDir);
 
@@ -233,7 +251,7 @@ function ensureDevDesktopEntry(
   const desktopFileContent =
     "[Desktop Entry]\n" +
     "Type=Application\n" +
-    "Name=Vortex (dev build)\n" +
+    (development ? "Name=Vortex (dev build)\n" : "Name=Vortex\n") +
     "GenericName=Mod Manager\n" +
     "Comment=Mod manager for PC games from Nexus Mods\n" +
     "NoDisplay=true\n" +

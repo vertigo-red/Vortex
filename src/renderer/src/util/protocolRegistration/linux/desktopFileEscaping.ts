@@ -62,7 +62,8 @@ export function escapeDesktopExecFilePath(input: string): string {
     .replace(/\\/g, "\\\\") // and backslash character ("\")             \ -> \\
     .replace(/"/g, '\\"') // 'and escaping the double quote character'   " -> \"
     .replace(/`/g, "\\`") // backtick character ("`")                    ` -> \`
-    .replace(/\$/g, "\\$"); // dollar sign ("$")                         $ -> \$
+    .replace(/\$/g, "\\$") // dollar sign ("$")                         $ -> \$
+    .replace(/%/g, "%%"); // Literal percent signs must not become desktop field codes.
 
   // First apply the base rules from `string` and `localstring`.
   const escapedString = escapeDesktopFilePath(escapedExec);
@@ -99,7 +100,7 @@ export function escapeDesktopExecFilePath(input: string): string {
   // > hash mark ("#"), parenthesis ("(") and (")") and backtick character ("`").
   //
   // In this case, we will quote if our path has changed, else we'll leave it unquoted.
-  if (escapedString === originalPath) {
+  if (escapedString === originalPath && !/[\s"'\\><~|&;$*?#()`]/.test(input)) {
     return originalPath; // No need to quote if the path hasn't changed
   } else {
     return `"${escapedString}"`; // Enclose the entire path in double quotes

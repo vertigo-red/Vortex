@@ -10,15 +10,18 @@ import { Steam } from "./Steam";
 // imports exists. vi.hoisted runs ahead of the imports, so the mocks can read it.
 // (On Windows the equivalent RegGetValue call sits in a try/catch that swallows the
 // ReferenceError, which is why a plain `let` only fails on CI.)
-const steam = vi.hoisted(() => ({ installed: true, baseFolder: "C:\\Steam" }));
+const steam = vi.hoisted(() => ({
+  installed: true,
+  baseFolder: process.platform === "win32" ? "C:\\Steam" : "/home/test/Steam",
+}));
 /** Deferred manifest read, so tests can hold a rescan in flight. */
 const manifestGate = vi.hoisted(() => ({
   pending: undefined as Promise<Buffer> | undefined,
 }));
 
 const BASE_FOLDER = steam.baseFolder;
-const ALT_LIBRARY = path.join("D:", "SteamLibrary");
-const THIRD_LIBRARY = path.join("E:", "Games");
+const ALT_LIBRARY = path.resolve("SteamLibrary");
+const THIRD_LIBRARY = path.resolve("Games");
 const LIB_FOLDERS_FILE = path.resolve(BASE_FOLDER, "config", "libraryfolders.vdf");
 
 const MANIFEST = `"AppState"
@@ -80,13 +83,16 @@ vi.mock("./linux/proton", () => ({
   buildProtonCommand: () => ({ executable: "", args: [] }),
 }));
 
-vi.mock("fs/promises", () => ({
-  readdir: () => Promise.resolve(["appmanifest_42.acf"]),
-  readFile: () =>
-    libraryFoldersError !== undefined
-      ? Promise.reject(libraryFoldersError)
-      : Promise.resolve(Buffer.from(libraryFoldersVdf)),
-}));
+vi.mock("node:fs/promises", () => {
+  const mock = {
+    readdir: () => Promise.resolve(["appmanifest_42.acf"]),
+    readFile: (_filePath: string, encoding?: string) =>
+      libraryFoldersError !== undefined
+        ? Promise.reject(libraryFoldersError)
+        : Promise.resolve(encoding === "utf8" ? libraryFoldersVdf : Buffer.from(libraryFoldersVdf)),
+  };
+  return { ...mock, default: mock };
+});
 
 vi.mock("./fs", () => ({
   readFileAsync: () => manifestGate.pending ?? Promise.resolve(Buffer.from(MANIFEST)),
@@ -198,7 +204,7 @@ describe("Steam.allGames", () => {
     ]);
   });
 
-  it("stops at the first gap in the numbering", async () => {
+  it("scans libraries after a gap in the numbering", async () => {
     libraryFoldersVdf = vdf(
       '"libraryfolders"',
       "{",
@@ -218,6 +224,7 @@ describe("Steam.allGames", () => {
     expect(entries.map((entry) => entry.gamePath)).toEqual([
       gamePathIn(BASE_FOLDER),
       gamePathIn(ALT_LIBRARY),
+      gamePathIn(THIRD_LIBRARY),
     ]);
   });
 });

@@ -36,6 +36,7 @@ Project and coding documentation. To set up and build Vortex, start with
 
 ## Building and shipping
 
+- [packaging/linux.md](packaging/linux.md) - Native Linux packages, Steam/Proton integration and verification limits
 - [packaging/windows.md](packaging/windows.md) - Local unsigned installers, the pipeline, signed CI builds
 - [packaging/flatpak.md](packaging/flatpak.md) - Building and installing the Flatpak
 - [flatpak/technical.md](flatpak/technical.md) - Flatpak manifest and runtime details

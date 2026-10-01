@@ -133,6 +133,8 @@ export function filterArgs(input: string[]): string[] {
       // skip
     } else if (SKIP_ARGS[arg] !== undefined) {
       skipCount = SKIP_ARGS[arg];
+    } else if (/^nxm:\/\//i.test(arg)) {
+      // Desktop launchers pass protocol links as positional arguments.
     } else {
       result.push(arg);
     }
@@ -179,6 +181,11 @@ export function updateStartupSettings(updater: (current: IParameters) => IParame
 }
 
 export function parseCommandline(argv: string[], electronIsShitHack: boolean): IParameters {
+  const protocolIndex = argv.findIndex(
+    (arg, index) => index > 0 && /^nxm:\/\//i.test(arg) && ARG_COUNTS[argv[index - 1] ?? ""] !== 1,
+  );
+  const protocolDownload = protocolIndex === -1 ? undefined : argv[protocolIndex];
+  argv = argv.filter((_arg, index) => index !== protocolIndex);
   // lets look and replace epic stuff?!
   argv = transformEpicArguments(argv);
 
@@ -273,6 +280,9 @@ export function parseCommandline(argv: string[], electronIsShitHack: boolean): I
   return {
     ...getStartupSettings(),
     ...commandLine,
+    ...(protocolDownload === undefined
+      ? {}
+      : { download: commandLine.download ?? protocolDownload }),
   };
 }
 

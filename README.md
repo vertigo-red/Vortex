@@ -55,6 +55,10 @@ The majority of Vortex code is open-source. We are committed to a transparent de
 
 ## Developing
 
+This fork's `feat/native-linux` branch contains native Linux packaging and fixes
+for Steam discovery, Proton tools, XDG paths and Nexus download links. See
+[Native Linux](docs/packaging/linux.md) for build commands and the current limitations.
+
 To build and run Vortex from source, start with [CONTRIBUTING.md](./CONTRIBUTING.md). It covers setup for each platform, the build/run/hot-reload workflow, debugging, and packaging. Deeper guides (debugging, packaging, the auto-updater, release process) are indexed in [docs/README.md](./docs/README.md).
 
 ## License

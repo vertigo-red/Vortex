@@ -120,6 +120,12 @@ function cachedAppPath(id: ElectronPathId) {
 }
 
 function localAppData(): string {
+  if (process.platform === "linux") {
+    const dataHome = process.env.XDG_DATA_HOME;
+    return dataHome && path.isAbsolute(dataHome)
+      ? dataHome
+      : path.join(cachedAppPath("home"), ".local", "share");
+  }
   return process.env.LOCALAPPDATA || path.resolve(cachedAppPath("appData"), "..", "Local");
 }
 

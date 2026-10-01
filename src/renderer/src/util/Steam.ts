@@ -1,9 +1,9 @@
-import * as fsOG from "fs/promises";
+import * as fsOG from "node:fs/promises";
 import * as path from "path";
 
-import { getErrorCode, getErrorMessageOrDefault } from "@vortex/shared";
+import { getErrorMessageOrDefault } from "@vortex/shared";
 import PromiseBB from "bluebird";
-import { parse, type VDFObject, type VDFValue } from "simple-vdf";
+import { parse } from "simple-vdf";
 import * as winapi from "winapi-bindings";
 
 import type { IExecInfo } from "../types/IExecInfo";
@@ -11,15 +11,13 @@ import type { IExtensionApi } from "../types/IExtensionContext";
 import type { ICustomExecutionInfo, IGameStore, IGameStoreSnapshot } from "../types/IGameStore";
 import { GameEntryNotFound } from "../types/IGameStore";
 import type { IGameStoreEntry } from "../types/IGameStoreEntry";
+import { MissingInterpreter } from "./CustomErrors";
 import * as fs from "./fs";
 import { getProtonInfo, buildProtonEnvironment, buildProtonCommand } from "./linux/proton";
+import { readSteamLibraries } from "./linux/steamLibraries";
 import { findLinuxSteamPath } from "./linux/steamPaths";
 import { log } from "./log";
 import opn from "./opn";
-
-/** VDF leaves are plain strings, so only nested blocks can be indexed further. */
-const asBlock = (value: VDFValue | undefined): VDFObject | undefined =>
-  typeof value === "object" ? value : undefined;
 
 const STORE_ID = "steam";
 const STORE_NAME = "Steam";
@@ -96,17 +94,25 @@ class Steam implements IGameStore {
       );
     }
     const info = appInfo.steamAppId ? appInfo.steamAppId.toString() : appInfo;
-    return this.getExecInfo(info).then((execInfo) =>
-      api?.runExecutable(execInfo.execPath, execInfo.arguments, {
+    return this.getExecInfo(info).then((execInfo) => {
+      if (process.platform === "linux") {
+        const [, appId, ...parameters] = execInfo.arguments;
+        return opn(
+          parameters.length === 0
+            ? `steam://rungameid/${appId}`
+            : `steam://run/${appId}//${encodeURIComponent(parameters.join(" "))}/`,
+        );
+      }
+      return api?.runExecutable(execInfo.execPath, execInfo.arguments, {
         cwd: path.dirname(execInfo.execPath),
         suggestDeploy: true,
         shell: true,
-      }),
-    );
+      });
+    });
   }
 
   public getPosixPath(appInfo: any) {
-    const posixCommand = `steam://launch/${appInfo.appId}/${appInfo.parameters.join()}`;
+    const posixCommand = `steam://run/${appInfo.appId}//${encodeURIComponent((appInfo.parameters ?? []).join(" "))}/`;
     return PromiseBB.resolve(posixCommand);
   }
 
@@ -140,7 +146,7 @@ class Steam implements IGameStore {
       return this.mBaseFolder.then((basePath) => {
         const steamExec = {
           execPath: path.join(basePath, STEAM_EXEC),
-          arguments: ["-applaunch", appId, ...parameters],
+          arguments: ["-applaunch", found.appid, ...parameters],
         };
         return PromiseBB.resolve(steamExec);
       });
@@ -186,6 +192,16 @@ class Steam implements IGameStore {
     });
   }
 
+  public launchGameStore(api: IExtensionApi, parameters: string[] = []): PromiseBB<void> {
+    // Native, Flatpak and Snap Steam all expose this URI through the desktop.
+    if (process.platform === "linux") return opn("steam://open/main");
+    return this.getGameStorePath().then((executable) =>
+      executable === undefined
+        ? undefined
+        : api.runExecutable(executable, parameters, { detach: true }),
+    );
+  }
+
   public reloadGames(): PromiseBB<void> {
     return this.parseManifests().then((entries: ISteamEntry[]) => {
       this.#snapshot = { entries, isInstalled: this.#snapshot.isInstalled };
@@ -225,51 +241,7 @@ class Steam implements IGameStore {
         return PromiseBB.resolve([]);
       }
 
-      const steamPaths: string[] = [basePath];
-      return PromiseBB.resolve(
-        fsOG.readFile(path.resolve(basePath, "config", "libraryfolders.vdf")),
-      )
-        .then((data: Buffer) => {
-          let parsedObj: VDFObject;
-          try {
-            parsedObj = parse(data.toString());
-          } catch (err) {
-            log("warn", "unable to parse steamfolders.vdf", err);
-            return PromiseBB.resolve(steamPaths);
-          }
-
-          // older Steam versions spelled this key in mixed case
-          const libKey = Object.keys(parsedObj).find(
-            (key) => key.toLowerCase() === "libraryfolders",
-          );
-          const libObj = asBlock(libKey !== undefined ? parsedObj[libKey] : undefined) ?? {};
-
-          // libraries are numbered contiguously, from 0 or 1 depending on the Steam version
-          let counter = libObj["0"] !== undefined ? 0 : 1;
-          let lib = asBlock(libObj[`${counter}`]);
-          while (lib !== undefined) {
-            const libPath = lib["path"];
-            if (typeof libPath === "string" && libPath && !steamPaths.includes(libPath)) {
-              steamPaths.push(libPath);
-            }
-            ++counter;
-            lib = asBlock(libObj[`${counter}`]);
-          }
-          log("debug", "found steam install folders", { steamPaths });
-          return PromiseBB.resolve(steamPaths);
-        })
-        .catch((err) => {
-          // A Steam update has changed the way we resolve the steam library paths
-          //  (we used to get these from config.vdf) the libraryfolders.vdf file
-          //  appears to at times hold a reference to _all_ library folders; other times
-          //  it only holds the path to the alternate steam libraries (the ones that aren't
-          //  part of the base Steam installation folder)
-          log("warn", "failed to read steam library folders file", err);
-          const code = getErrorCode(err);
-          return code !== null && ["EPERM", "ENOENT"].includes(code)
-            ? PromiseBB.resolve(steamPaths)
-            : PromiseBB.reject(err);
-        });
+      return PromiseBB.resolve(readSteamLibraries(basePath));
     });
   }
 
@@ -341,7 +313,7 @@ class Steam implements IGameStore {
           })
           .then((entries: ISteamEntry[]) => {
             // Add Proton info on Linux
-            if (process.platform === "win32") {
+            if (process.platform !== "linux") {
               return entries;
             }
             return this.mBaseFolder.then((basePath) =>
@@ -396,8 +368,13 @@ class Steam implements IGameStore {
     options: any,
     gameEntry: ISteamEntry,
   ): Promise<void> {
-    if (!gameEntry.usesProton || !gameEntry.protonPath || !gameEntry.compatDataPath) {
+    if (process.platform !== "linux" || !gameEntry.usesProton) {
       return api.runExecutable(exePath, args, options);
+    }
+    if (!gameEntry.protonPath || !gameEntry.compatDataPath) {
+      throw new MissingInterpreter(
+        "The game's Proton installation could not be found. Select an installed compatibility tool in Steam and launch the game once before running Windows tools.",
+      );
     }
 
     const steamPath = await this.mBaseFolder;
@@ -406,7 +383,13 @@ class Steam implements IGameStore {
       exePath,
       args,
     );
-    const protonEnv = buildProtonEnvironment(gameEntry.compatDataPath, steamPath, options.env);
+    const protonEnv = buildProtonEnvironment(
+      gameEntry.compatDataPath,
+      steamPath,
+      options.env,
+      gameEntry.appid,
+      gameEntry.gamePath,
+    );
 
     return api.runExecutable(executable, protonArgs, {
       ...options,

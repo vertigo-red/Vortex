@@ -17,6 +17,9 @@ import { setupAutoUpdater } from "./autoupdater";
  * rather than working it out, since only NODE_ENV is inlined into its bundle.
  */
 export function isUpdaterActive(installType: string): boolean {
+  // This resolver and its feed select NSIS .exe installers from the upstream
+  // Windows releases. Native Linux packages must be updated by their installer.
+  if (process.platform !== "win32") return false;
   // A build run from source has no uninstaller beside it, so identifyInstallType always calls it
   // "managed". The install type therefore says nothing in development and the opt-in decides on
   // its own; outside development it is the only thing that decides.

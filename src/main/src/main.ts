@@ -165,7 +165,10 @@ try {
   // nop
 }
 
-process.env.Path = process.env.Path + path.delimiter + import.meta.dirname;
+const pathKey = process.platform === "win32" ? "Path" : "PATH";
+process.env[pathKey] = [process.env[pathKey] ?? process.env.PATH, import.meta.dirname]
+  .filter(Boolean)
+  .join(path.delimiter);
 
 const handleError = (error: Error) => {
   if (Application.shouldIgnoreError(error)) {

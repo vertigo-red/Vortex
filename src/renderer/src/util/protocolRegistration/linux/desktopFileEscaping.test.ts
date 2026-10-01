@@ -39,6 +39,14 @@ describe("desktopFileEscaping", () => {
 
   // https://specifications.freedesktop.org/desktop-entry-spec/latest-single/#exec-variables
   describe("escapeDesktopExecFilePath", () => {
+    test.each([";", "&", "(", ")", "'", "#"])("quotes the reserved character %j", (character) => {
+      expect(escapeDesktopExecFilePath(`/Apps/Vortex${character}`)).toBe(
+        `"/Apps/Vortex${character}"`,
+      );
+    });
+    test("escapes literal percent signs instead of introducing field codes", () => {
+      expect(escapeDesktopExecFilePath("/Apps/Vortex%u")).toBe('"/Apps/Vortex%%u"');
+    });
     // 👇 Characters that are escaped ONLY by the rules specific to 'Exec' 👇 //
     test.each([
       ['"', '"\\\\""'],

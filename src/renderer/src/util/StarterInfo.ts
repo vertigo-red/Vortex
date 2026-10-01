@@ -25,6 +25,7 @@ import {
 } from "./CustomErrors";
 import { emitGameLaunched, recordLaunchExit } from "./gameLaunchAnalytics";
 import getVortexPath from "./getVortexPath";
+import { findSteamGameForTool } from "./linux/gameEntry";
 import { isWindowsExecutable } from "./linux/proton";
 import type { Steam, ISteamEntry } from "./Steam";
 import { getSafe } from "./storeHelper";
@@ -81,7 +82,7 @@ async function shouldRunWithProton(
   info: IStarterInfo,
   api: IExtensionApi,
 ): Promise<ISteamEntry | undefined> {
-  if (process.platform === "win32") {
+  if (process.platform !== "linux") {
     return undefined;
   }
   if (!isWindowsExecutable(info.exePath)) {
@@ -95,11 +96,11 @@ async function shouldRunWithProton(
     const steamStore = storeLookup.getGameStore(getGameStoresSafe(), "steam") as Steam;
     const games = await steamStore.allGames();
 
-    // Find the game entry that matches this executable's location
-    return games.find(
-      (g) =>
-        info.workingDirectory?.toLowerCase().startsWith(g.gamePath.toLowerCase()) ||
-        info.exePath.toLowerCase().startsWith(g.gamePath.toLowerCase()),
+    return findSteamGameForTool(
+      games,
+      info.exePath,
+      info.workingDirectory,
+      api.store.getState().settings.gameMode.discovered[info.gameId]?.path,
     );
   } catch (err: any) {
     log("debug", "Could not check for Proton execution", {
@@ -256,46 +257,40 @@ class StarterInfo implements IStarterInfo {
       }
     };
 
-    // Check if game/tool should run through Proton on Linux
-    const protonGameEntry = await shouldRunWithProton(info, api);
-    if (protonGameEntry?.usesProton) {
-      // On Linux with Proton, we can't track when the process exits (ProcessMonitor
-      // only works on Windows), so don't set tool as running to avoid stuck spinner
-      const protonSpawned = () => {
-        if (["hide", "hide_recover"].includes(info.onStart)) {
-          hideWindow();
-        } else if (info.onStart === "close") {
-          getApplication().quit();
-        }
-      };
-
-      const steamStore = storeLookup.getGameStore(getGameStoresSafe(), "steam") as Steam;
-      return steamStore.runToolWithProton(
-        api,
-        info.exePath,
-        info.commandLine,
-        {
-          cwd: info.workingDirectory || path.dirname(info.exePath),
-          env: info.environment,
-          suggestDeploy: true,
-          shell: info.shell,
-          detach: info.detach || info.onStart === "close",
-          onSpawned: protonSpawned,
-        },
-        protonGameEntry,
-      );
-    }
-
-    return api
-      .runExecutable(info.exePath, info.commandLine, {
+    const execute = async (): Promise<void> => {
+      const options = {
         cwd: info.workingDirectory || path.dirname(info.exePath),
         env: info.environment,
         suggestDeploy: true,
         shell: info.shell,
         detach: info.detach || info.onStart === "close",
         onSpawned: spawned,
-        onExit: (code) => recordLaunchExit(info.exePath, code),
-      })
+        onExit: (code: number) => recordLaunchExit(info.exePath, code),
+      };
+      const protonGameEntry = await shouldRunWithProton(info, api);
+      if (protonGameEntry?.usesProton) {
+        const steamStore = storeLookup.getGameStore(getGameStoresSafe(), "steam") as Steam;
+        return steamStore.runToolWithProton(
+          api,
+          info.exePath,
+          info.commandLine,
+          options,
+          protonGameEntry,
+        );
+      }
+      if (
+        process.platform === "linux" &&
+        info.store === "steam" &&
+        isWindowsExecutable(info.exePath)
+      ) {
+        throw new MissingInterpreter(
+          "No Proton prefix was found for this Windows executable. Select a compatibility tool in Steam and launch the game once before running Windows tools.",
+        );
+      }
+      return api.runExecutable(info.exePath, info.commandLine, options);
+    };
+
+    return PromiseBB.resolve(execute())
       .catch(ProcessCanceled, () => undefined)
       .catch(UserCanceled, () => undefined)
       .catch(MissingDependency, () => {

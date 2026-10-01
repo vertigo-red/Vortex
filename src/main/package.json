@@ -22,8 +22,9 @@
     "package": "cd ./dist && pnpm electron-builder --config ./electron-builder.config.json --config.win.forceCodeSigning=true --config.win.sign=./sign.cjs --publish never",
     "package:nosign": "cd ./dist && pnpm electron-builder --config ./electron-builder.config.json --publish never",
     "sbom": "pnpm node ./sbom.mjs",
-    "download-duckdb-extensions": "pnpm tsx ./download-duckdb-extensions.ts",
-    "generate:unleash": "pnpm node src/unleash/trim-spec.mjs && pnpm exec openapi-typescript src/unleash/openapi-slim.json --immutable --output src/unleash/schema.d.ts && pnpm exec oxfmt ./src/unleash/*.json ./src/unleash/schema.d.ts"
+    "download-duckdb-extensions": "node --import tsx ./download-duckdb-extensions.ts",
+    "generate:unleash": "pnpm node src/unleash/trim-spec.mjs && pnpm exec openapi-typescript src/unleash/openapi-slim.json --immutable --output src/unleash/schema.d.ts && pnpm exec oxfmt ./src/unleash/*.json ./src/unleash/schema.d.ts",
+    "package:linux": "cd ./dist && pnpm electron-builder --config ./electron-builder.config.json --linux --x64 --publish never"
   },
   "nx": {
     "targets": {
@@ -216,6 +217,16 @@
         "outputs": [
           "{projectRoot}/src/unleash/schema.d.ts"
         ]
+      },
+      "package:linux": {
+        "cache": false,
+        "dependsOn": [
+          "publish"
+        ],
+        "executor": "nx:run-script",
+        "options": {
+          "script": "package:linux"
+        }
       }
     }
   },
