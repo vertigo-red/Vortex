@@ -11,7 +11,7 @@ const resolver = new NativePathResolver();
 const resolveBase = async (base: Parameters<LinuxPathProvider["fromBase"]>[0]) =>
   resolver.resolve(await provider.fromBase(base));
 afterEach(() => vi.unstubAllEnvs());
-describe("Linux XDG paths", () => {
+describe.skipIf(process.platform !== "linux")("Linux XDG paths", () => {
   it.each([
     [XDG.data, ".local/share"],
     [XDG.cache, ".cache"],

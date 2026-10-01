@@ -1,6 +1,8 @@
 {
   "$schema": "https://www.schemastore.org/package.json",
   "name": "@vortex/main",
+  "description": "The open-source mod manager from Nexus Mods.",
+  "homepage": "https://github.com/vertigo-red/Vortex",
   "author": "Black Tree Gaming Ltd.",
   "license": "GPL-3.0-only",
   "version": "1.0.0",
