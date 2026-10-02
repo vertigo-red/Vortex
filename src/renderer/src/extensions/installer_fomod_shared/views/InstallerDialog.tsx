@@ -1,6 +1,3 @@
-import path from "path";
-import { pathToFileURL } from "url";
-
 import type { TFunction } from "i18next";
 import update from "immutability-helper";
 import * as _ from "lodash";
@@ -20,7 +17,6 @@ import FlexLayout from "../../../controls/FlexLayout";
 import Modal from "../../../controls/Modal";
 import Spinner from "../../../controls/Spinner";
 import { IconButton } from "../../../controls/TooltipControls";
-import ZoomableImage from "../../../controls/ZoomableImage";
 import type { IState } from "../../../types/api";
 import { pushSafe, removeValue } from "../../../util/storeHelper";
 import { truthy } from "../../../util/util";
@@ -34,6 +30,7 @@ import type {
   OrderType,
 } from "../types/interface";
 import { hasSessionFOMOD } from "../utils/guards";
+import InstallerImage from "./InstallerImage";
 
 interface IGroupProps {
   t: TFunction;
@@ -492,14 +489,7 @@ class InstallerDialog extends PureComponentEx<IProps, IDialogState> {
       return null;
     }
 
-    return (
-      <ZoomableImage
-        url={pathToFileURL(path.join(installerInfo.dataPath, image)).href}
-        className="installer-image"
-        overlayClass="installer-zoom"
-        container={undefined}
-      />
-    );
+    return <InstallerImage dataPath={installerInfo.dataPath} image={image} />;
   };
 
   private initDescription(props: IProps): IDialogState {

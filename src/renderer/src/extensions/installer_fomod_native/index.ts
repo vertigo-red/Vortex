@@ -5,11 +5,9 @@ import type { IInstallationDetails } from "../mod_management/types/InstallFunc";
 import type { ITestSupportedDetails } from "../mod_management/types/TestSupported";
 import { install } from "./installer";
 import { testSupported } from "./tester";
-import { VortexModInstallerFileSystem } from "./utils/VortexModInstallerFileSystem";
 import { VortexModInstallerLogger } from "./utils/VortexModInstallerLogger";
 
 let logger: VortexModInstallerLogger | null = null;
-let fileSystem: VortexModInstallerFileSystem | null = null;
 
 const main = (context: IExtensionContext): boolean => {
   context.registerInstaller(
@@ -90,13 +88,12 @@ const main = (context: IExtensionContext): boolean => {
     context.api.onAsync(
       "will-install-mod",
       async (_gameId: string, _archiveId: string, _modId: string) => {
-        if (logger != null) {
-          logger = new VortexModInstallerLogger();
-          logger.useVortexFunctions();
-        }
-        if (fileSystem != null) {
-          fileSystem = new VortexModInstallerFileSystem();
-          fileSystem.useVortexFunctions();
+        if (process.platform === "linux" && logger === null) {
+          // The library's default logger uses APPDATA and Windows separators.
+          // Keep the callback owner alive for all subsequent native installations.
+          const nativeLogger = new VortexModInstallerLogger();
+          nativeLogger.useVortexFunctions();
+          logger = nativeLogger;
         }
       },
     );

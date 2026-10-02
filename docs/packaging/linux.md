@@ -112,6 +112,15 @@ Permission, disk-space and other copy failures now fail the installation instead
 of being silently treated as success. XML FOMOD scripts run through the native
 installer; this does not add Windows C# script support on Linux.
 
+FOMOD header and option images use the same exact-first, unique case-insensitive
+archive lookup on Linux and accept Windows separators. Images are resolved
+asynchronously; changing the selected option or installer cannot display the
+previous image while a new path is pending. Missing, non-file, ambiguous and
+out-of-archive image paths produce a warning in the Vortex log without aborting
+installation. Native FOMOD messages also go to the Vortex log on Linux rather than
+the library's default Windows `APPDATA` path. The native library retains its own
+filesystem callbacks.
+
 Packaging replaces the native FOMOD binding's absolute build-machine library
 search path with `$ORIGIN:$ORIGIN/../..`. It modifies a separate copy in the
 deploy tree, so pnpm hardlinks do not change the source or cached binary.
@@ -148,6 +157,10 @@ real local processes; they do not start a game or migrate an existing Wine prefi
 Installation tests process a real native XML FOMOD result into a temporary staging
 directory and cover separator conversion, source casing, exact and ambiguous
 matches, instruction overrides, generated files and copy-failure propagation.
+Image tests run a real interactive native XML installer and check both its header
+and option paths, URL encoding, exact and ambiguous names, invalid images and
+switching options or archives. A native callback test checks that FOMOD logging is
+connected once to Vortex while the library filesystem remains in use.
 
 CI verifies the packaged dependency versions and starts the unpacked Linux binary
 under Xvfb with isolated XDG directories. It also installs the DEB through APT,
