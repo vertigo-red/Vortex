@@ -1,10 +1,9 @@
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import * as path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../getVortexPath", () => ({ default: () => path.join(tmpdir(), "test-home") }));
 import { getLinuxSteamPaths, isValidSteamPath } from "./steamPaths";
 
 afterEach(() => vi.unstubAllEnvs());
@@ -14,15 +13,13 @@ describe("Linux Steam locations", () => {
     vi.stubEnv("XDG_DATA_HOME", data);
     const paths = getLinuxSteamPaths();
     expect(paths[0]).toBe(path.join(data, "Steam"));
-    expect(paths).toContain(path.join(tmpdir(), "test-home", ".steam", "root"));
+    expect(paths).toContain(path.join(homedir(), ".steam", "root"));
     expect(paths.some((entry) => entry.includes("com.valvesoftware.Steam"))).toBe(true);
     expect(paths.some((entry) => entry.includes(path.join("snap", "steam")))).toBe(true);
   });
   it("ignores relative XDG paths", () => {
     vi.stubEnv("XDG_DATA_HOME", "relative");
-    expect(getLinuxSteamPaths()[0]).toBe(
-      path.join(tmpdir(), "test-home", ".local", "share", "Steam"),
-    );
+    expect(getLinuxSteamPaths()[0]).toBe(path.join(homedir(), ".local", "share", "Steam"));
   });
   it("accepts Steam without the legacy config/libraryfolders.vdf", () => {
     const root = mkdtempSync(path.join(tmpdir(), "vortex-steam-path-"));

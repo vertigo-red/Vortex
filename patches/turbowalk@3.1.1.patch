@@ -1,0 +1,138 @@
+diff --git a/walk.js b/walk.js
+index b693db6889d07153b14f2256641d2759c244681e..7ce1159a7aca24e53954854010e1ced80232cab7 100644
+--- a/walk.js
++++ b/walk.js
+@@ -1,40 +1,98 @@
+-const Promise = require('bluebird');
+-const fs = require('fs-extra');
+-const path = require('path');
++const Promise = require("bluebird");
++const fs = require("fs").promises;
++const path = require("path");
+ 
+-function walk(target,
+-              callback,
+-              options) {
++function inaccessible(err) {
++  return err.code === "EACCES" || err.code === "EPERM";
++}
++
++function walk(target, callback, options) {
+   const opt = options || {};
+-  let allFileNames;
+-
+-  return fs.readdir(target)
+-    .catch(err => (err.code === 'ENOENT')
+-      ? Promise.resolve([])
+-      : Promise.reject(err))
+-    .then((fileNames) => {
+-      allFileNames = fileNames;
+-      return Promise.map(fileNames, (statPath) =>
+-                         Promise.resolve(fs.lstat(path.join(target, statPath))).reflect(), { concurrency: 50 });
+-    }).then((res) => {
+-      // use the stats results to generate a list of paths of the directories
+-      // in the searched directory
+-      const subDirs = res
+-        .map((stat, idx) => stat.isFulfilled() && stat.value().isDirectory() ? path.join(target, allFileNames[idx]) : undefined)
+-        .filter(stat => stat !== undefined);
+-      callback(res.map((stat, idx) => stat.isFulfilled() ? {
+-	filePath: path.join(target, allFileNames[idx]),
+-	isDirectory: stat.value().isDirectory(),
+-	size: stat.value().size,
+-	mtime: stat.value().mtime,
+-      } : undefined).filter(iter => iter !== undefined));
+-      return Promise.mapSeries(subDirs, (subDir) =>
+-        walk(subDir, callback, options))
+-        .then(() => undefined);
++  const threshold = Math.max(1, opt.threshold || 1024);
++  const visited = new Set();
++  let pending = [];
++
++  const emit = (entry) => {
++    pending.push(entry);
++    if (pending.length >= threshold) {
++      callback(pending);
++      pending = [];
++    }
++  };
++
++  const visit = async (directory) => {
++    let names;
++    try {
++      // Following directory links when requested must not loop through a symlink cycle.
++      const real = await fs.realpath(directory);
++      if (visited.has(real)) return;
++      visited.add(real);
++      names = await fs.readdir(directory);
++    } catch (err) {
++      if (err.code === "ENOENT" || (opt.skipInaccessible !== false && inaccessible(err))) return;
++      throw err;
++    }
++
++    const subDirs = [];
++    for (const name of names) {
++      if (opt.skipHidden !== false && name.startsWith(".")) continue;
++      const filePath = path.join(directory, name);
++      let stat;
++      let linked;
++      try {
++        stat = await fs.lstat(filePath, { bigint: true });
++        if (stat.isSymbolicLink() && opt.skipLinks === false) {
++          linked = await fs.stat(filePath, { bigint: true });
++        }
++      } catch (err) {
++        if (err.code === "ENOENT" || (opt.skipInaccessible !== false && inaccessible(err)))
++          continue;
++        throw err;
++      }
++
++      const isDirectory = (linked || stat).isDirectory();
++      emit({
++        filePath,
++        isDirectory,
++        isReparsePoint: stat.isSymbolicLink(),
++        size: Number(stat.size),
++        mtime: Number(stat.mtimeMs) / 1000,
++        ...(opt.details
++          ? {
++              id: Number(stat.ino),
++              // An inode is unique only within its filesystem. Keep the full-width values.
++              idStr: `${stat.dev}:${stat.ino}`,
++              linkCount: Number(stat.nlink),
++            }
++          : {}),
++      });
++      if (
++        isDirectory &&
++        opt.recurse !== false &&
++        (!stat.isSymbolicLink() || opt.skipLinks === false)
++      ) {
++        subDirs.push(filePath);
++      }
++    }
++
++    for (const subDir of subDirs) await visit(subDir);
++    if (opt.terminators) {
++      emit({
++        filePath: directory,
++        isDirectory: true,
++        isReparsePoint: false,
++        size: 0,
++        mtime: 0,
++        isTerminator: true,
++      });
++    }
++  };
++
++  return Promise.resolve()
++    .then(() => visit(target))
++    .then(() => {
++      if (pending.length > 0) callback(pending);
+     });
+ }
+ 
+-module.exports = {
+-  default: walk,
+-};
+-
++module.exports = { default: walk };

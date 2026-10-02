@@ -63,6 +63,30 @@ outside the game directory uses the intended prefix and `Game2` does not match
 `Game`. Proton receives the game's app ID, installation path and existing tool
 environment; Vortex no longer injects Steam overlay libraries into tool processes.
 
+## Bethesda settings and saves
+
+For discovered Steam/Proton games, Bethesda plugin lists use
+`steamapps/compatdata/<app-id>/pfx/drive_c/users/steamuser/AppData/Local` in the
+game's own library. INI tweaks, local profile settings and savegame management use
+that user's `Documents/My Games` directory. Existing Wine directory symlinks and
+the older `My Documents` name are respected. Skyrim, Enderal, Fallout New Vegas
+and Oblivion folder names retain their Windows spelling on case-sensitive disks.
+
+Launch the game once in Steam and refresh discovery before managing these files.
+An unavailable Steam prefix produces an error rather than writing into the host's
+Documents/AppData directories. This routing applies to the standard Steam user;
+custom Wine users, Registry-only redirections and non-Steam prefixes still require
+separate support. Bundled extensions can use `util.getGameUserPath` for these paths.
+
+## Deployment and purge
+
+The pinned `turbowalk` dependency has a repository patch for its non-Windows
+walker. It supplies modification times in seconds, full-width device/inode IDs
+and hardlink counts, and honors hidden-file, recursion, symlink and batch options.
+Hardlink purge uses those IDs to remove deployed links while keeping the staged
+source files and unrelated game files. Directory symlinks are not traversed by
+default. Existing-link checks also compare filesystem devices as well as inodes.
+
 ## Nexus links and desktop integration
 
 Enable **Handle Nexus Links** in Vortex. Native builds create a per-user desktop
@@ -84,7 +108,10 @@ XDG variables must be absolute. Relative values are ignored according to the
 
 Unit tests cover library discovery, Proton selection and invocation, tool-prefix
 matching, executable wrapper argument handling, AppImage registration, positional
-Nexus links, XDG paths and the updater platform gate. Tests of shell wrappers run
+Nexus links, XDG paths and the updater platform gate. Filesystem tests also deploy
+and purge real temporary hardlinks, verify timestamps, keep staged and unrelated
+files intact, and check Bethesda INI/plugin paths in secondary-library prefixes.
+Tests of shell wrappers run
 real local processes; they do not start a game or migrate an existing Wine prefix.
 
 CI also verifies the packaged dependency versions and starts the unpacked Linux
@@ -94,8 +121,9 @@ disabled for that isolated CI process; this is not a default application flag.
 
 Passing those checks does not prove a complete modding session works. In particular:
 
-- Game-specific Registry discovery, Windows configuration/save paths, script
-  extenders and executable dependencies require per-game validation. Windows-only
+- Game-specific Registry discovery, configuration/save paths outside the Bethesda
+  routing above, script extenders and executable dependencies require per-game
+  validation. Windows-only
   stores do not acquire Linux support from the Steam changes.
 - Running a Windows tool directly through Proton may require the tool's matching
   Steam runtime and installed Linux libraries; GE/custom builds may differ.
@@ -114,5 +142,7 @@ Passing those checks does not prove a complete modding session works. In particu
 - `src/renderer/src/util/linux/steamLibraries.ts` - Current and legacy Steam libraries.
 - `src/renderer/src/util/linux/proton.ts` - Compatibility tool and prefix resolution.
 - `src/renderer/src/util/linux/gameEntry.ts` - External-tool game matching.
+- `src/renderer/src/util/getGameUserPath.ts` - Steam/Proton user settings paths.
+- `patches/turbowalk@3.1.1.patch` - Linux directory metadata and traversal behavior.
 - `src/renderer/src/util/protocolRegistration/linux/nxm.ts` - Native desktop handlers.
 - `src/main/src/cli.ts` - Protocol launch and restart arguments.

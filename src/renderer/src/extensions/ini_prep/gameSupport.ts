@@ -2,7 +2,7 @@ import * as path from "path";
 
 import format from "string-template";
 
-import getVortexPath from "../../util/getVortexPath";
+import { getGameUserPath } from "../../util/getGameUserPath";
 import { makeOverlayableDictionary } from "../../util/util";
 import type { IDiscoveryResult } from "../gamemode_management/types/IDiscoveryResult";
 
@@ -173,8 +173,6 @@ const gameSupport = makeOverlayableDictionary<string, IGameSupport>(
 );
 
 export function iniFiles(gameMode: string, discovery: IDiscoveryResult) {
-  const mygames = path.join(getVortexPath("documents"), "My Games");
-
   let store = discovery?.store;
 
   // override for the case where enderal se is installed as a total conversion
@@ -187,9 +185,13 @@ export function iniFiles(gameMode: string, discovery: IDiscoveryResult) {
     store = "enderaloverride";
   }
 
-  return (gameSupport.get(gameMode, "iniFiles", store) ?? []).map((filePath) =>
-    format(filePath, { mygames, game: discovery.path }),
-  );
+  const files = gameSupport.get(gameMode, "iniFiles", store) ?? [];
+  if (files.length === 0) return [];
+  const mygames = files.some((filePath) => filePath.includes("{mygames}"))
+    ? path.join(getGameUserPath("documents", discovery), "My Games")
+    : undefined;
+
+  return files.map((filePath) => format(filePath, { mygames, game: discovery.path }));
 }
 
 export function iniFormat(gameMode: string) {

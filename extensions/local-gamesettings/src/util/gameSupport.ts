@@ -16,7 +16,7 @@ export interface IGameSupportEntry {
 const gameSupport = util.makeOverlayableDictionary<string, IGameSupportEntry>(
   {
     skyrim: {
-      mygamesPath: "skyrim",
+      mygamesPath: "Skyrim",
       gameSettingsFiles: ["Skyrim.ini", "SkyrimPrefs.ini"],
     },
     enderal: {
@@ -142,7 +142,7 @@ export function gameSupported(gameMode: string): boolean {
 
 export function mygamesPath(gameMode: string): string {
   return path.join(
-    util.getVortexPath("documents"),
+    util.getGameUserPath("documents", discoveryForGame(gameMode)),
     "My Games",
     gameSupport.get(gameMode, "mygamesPath"),
   );

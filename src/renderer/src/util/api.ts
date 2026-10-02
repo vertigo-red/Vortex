@@ -123,6 +123,7 @@ import {
 import ReduxProp from "../ReduxProp";
 import { getReduxLog } from "../store/reduxLogger";
 import { copyFileAtomic, writeFileAtomic } from "./fsAtomic";
+import { getGameUserPath } from "./getGameUserPath";
 import getNormalizeFunc, { makeNormalizingDict } from "./getNormalizeFunc";
 import getVortexPath from "./getVortexPath";
 import github from "./github";
@@ -236,6 +237,7 @@ export {
   getCurrentLanguage,
   getDriveList,
   getGame,
+  getGameUserPath,
   getGames,
   getManifest,
   getModSource,

@@ -7,6 +7,7 @@ import { log } from "../../../logging";
 import type { IExtensionApi } from "../../../types/IExtensionContext";
 import type { IState } from "../../../types/IState";
 import * as fs from "../../../util/fs";
+import { getGameUserPath } from "../../../util/getGameUserPath";
 import getVortexPath from "../../../util/getVortexPath";
 import { makeOverlayableDictionary } from "../../../util/util";
 import { discoveryByGame, gameById } from "../../gamemode_management/selectors";
@@ -157,7 +158,7 @@ const gameSupport = makeOverlayableDictionary<string, IGameSupport>(
       supportsESL: false,
     },
     falloutnv: {
-      appDataPath: "falloutnv",
+      appDataPath: "FalloutNV",
       pluginTXTFormat: "original",
       nativePlugins: ["falloutnv.esm"],
     },
@@ -190,7 +191,7 @@ const gameSupport = makeOverlayableDictionary<string, IGameSupport>(
       requiresLoadedMasters: true,
     },
     oblivion: {
-      appDataPath: "oblivion",
+      appDataPath: "Oblivion",
       pluginTXTFormat: "original",
       nativePlugins: ["oblivion.esm"],
     },
@@ -375,6 +376,10 @@ export function initGameSupport(api: IExtensionApi): Bluebird<void> {
 
 export function appDataPath(gameMode: string): string {
   const dataPath = gameSupport.get(gameMode, "appDataPath");
+
+  if (process.platform === "linux") {
+    return path.join(getGameUserPath("localAppData", discoveryForGame(gameMode)), dataPath);
+  }
 
   return process.env.LOCALAPPDATA !== undefined
     ? path.join(process.env.LOCALAPPDATA, dataPath)

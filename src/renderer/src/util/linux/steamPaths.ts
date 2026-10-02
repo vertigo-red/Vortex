@@ -1,14 +1,13 @@
 import * as fs from "fs";
+import { homedir } from "node:os";
 import * as path from "path";
-
-import getVortexPath from "../getVortexPath";
 
 /**
  * Default Steam installation paths for Linux systems
  * Ordered by likelihood (most common first)
  */
 export function getLinuxSteamPaths(): string[] {
-  const home = getVortexPath("home");
+  const home = homedir();
   const dataHome = process.env.XDG_DATA_HOME;
   return [
     ...new Set([

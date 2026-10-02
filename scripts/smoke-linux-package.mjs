@@ -79,8 +79,22 @@ try {
   socket = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("Debugger connection timed out")), 10_000);
-    socket.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
-    socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("Debugger connection failed")); }, { once: true });
+    socket.addEventListener(
+      "open",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+    socket.addEventListener(
+      "error",
+      () => {
+        clearTimeout(timer);
+        reject(new Error("Debugger connection failed"));
+      },
+      { once: true },
+    );
   });
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
@@ -130,11 +144,9 @@ try {
   socket?.close();
   if (application.exitCode === null && application.signalCode === null) {
     application.kill("SIGTERM");
-    await Promise.race([
-      new Promise((resolve) => application.once("exit", resolve)),
-      delay(3_000),
-    ]);
-    if (application.exitCode === null && application.signalCode === null) application.kill("SIGKILL");
+    await Promise.race([new Promise((resolve) => application.once("exit", resolve)), delay(3_000)]);
+    if (application.exitCode === null && application.signalCode === null)
+      application.kill("SIGKILL");
   }
   await rm(temporary, { recursive: true, force: true });
 }
