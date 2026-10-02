@@ -194,6 +194,7 @@ import gatherDependencies, {
 } from "./util/dependencies";
 import filterModInfo from "./util/filterModInfo";
 import { findModByRef } from "./util/findModByRef";
+import { createArchiveSourceResolver, normalizeInstallerInstruction } from "./util/installerPaths";
 import { InstallPhaseTracker, type IDeploymentDetails } from "./util/InstallPhaseTracker";
 import { isFuzzyVersion } from "./util/isFuzzyVersion";
 import metaLookupMatch from "./util/metaLookupMatch";
@@ -4285,6 +4286,13 @@ class InstallManager {
           //  will sometime return *nix separators.
           const sanitized =
             process.platform === "win32" ? destination.replace(sanitizeSep, path.sep) : destination;
+          const normalized = path.normalize(sanitized.replace(/^[\\/]+/, ""));
+          if (
+            ["copy", "mkdir", "generatefile"].includes(instr.type) &&
+            (normalized === ".." || normalized.startsWith(`..${path.sep}`))
+          ) {
+            return true;
+          }
           return !isPathValid(sanitized, true);
         }
 
@@ -4590,8 +4598,12 @@ class InstallManager {
       //  this will just add extra complexity to an already complex process.
       result.overrideInstructions = [];
     }
+    const instructions = result.instructions.map((instr) => normalizeInstallerInstruction(instr));
+    const overrideInstructions = result.overrideInstructions?.map((instr) =>
+      normalizeInstallerInstruction(instr),
+    );
     const overrideMap = new Map<string, IInstruction>();
-    result.overrideInstructions?.forEach((instr) => {
+    overrideInstructions?.forEach((instr) => {
       let key = instr.source ?? instr.type;
       if (key == null) {
         return;
@@ -4604,7 +4616,7 @@ class InstallManager {
       }
     });
 
-    const finalInstructions = result.instructions
+    const finalInstructions = instructions
       .filter((instr) => (instr.source ?? instr.type) != null)
       .map((instr) => {
         const key = (instr.source ?? instr.type).toUpperCase();
@@ -4620,11 +4632,11 @@ class InstallManager {
       });
 
     // Add instructions from result.overrideInstructions that are not already present in finalInstructions
-    if (Array.isArray(result.overrideInstructions)) {
+    if (Array.isArray(overrideInstructions)) {
       const existingKeys = new Set(
         finalInstructions.map((instr) => (instr.source ?? instr.type).toUpperCase()),
       );
-      for (const instr of result.overrideInstructions) {
+      for (const instr of overrideInstructions) {
         let key = instr.source ?? instr.type;
         if (key == null) {
           continue;
@@ -7510,6 +7522,7 @@ class InstallManager {
     const dirs = new Set<string>();
     const jobs: Array<{ src: string; dst: string; rel: string }> = [];
     const missingFiles = new Set<string>();
+    const resolveSource = createArchiveSourceResolver(tempPath);
 
     const copyAsyncWrap = async (src: string, dst: string) => {
       try {
@@ -7522,6 +7535,7 @@ class InstallManager {
           // File is already there - don't care
           return;
         }
+        throw err;
       }
     };
 
@@ -7531,7 +7545,7 @@ class InstallManager {
         folderCopies.push(copy.source);
         continue;
       }
-      const src = path.join(tempPath, copy.source);
+      const src = await resolveSource(copy.source);
       const dst = path.join(destinationPath, copy.destination);
       dirs.add(path.dirname(dst));
       jobs.push({ src, dst, rel: copy.destination });

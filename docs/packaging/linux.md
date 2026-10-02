@@ -95,6 +95,21 @@ link's own directory. Purge removes links into the staging directory and keeps
 links to other locations, including when mod folder names start with two dots.
 Game-specific restrictions on symlink deployment still apply.
 
+## Mod installation
+
+On Linux, copy, directory creation, generated-file and INI instructions accept
+Windows path separators. Copy sources are resolved against the extracted archive,
+preferring exact filenames and using case-insensitive matches only when unique.
+For example, a FOMOD source `textures\example.dds` can read an archive entry named
+`Textures/Example.dds`. Ambiguous filenames or directory names stop installation;
+destination spelling is preserved. Relative sources and file-writing destinations
+that leave the archive or staging directory are rejected.
+
+Copying remains the fallback when hardlinks cannot cross filesystem boundaries.
+Permission, disk-space and other copy failures now fail the installation instead
+of being silently treated as success. XML FOMOD scripts run through the native
+installer; this does not add Windows C# script support on Linux.
+
 ## Nexus links and desktop integration
 
 Enable **Handle Nexus Links** in Vortex. DEB/RPM installations use the package's
@@ -124,6 +139,9 @@ and purge real temporary hardlinks, verify timestamps, keep staged and unrelated
 files intact, and check Bethesda INI/plugin paths in secondary-library prefixes.
 Tests of shell wrappers run
 real local processes; they do not start a game or migrate an existing Wine prefix.
+Installation tests process a real native XML FOMOD result into a temporary staging
+directory and cover separator conversion, source casing, exact and ambiguous
+matches, instruction overrides, generated files and copy-failure propagation.
 
 CI verifies the packaged dependency versions and starts the unpacked Linux binary
 under Xvfb with isolated XDG directories. It also installs the DEB through APT,
@@ -163,6 +181,7 @@ Passing those checks does not prove a complete modding session works. In particu
 - `src/renderer/src/util/linux/proton.ts` - Compatibility tool and prefix resolution.
 - `src/renderer/src/util/linux/gameEntry.ts` - External-tool game matching.
 - `src/renderer/src/util/getGameUserPath.ts` - Steam/Proton user settings paths.
+- `src/renderer/src/extensions/mod_management/util/installerPaths.ts` - Installer separators and archive source lookup.
 - `patches/turbowalk@3.1.1.patch` - Linux directory metadata and traversal behavior.
 - `src/renderer/src/util/protocolRegistration/linux/nxm.ts` - Native desktop handlers.
 - `src/main/src/cli.ts` - Protocol launch and restart arguments.
