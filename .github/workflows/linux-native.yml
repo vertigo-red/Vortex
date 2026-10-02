@@ -32,7 +32,7 @@ jobs:
         with:
           dotnet-version: "9.0.x"
       - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev rpm xvfb xauth libgtk-3-0t64 libnss3 libasound2t64
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev patchelf rpm xvfb xauth libgtk-3-0t64 libnss3 libasound2t64
       - uses: ./.github/actions/setup-pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vortex/main exec electron-rebuild
@@ -42,6 +42,8 @@ jobs:
         run: pnpm run package:linux
       - name: Verify packaged dependency versions
         run: node scripts/verify-packaged-asar.mjs --asar dist/linux-unpacked/resources/app.asar
+      - name: Verify relocated native FOMOD
+        run: node scripts/verify-linux-fomod.mjs dist/linux-unpacked/resources
       - name: Verify packaged Linux startup
         run: xvfb-run -a node scripts/smoke-linux-package.mjs dist/linux-unpacked/vortex --no-sandbox
       - name: Install DEB and verify desktop integration
@@ -49,7 +51,9 @@ jobs:
           sudo apt-get install -y ./dist/*.deb
           node scripts/verify-linux-installation.mjs installed
       - name: Verify installed Linux startup with sandbox
-        run: xvfb-run -a node scripts/smoke-linux-package.mjs /usr/bin/vortex
+        run: |
+          node scripts/verify-linux-fomod.mjs /opt/Vortex/resources
+          xvfb-run -a node scripts/smoke-linux-package.mjs /usr/bin/vortex
       - name: Remove DEB and verify cleanup
         run: |
           sudo apt-get remove -y vortex

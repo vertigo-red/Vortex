@@ -9,7 +9,9 @@ establish compatibility with every bundled or third-party game extension.
 Install the distribution prerequisites and follow [shared setup](../install-instructions/shared.md).
 Builds need the .NET 9 SDK and fontconfig development headers, as the existing
 FOMOD, font-scanner and dotnetprobe components depend on them. Building an RPM on
-Debian/Ubuntu also needs `rpm` (`sudo apt install rpm`).
+Debian/Ubuntu also needs `rpm`. Linux packaging uses `patchelf` to make the
+native FOMOD library lookup relative to the installed module
+(`sudo apt install patchelf rpm`).
 
 ```bash
 pnpm install --frozen-lockfile
@@ -110,6 +112,10 @@ Permission, disk-space and other copy failures now fail the installation instead
 of being silently treated as success. XML FOMOD scripts run through the native
 installer; this does not add Windows C# script support on Linux.
 
+Packaging replaces the native FOMOD binding's absolute build-machine library
+search path with `$ORIGIN:$ORIGIN/../..`. It modifies a separate copy in the
+deploy tree, so pnpm hardlinks do not change the source or cached binary.
+
 ## Nexus links and desktop integration
 
 Enable **Handle Nexus Links** in Vortex. DEB/RPM installations use the package's
@@ -150,6 +156,11 @@ root-owned setuid sandbox helper, then starts the installed binary with Chromium
 sandbox enabled. Removing the DEB must remove the application directory, system
 launcher and desktop entry.
 
+Both unpacked and installed packages must also load the native FOMOD binding from
+a temporary relocated directory with `LD_LIBRARY_PATH` and `LD_PRELOAD` removed.
+The probe calls the native XML detection function and checks that the library
+search path is relative, avoiding a successful test caused by build-machine files.
+
 The startup checks read the rendered navigation and save `dist/linux-startup.png`
 and `dist/linux-installed-startup.png`. The unpacked CI process explicitly disables
 the sandbox because it has no installation step to set up the helper. This is not
@@ -175,6 +186,7 @@ Passing those checks does not prove a complete modding session works. In particu
 - `src/main/electron-builder.config.json` - Linux package formats and platform resources.
 - `src/main/prepare-dist-package.mjs` - Deployed package metadata and LOOT checks.
 - `scripts/verify-linux-installation.mjs` - DEB integration, sandbox helper and removal checks.
+- `scripts/verify-linux-fomod.mjs` - Relocated native FOMOD loading without build-machine paths.
 - `scripts/smoke-linux-package.mjs` - Packaged and installed renderer startup checks.
 - `src/renderer/src/util/linux/steamPaths.ts` - Linux Steam installation candidates.
 - `src/renderer/src/util/linux/steamLibraries.ts` - Current and legacy Steam libraries.

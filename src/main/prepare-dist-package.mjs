@@ -1,8 +1,12 @@
+import { execFile } from "node:child_process";
 import { createWriteStream, existsSync } from "node:fs";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { promisify } from "node:util";
+
+const exec = promisify(execFile);
 
 const MAIN_DIR = resolve(import.meta.dirname);
 const MAIN_PACKAGE_PATH = resolve(MAIN_DIR, "package.json");
@@ -70,6 +74,19 @@ async function prepareLinux() {
     await access(resolve(lootRelease, file)).catch(() => {
       throw new Error(`missing Linux loot runtime asset: ${resolve(lootRelease, file)}`);
     });
+  }
+
+  const fomodRoot = resolve(MAIN_DIR, "node_modules", "@nexusmods", "fomod-installer-native");
+  const binding = resolve(fomodRoot, "build", "Release", "modinstaller.node");
+  await access(resolve(fomodRoot, "ModInstaller.Native.so"));
+  const temporary = binding + ".relocatable";
+  try {
+    // pnpm deploy can use hardlinks. Patch a fresh copy so the source/store binary is untouched.
+    await copyFile(binding, temporary);
+    await exec("patchelf", ["--set-rpath", "$ORIGIN:$ORIGIN/../..", temporary]);
+    await rename(temporary, binding);
+  } finally {
+    await rm(temporary, { force: true });
   }
 }
 
