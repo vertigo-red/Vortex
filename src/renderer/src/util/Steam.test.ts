@@ -3,6 +3,7 @@ import * as path from "path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { GameEntryNotFound } from "../types/IGameStore";
+import opn from "./opn";
 import { Steam } from "./Steam";
 
 // Steam.ts builds its singleton at import time, and on Linux that constructor calls
@@ -97,6 +98,8 @@ vi.mock("node:fs/promises", () => {
 vi.mock("./fs", () => ({
   readFileAsync: () => manifestGate.pending ?? Promise.resolve(Buffer.from(MANIFEST)),
 }));
+
+vi.mock("./opn", () => ({ default: vi.fn(async () => undefined) }));
 
 const fsError = (code: string): NodeJS.ErrnoException =>
   Object.assign(new Error(`${code}: no such file or directory, open '${LIB_FOLDERS_FILE}'`), {
@@ -226,5 +229,49 @@ describe("Steam.allGames", () => {
       gamePathIn(ALT_LIBRARY),
       gamePathIn(THIRD_LIBRARY),
     ]);
+  });
+});
+
+describe.skipIf(process.platform !== "linux")("Steam Linux launches", () => {
+  const first = {
+    gamePath: path.resolve("Library", "Game"),
+    appid: "42",
+    name: "Game",
+    gameStoreId: "steam",
+  };
+  const sibling = {
+    gamePath: path.resolve("Library", "Game2"),
+    appid: "99",
+    name: "Game2",
+    gameStoreId: "steam",
+  };
+  let store: Steam;
+
+  beforeEach(() => {
+    steam.installed = true;
+    store = new Steam();
+    vi.spyOn(store, "allGames").mockResolvedValue([first, sibling]);
+  });
+
+  it("selects the sibling game by complete path components", async () => {
+    const info = await store.getExecInfo(path.join(sibling.gamePath, "bin"));
+    expect(info.arguments).toEqual(["-applaunch", "99"]);
+  });
+
+  it("rejects paths that differ only in case", async () => {
+    await expect(store.getExecInfo(first.gamePath.toUpperCase())).rejects.toBeInstanceOf(
+      GameEntryNotFound,
+    );
+  });
+
+  it("selects the deepest matching installation directory", async () => {
+    const nested = { ...first, appid: "77", gamePath: path.join(first.gamePath, "Standalone") };
+    vi.spyOn(store, "allGames").mockResolvedValue([first, nested]);
+    expect((await store.getExecInfo(nested.gamePath)).arguments).toEqual(["-applaunch", "77"]);
+  });
+
+  it("launches the selected game's Steam URI", async () => {
+    await store.launchGame(sibling.gamePath);
+    expect(opn).toHaveBeenCalledWith("steam://rungameid/99");
   });
 });

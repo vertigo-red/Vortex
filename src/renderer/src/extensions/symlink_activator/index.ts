@@ -188,8 +188,13 @@ class DeploymendMethod extends LinkingDeployment {
       return fs
         .readlinkAsync(iterPath)
         .then((symlinkPath) => {
-          const relPath = path.relative(installPath, symlinkPath);
-          if (!relPath.startsWith("..") && !path.isAbsolute(relPath)) {
+          const target = path.resolve(path.dirname(iterPath), symlinkPath);
+          const relPath = path.relative(installPath, target);
+          if (
+            relPath !== ".." &&
+            !relPath.startsWith(`..${path.sep}`) &&
+            !path.isAbsolute(relPath)
+          ) {
             return fs.unlinkAsync(iterPath, { showDialogCallback });
           }
         })
@@ -222,7 +227,10 @@ class DeploymendMethod extends LinkingDeployment {
     return (
       fs
         .readlinkAsync(linkPath)
-        .then((symlinkPath) => symlinkPath === sourcePath)
+        .then(
+          (symlinkPath) =>
+            path.resolve(path.dirname(linkPath), symlinkPath) === path.resolve(sourcePath),
+        )
         // readlink throws an "unknown" error if the file is no link at all. Super helpful
         .catch(() => false)
     );

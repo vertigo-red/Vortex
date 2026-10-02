@@ -3,12 +3,23 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 
-if (process.platform !== "linux" || process.argv[2] === undefined) {
-  throw new Error("Usage on Linux: node scripts/smoke-linux-package.mjs <packaged-vortex>");
+const options = process.argv.slice(3);
+if (
+  process.platform !== "linux" ||
+  process.argv[2] === undefined ||
+  options.some((option) => option !== "--no-sandbox")
+) {
+  throw new Error(
+    "Usage on Linux: node scripts/smoke-linux-package.mjs <packaged-vortex> [--no-sandbox]",
+  );
 }
+const disableSandbox = options.includes("--no-sandbox");
 
 const temporary = await mkdtemp(path.join(tmpdir(), "vortex-linux-startup-"));
-const screenshot = path.resolve("dist/linux-startup.png");
+const screenshot = path.resolve(
+  "dist",
+  disableSandbox ? "linux-startup.png" : "linux-installed-startup.png",
+);
 for (const directory of ["config", "data", "cache", "state"]) {
   await mkdir(path.join(temporary, directory), { recursive: true });
 }
@@ -25,7 +36,7 @@ const env = {
 delete env.ELECTRON_RUN_AS_NODE;
 const application = spawn(
   path.resolve(process.argv[2]),
-  ["--no-sandbox", "--disable-gpu", "--remote-debugging-port=0"],
+  [...(disableSandbox ? ["--no-sandbox"] : []), "--disable-gpu", "--remote-debugging-port=0"],
   { env, stdio: ["ignore", "pipe", "pipe"] },
 );
 let output = "";
@@ -135,7 +146,12 @@ try {
   const image = await send("Page.captureScreenshot", { format: "png" });
   await mkdir(path.dirname(screenshot), { recursive: true });
   await writeFile(screenshot, Buffer.from(image.data, "base64"));
-  console.log("Native Linux renderer started successfully: " + document.text.slice(0, 500));
+  console.log(
+    "Native Linux renderer started successfully (sandbox " +
+      (disableSandbox ? "disabled" : "enabled") +
+      "): " +
+      document.text.slice(0, 500),
+  );
   console.log("Saved " + screenshot);
 } catch (error) {
   console.error(output);

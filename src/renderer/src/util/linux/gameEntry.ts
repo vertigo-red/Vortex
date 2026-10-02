@@ -1,4 +1,23 @@
+import { realpathSync } from "node:fs";
 import * as path from "node:path";
+
+function resolveGamePath(input: string): string {
+  const resolved = path.resolve(input);
+  if (process.platform !== "linux") return resolved;
+  let directory = resolved;
+  const suffix: string[] = [];
+  for (;;) {
+    try {
+      return path.join(realpathSync.native(directory), ...suffix);
+    } catch {
+      // Resolve the existing parent even if an executable has not been installed yet.
+      const parent = path.dirname(directory);
+      if (parent === directory) return resolved;
+      suffix.unshift(path.basename(directory));
+      directory = parent;
+    }
+  }
+}
 
 function isInside(directory: string, candidate: string): boolean {
   const relative = path.relative(directory, candidate);
@@ -15,17 +34,16 @@ export function findSteamGameForTool<T extends { gamePath: string }>(
   workingDirectory?: string,
   discoveredGamePath?: string,
 ): T | undefined {
+  const games = entries.map((game) => ({ game, directory: resolveGamePath(game.gamePath) }));
   if (discoveredGamePath !== undefined) {
-    const entry = entries.find(
-      (game) => path.resolve(game.gamePath) === path.resolve(discoveredGamePath),
-    );
-    if (entry !== undefined) return entry;
+    const discovered = resolveGamePath(discoveredGamePath);
+    // Discovery selects the prefix. A tool in another game must never override it.
+    return games.find(({ directory }) => directory === discovered)?.game;
   }
-  return entries
-    .filter(
-      (game) =>
-        isInside(game.gamePath, executable) ||
-        (workingDirectory && isInside(game.gamePath, workingDirectory)),
-    )
-    .sort((left, right) => right.gamePath.length - left.gamePath.length)[0];
+  const candidates = [executable, workingDirectory]
+    .filter((candidate): candidate is string => candidate !== undefined && candidate !== "")
+    .map(resolveGamePath);
+  return games
+    .filter(({ directory }) => candidates.some((candidate) => isInside(directory, candidate)))
+    .sort((left, right) => right.directory.length - left.directory.length)[0]?.game;
 }

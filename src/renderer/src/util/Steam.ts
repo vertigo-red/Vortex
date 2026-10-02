@@ -13,6 +13,7 @@ import { GameEntryNotFound } from "../types/IGameStore";
 import type { IGameStoreEntry } from "../types/IGameStoreEntry";
 import { MissingInterpreter } from "./CustomErrors";
 import * as fs from "./fs";
+import { findSteamGameForTool } from "./linux/gameEntry";
 import { getProtonInfo, buildProtonEnvironment, buildProtonCommand } from "./linux/proton";
 import { readSteamLibraries } from "./linux/steamLibraries";
 import { findLinuxSteamPath } from "./linux/steamPaths";
@@ -132,14 +133,17 @@ class Steam implements IGameStore {
 
     const isDirPath = appId.indexOf(path.sep) !== -1;
     return this.allGames().then((entries) => {
-      const found = entries.find((entry) =>
-        !isDirPath
-          ? entry.appid === appId
-          : // Checking by gamepath is inefficient but I can't think of a different
-            //  way to ascertain whether the launcher has this game entry with the
-            //  provided information...
-            appId.toLowerCase().indexOf(entry.gamePath.toLowerCase()) !== -1,
-      );
+      const found =
+        isDirPath && process.platform === "linux"
+          ? findSteamGameForTool(entries, appId)
+          : entries.find((entry) =>
+              !isDirPath
+                ? entry.appid === appId
+                : // Checking by gamepath is inefficient but I can't think of a different
+                  //  way to ascertain whether the launcher has this game entry with the
+                  //  provided information...
+                  appId.toLowerCase().indexOf(entry.gamePath.toLowerCase()) !== -1,
+            );
       if (found === undefined) {
         return PromiseBB.reject(new GameEntryNotFound(appId, STORE_ID));
       }

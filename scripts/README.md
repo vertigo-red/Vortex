@@ -59,3 +59,14 @@ The `.ts` files in this directory are standalone Node scripts run via
 `pnpm tsx`. They are not part of any app package. `tsconfig.node.json` (repo
 root) provides type checking and includes `"./scripts/**/*.ts"` so the editor
 resolves `node:*` imports.
+
+## Native Linux checks
+
+- `smoke-linux-package.mjs <binary>` starts a packaged application under the current
+  display, checks its rendered navigation and saves a screenshot. Use `--no-sandbox`
+  only for the unpacked CI binary; installed packages use the normal sandbox.
+- `verify-linux-installation.mjs installed|removed` checks DEB installation,
+  desktop integration, the sandbox helper and cleanup after package removal.
+
+The [Linux packaging guide](../docs/packaging/linux.md) describes the CI workflow
+and the limits of these checks.

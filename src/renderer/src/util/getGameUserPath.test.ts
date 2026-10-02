@@ -41,6 +41,7 @@ describe.skipIf(process.platform !== "linux")("Steam/Proton game user paths", ()
       "489830",
     );
     user = path.join(compatDataPath, "pfx", "drive_c", "users", "steamuser");
+    await mkdir(gamePath, { recursive: true });
     await mkdir(path.join(user, "Documents"), { recursive: true });
     steam.entries = [
       {
@@ -79,6 +80,14 @@ describe.skipIf(process.platform !== "linux")("Steam/Proton game user paths", ()
     await rm(path.join(user, "Documents"), { recursive: true });
     await mkdir(path.join(user, "My Documents"));
     expect(getGameUserPath("documents", discovery())).toBe(path.join(user, "My Documents"));
+  });
+
+  it("uses the correct prefix when discovery uses a game directory symlink", async () => {
+    const alias = path.join(root, "Game alias");
+    await symlink(gamePath, alias);
+    expect(getGameUserPath("localAppData", { path: alias, store: "steam" })).toBe(
+      path.join(user, "AppData", "Local"),
+    );
   });
 
   it("routes Bethesda plugin and INI paths through the same prefix", async () => {

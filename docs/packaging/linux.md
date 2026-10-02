@@ -58,9 +58,12 @@ selected build produces an error; Vortex does not replace it with an arbitrary
 newer build. Arguments are passed as separate process arguments, with shell
 execution disabled. Batch scripts are routed through `cmd.exe` inside Proton.
 
-Tool matching uses path boundaries and the game's discovery path, so a tool stored
-outside the game directory uses the intended prefix and `Game2` does not match
-`Game`. Proton receives the game's app ID, installation path and existing tool
+Game and tool matching uses path boundaries and resolves existing Linux directory
+symlinks while preserving case. The game's discovery path selects its prefix, so
+an unmatched discovery cannot fall back to another game's tool directory. A tool
+stored outside the game directory uses the intended prefix and `Game2` does not
+match `Game`. Nested installations select the deepest matching directory.
+Proton receives the game's app ID, installation path and existing tool
 environment; Vortex no longer injects Steam overlay libraries into tool processes.
 
 ## Bethesda settings and saves
@@ -87,6 +90,11 @@ Hardlink purge uses those IDs to remove deployed links while keeping the staged
 source files and unrelated game files. Directory symlinks are not traversed by
 default. Existing-link checks also compare filesystem devices as well as inodes.
 
+Symlink deployment recognizes both absolute targets and targets relative to the
+link's own directory. Purge removes links into the staging directory and keeps
+links to other locations, including when mod folder names start with two dots.
+Game-specific restrictions on symlink deployment still apply.
+
 ## Nexus links and desktop integration
 
 Enable **Handle Nexus Links** in Vortex. Native builds create a per-user desktop
@@ -106,7 +114,7 @@ XDG variables must be absolute. Relative values are ignored according to the
 
 ## Verification and remaining limits
 
-Unit tests cover library discovery, Proton selection and invocation, tool-prefix
+Unit tests cover library discovery and aliases, Proton selection and invocation, tool-prefix
 matching, executable wrapper argument handling, AppImage registration, positional
 Nexus links, XDG paths and the updater platform gate. Filesystem tests also deploy
 and purge real temporary hardlinks, verify timestamps, keep staged and unrelated
@@ -114,10 +122,17 @@ files intact, and check Bethesda INI/plugin paths in secondary-library prefixes.
 Tests of shell wrappers run
 real local processes; they do not start a game or migrate an existing Wine prefix.
 
-CI also verifies the packaged dependency versions and starts the unpacked Linux
-binary under Xvfb with isolated XDG directories. The startup check reads the
-rendered navigation and saves `dist/linux-startup.png`. Chromium's sandbox is
-disabled for that isolated CI process; this is not a default application flag.
+CI verifies the packaged dependency versions and starts the unpacked Linux binary
+under Xvfb with isolated XDG directories. It also installs the DEB through APT,
+checks dpkg ownership, the desktop launcher, Nexus MIME declaration and the
+root-owned setuid sandbox helper, then starts the installed binary with Chromium's
+sandbox enabled. Removing the DEB must remove the application directory, system
+launcher and desktop entry.
+
+The startup checks read the rendered navigation and save `dist/linux-startup.png`
+and `dist/linux-installed-startup.png`. The unpacked CI process explicitly disables
+the sandbox because it has no installation step to set up the helper. This is not
+a default application flag; the installed package check uses the normal sandbox.
 
 Passing those checks does not prove a complete modding session works. In particular:
 
@@ -138,6 +153,8 @@ Passing those checks does not prove a complete modding session works. In particu
 
 - `src/main/electron-builder.config.json` - Linux package formats and platform resources.
 - `src/main/prepare-dist-package.mjs` - Deployed package metadata and LOOT checks.
+- `scripts/verify-linux-installation.mjs` - DEB integration, sandbox helper and removal checks.
+- `scripts/smoke-linux-package.mjs` - Packaged and installed renderer startup checks.
 - `src/renderer/src/util/linux/steamPaths.ts` - Linux Steam installation candidates.
 - `src/renderer/src/util/linux/steamLibraries.ts` - Current and legacy Steam libraries.
 - `src/renderer/src/util/linux/proton.ts` - Compatibility tool and prefix resolution.
