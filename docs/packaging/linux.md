@@ -97,11 +97,14 @@ Game-specific restrictions on symlink deployment still apply.
 
 ## Nexus links and desktop integration
 
-Enable **Handle Nexus Links** in Vortex. Native builds create a per-user desktop
-handler in `$XDG_DATA_HOME/applications` (default `~/.local/share/applications`).
-AppImages register their persistent file path, rather than the temporary mount
-location. Development builds include the Electron application argument; packaged
-builds launch the binary directly. Flatpak retains its own desktop identifier.
+Enable **Handle Nexus Links** in Vortex. DEB/RPM installations use the package's
+`vortex.desktop` launcher without creating an additional user wrapper. AppImages
+and manually extracted builds create a per-user desktop handler in
+`$XDG_DATA_HOME/applications` (default `~/.local/share/applications`). AppImages
+register their persistent file path, rather than the temporary mount location,
+even if a DEB/RPM is also installed. Development builds include the Electron
+application argument; packaged builds launch the binary directly. Flatpak retains
+its own desktop identifier.
 
 The handler needs `xdg-settings` from `xdg-utils`; `update-desktop-database` from
 `desktop-file-utils` refreshes the MIME cache. Registration failures are reported

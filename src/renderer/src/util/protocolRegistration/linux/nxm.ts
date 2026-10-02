@@ -30,6 +30,8 @@ const DEV_DESKTOP_ID = "com.nexusmods.vortex.dev.desktop";
 const DEV_WRAPPER_FILE_NAME = "com.nexusmods.vortex.dev.sh";
 const NATIVE_DESKTOP_ID = "com.nexusmods.vortex.native.desktop";
 const NATIVE_WRAPPER_FILE_NAME = "com.nexusmods.vortex.native.sh";
+const SYSTEM_DESKTOP_ID = "vortex.desktop";
+const SYSTEM_EXECUTABLE = "/opt/Vortex/vortex";
 
 /**
  * Required registration inputs for Linux `nxm` routing.
@@ -53,7 +55,7 @@ export function registerLinuxNxmProtocolHandler(
   }
 
   const applicationsDir = applicationsDirectory();
-  const desktopId = desktopIdForCurrentBuild();
+  const desktopId = desktopIdForCurrentBuild(options.executablePath);
 
   let didChangeDesktopFiles = false;
   if (desktopId === DEV_DESKTOP_ID) {
@@ -106,7 +108,7 @@ function isDevelopmentBuild(): boolean {
   return process.defaultApp === true || process.env.NODE_ENV === "development";
 }
 
-function desktopIdForCurrentBuild(): string {
+function desktopIdForCurrentBuild(executablePath: string): string {
   if (isFlatpakBuild()) {
     return PACKAGE_DESKTOP_ID;
   }
@@ -115,7 +117,23 @@ function desktopIdForCurrentBuild(): string {
     return DEV_DESKTOP_ID;
   }
 
+  if (!process.env.APPIMAGE && isInstalledNativeBuild(executablePath)) {
+    return SYSTEM_DESKTOP_ID;
+  }
+
   return NATIVE_DESKTOP_ID;
+}
+
+function isInstalledNativeBuild(executablePath: string): boolean {
+  try {
+    // DEB and RPM install this launcher. Reuse it so package removal owns its cleanup.
+    return (
+      fs.existsSync(path.join("/usr/share/applications", SYSTEM_DESKTOP_ID)) &&
+      fs.realpathSync(executablePath) === fs.realpathSync(SYSTEM_EXECUTABLE)
+    );
+  } catch {
+    return false;
+  }
 }
 
 function escapeShellScriptArgument(input: string): string {
