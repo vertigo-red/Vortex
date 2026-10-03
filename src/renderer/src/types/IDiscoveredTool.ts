@@ -7,5 +7,7 @@ export interface IDiscoveredTool extends ITool {
   custom: boolean;
   // working directory can be empty in which case the parent dir of the executable is used
   workingDirectory?: string;
+  /** Linux dashboard arguments are literal values rather than legacy quoted tokens. */
+  parametersLiteral?: boolean;
   timestamp?: number;
 }

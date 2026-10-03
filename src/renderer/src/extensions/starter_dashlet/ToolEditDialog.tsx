@@ -206,7 +206,8 @@ export default function ToolEditDialog(props: IProps) {
         iconPath: editTool.iconPath,
         environment: editTool.environment,
         envCustomized,
-        parameters: splitCommandLine(editTool.commandLine),
+        parameters: splitCommandLine(editTool.commandLine, editTool.shell),
+        parametersLiteral: process.platform === "linux" && !editTool.shell,
         shell: editTool.shell,
         detach: editTool.detach,
         onStart: editTool.onStart,
@@ -363,9 +364,11 @@ export default function ToolEditDialog(props: IProps) {
                 {t("Run in shell")}
                 <More id="run-in-shell" name={t("Run in shell")}>
                   {t(
-                    "If (and only if!) a tool is written as a console " +
-                      "application, you have to enable this to allow it to run " +
-                      "correctly.",
+                    process.platform === "linux"
+                      ? "Enable this only when the command needs shell syntax, such as environment variable expansion or redirection. Native console tools and executable scripts can run directly."
+                      : "If (and only if!) a tool is written as a console " +
+                          "application, you have to enable this to allow it to run " +
+                          "correctly.",
                   )}
                 </More>
               </Toggle>

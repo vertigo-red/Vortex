@@ -9,6 +9,7 @@ import { ProcessCanceled } from "../../util/CustomErrors";
 import Debouncer from "../../util/Debouncer";
 import extractExeIcon from "../../util/exeIcon";
 import * as fs from "../../util/fs";
+import { formatCommandLine, parseCommandLine } from "../../util/linux/commandLine";
 import type { IStarterInfo } from "../../util/StarterInfo";
 import StarterInfo from "../../util/StarterInfo";
 import { truthy } from "../../util/util";
@@ -32,7 +33,10 @@ export function resolveToolName(tool: IStarterInfo | IEditStarterInfo): string {
       : "";
 }
 
-export function splitCommandLine(input: string): string[] {
+export function splitCommandLine(input: string, shell = false): string[] {
+  if (process.platform === "linux") {
+    return parseCommandLine(input).map((token) => (shell ? token.source : token.value));
+  }
   const res = [];
   let inBrackets = false;
   let startOffset = 0;
@@ -103,7 +107,10 @@ export function toEditStarter(input: IStarterInfo): IEditStarterInfo {
     ...input,
     iconPath: StarterInfo.getIconPath(input),
   };
-  temp.commandLine = temp.commandLine.join(" ");
+  temp.commandLine =
+    process.platform === "linux" && !input.shell
+      ? formatCommandLine(input.commandLine)
+      : input.commandLine.join(" ");
   temp.environment = { ...input.environment };
   return temp;
 }
@@ -120,7 +127,8 @@ export function toToolDiscovery(tool: IEditStarterInfo): IDiscoveredTool {
     requiredFiles: [],
     environment: tool.environment,
     logo: `${tool.id}.png`,
-    parameters: splitCommandLine(tool.commandLine),
+    parameters: splitCommandLine(tool.commandLine, tool.shell),
+    parametersLiteral: process.platform === "linux" && !tool.shell,
     shell: tool.shell,
     detach: tool.detach,
     onStart: tool.onStart,

@@ -104,6 +104,7 @@ import getVortexPath from "./util/getVortexPath";
 import type { i18n } from "./util/i18n";
 import { TString } from "./util/i18n";
 import lazyRequire from "./util/lazyRequire";
+import { quoteArgument } from "./util/linux/commandLine";
 import { showError } from "./util/message";
 import { deregisterProtocolHandler, registerProtocolHandler } from "./util/protocolRegistration";
 import runElevatedCustomTool from "./util/runElevatedCustomTool";
@@ -2334,45 +2335,44 @@ class ExtensionManager {
       }
     }
 
-    const cwd = options.cwd || path.dirname(executable);
-
-    // Detect if executable is a script file that requires shell: true
-    // Common script extensions that need shell interpretation
-    const scriptExtensions = [".ps1", ".bat", ".cmd", ".sh", ".bash"];
-    const ext = path.extname(executable).toLowerCase();
-    const isScript = scriptExtensions.includes(ext);
-
-    // If it's a script and shell isn't explicitly set, enable shell mode
-    if (isScript && options.shell === undefined) {
-      options.shell = true;
-    }
-
-    // process.env is case insensitive (on windows at least?), but the spawn parameter isn't.
-    // I think the key is called "Path" on windows but I'm not willing to bet this is consistent
-    // across all language variants and versions
-    const pathEnvName = Object.keys(process.env).find((key) => key.toLowerCase() === "path");
-    const env = {
-      ...filteredEnvironment(),
-      [pathEnvName]: process.env["PATH_ORIG"] || process.env["PATH"],
-      ...options.env,
-    };
-
-    // TODO: we might want to be much more restrictive in what keys we allow in environment variables,
-    //   based on a quick google I could only find rules for Linux which appears to not allow the equal
-    //   sign in keys either (which makes sense).
-    //   On windows the empty string is the only thing I found that causes a problem though
-    delete env[""];
+    let cwd: string;
+    let env: { [key: string]: string };
 
     return (
       this.applyStartHooks({ executable, args, options })
         .then((updatedParameters) => {
           ({ executable, args, options } = updatedParameters);
+          cwd = options.cwd || path.dirname(executable);
+
+          // Executable Unix scripts use their shebang. Shell mode is an explicit
+          // choice on Linux; invoking /bin/sh implicitly loses argument boundaries.
+          if (process.platform === "win32" && options.shell === undefined) {
+            const scriptExtensions = [".ps1", ".bat", ".cmd", ".sh", ".bash"];
+            if (scriptExtensions.includes(path.extname(executable).toLowerCase())) {
+              options = { ...options, shell: true };
+            }
+          }
+
+          const pathEnvName =
+            process.platform === "win32"
+              ? Object.keys(process.env).find((key) => key.toLowerCase() === "path") || "Path"
+              : "PATH";
+          env = {
+            ...filteredEnvironment(),
+            [pathEnvName]: process.env["PATH_ORIG"] || process.env[pathEnvName],
+            ...options.env,
+          };
+          delete env[""];
           return PromiseBB.resolve();
         })
         .then(
           () =>
             new PromiseBB<void>((resolve, reject) => {
-              const runExe = options.shell ? `"${executable}"` : executable;
+              const runExe = options.shell
+                ? process.platform === "linux"
+                  ? quoteArgument(executable)
+                  : `"${executable}"`
+                : executable;
               const spawnOptions: SpawnOptions = {
                 cwd,
                 env,
@@ -2394,7 +2394,9 @@ class ExtensionManager {
 
                 const child = spawn(
                   runExe,
-                  options.shell ? args : args.map((arg) => arg.replace(/"/g, "")),
+                  process.platform === "win32" && !options.shell
+                    ? args.map((arg) => arg.replace(/"/g, ""))
+                    : args,
                   spawnOptions,
                 );
                 if (truthy(child["exitCode"])) {
@@ -2402,21 +2404,24 @@ class ExtensionManager {
                   // through a shell if starting the application fails immediately
                   return reject(new Error(`Failed to start (exit code ${child["exitCode"]})`));
                 }
-                if (options.onSpawned !== undefined) {
-                  options.onSpawned(child.pid);
-                }
-
-                if (options.detach) {
-                  child.unref();
-                }
-
+                let spawned = false;
                 let stdOut: string;
                 let errOut: string;
                 child
+                  .once("spawn", () => {
+                    spawned = true;
+                    try {
+                      options.onSpawned?.(child.pid);
+                      if (options.detach) child.unref();
+                    } catch (err) {
+                      reject(err);
+                    }
+                  })
                   .on("error", (err) => {
                     reject(err);
                   })
                   .on("close", (code, signal) => {
+                    if (!spawned) return;
                     options.onExit?.(code);
                     const game = activeGameId(this.mApi.store.getState());
                     if (code === null) {
@@ -2534,7 +2539,7 @@ class ExtensionManager {
         .catch(ProcessCanceled, () => null)
         .catch({ code: "EACCES" }, (err) => {
           // Elevated execution is only supported on Windows
-          if (process.platform !== "win32") {
+          if (process.platform !== "win32" || cwd === undefined || env === undefined) {
             return PromiseBB.reject(err);
           }
           return this.runElevated(executable, cwd, args, env, options.onSpawned);

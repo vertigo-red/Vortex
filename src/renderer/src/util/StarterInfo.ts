@@ -491,7 +491,15 @@ class StarterInfo implements IStarterInfo {
       ? getSafe(gameDiscovery, ["environment"], {})
       : this.originalEnvironment;
     this.iconOutPath = StarterInfo.gameIconRW(this.gameId);
-    this.shell = gameDiscovery.shell || game.shell;
+    this.shell = gameDiscovery.shell ?? game.shell;
+    if (
+      process.platform === "linux" &&
+      !this.shell &&
+      gameDiscovery.parameters !== undefined &&
+      !gameDiscovery.parametersLiteral
+    ) {
+      this.commandLine = this.commandLine.map((arg) => arg.replace(/"/g, ""));
+    }
     this.logoName = gameDiscovery.logo || game.logo;
     this.details = game.details;
     this.exclusive = true;
@@ -513,6 +521,14 @@ class StarterInfo implements IStarterInfo {
         getSafe(tool, ["workingDirectory"], ""),
       );
       this.shell = getSafe(toolDiscovery, ["shell"], getSafe(tool, ["shell"], undefined));
+      if (
+        process.platform === "linux" &&
+        !this.shell &&
+        toolDiscovery.parameters !== undefined &&
+        !toolDiscovery.parametersLiteral
+      ) {
+        this.commandLine = this.commandLine.map((arg) => arg.replace(/"/g, ""));
+      }
       this.exclusive = getSafe(tool, ["exclusive"], false) || false;
       this.defaultPrimary = getSafe(tool, ["defaultPrimary"], false);
       this.timestamp = toolDiscovery.timestamp;

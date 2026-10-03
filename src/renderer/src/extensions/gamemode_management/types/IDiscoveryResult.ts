@@ -36,6 +36,8 @@ export interface IDiscoveryResult {
   shortName?: string;
   executable?: string;
   parameters?: string[];
+  /** Linux dashboard arguments are literal values rather than legacy quoted tokens. */
+  parametersLiteral?: boolean;
   logo?: string;
   extensionPath?: string;
   mergeMods?: boolean;

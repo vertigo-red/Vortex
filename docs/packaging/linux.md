@@ -110,6 +110,27 @@ Directory watch events recognize either spelling and detect atomic file
 replacement even when the replacement retains an older modification time. The
 existing choice to keep or revert a foreign load order still applies.
 
+## External tools and arguments
+
+On Linux, direct tool launches pass each argument literally, preserving spaces,
+quotes, JSON, empty arguments and Windows paths passed to Proton. The tool editor
+accepts single/double quotes and backslash escapes for grouping arguments, without
+expanding variables or wildcards. Editing and saving a tool preserves these
+argument boundaries. Existing settings retain their legacy quote handling until
+saved again; new direct-launch settings mark their arguments as literal values.
+
+Executable `.sh` and `.bash` scripts run through their shebang without enabling
+**Run in shell** automatically. Enable that option for shell expansion or
+redirection; shell arguments remain command text. The executable path itself is
+quoted literally in shell mode. Scripts must have execute permission.
+Proton tool launches always pass literal arguments: shell-mode grouping is decoded
+without evaluating the command through the host shell.
+
+Start hooks can replace the executable, working directory and environment before
+launch. Running-state notifications and the configured hide/close action happen
+after the child process has actually spawned, rather than after a failed launch
+attempt.
+
 ## Deployment and purge
 
 The pinned `turbowalk` dependency has a repository patch for its non-Windows
@@ -194,6 +215,10 @@ Game discovery tests search real Linux directories using nested Windows and mixe
 separator declarations, verify manual root selection and build usable dashboard
 paths. Missing files and incorrect casing still fail validation. Process tests
 check nested game paths, distinct case-sensitive directories and cached PID reuse.
+Tool-launch tests run actual Linux child processes to verify literal arguments,
+start-hook directories/environments, shebang scripts with special-character paths,
+spawn/exit notifications and missing or non-executable tools. Dashboard tests
+cover argument editing, settings round trips and legacy quote compatibility.
 
 Filesystem tests also deploy and purge real temporary hardlinks, verify timestamps, keep staged and unrelated
 files intact, and check Bethesda INI/plugin paths in secondary-library prefixes.

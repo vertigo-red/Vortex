@@ -13,6 +13,7 @@ import { GameEntryNotFound } from "../types/IGameStore";
 import type { IGameStoreEntry } from "../types/IGameStoreEntry";
 import { MissingInterpreter } from "./CustomErrors";
 import * as fs from "./fs";
+import { parseCommandLine } from "./linux/commandLine";
 import { findSteamGameForTool } from "./linux/gameEntry";
 import { getProtonInfo, buildProtonEnvironment, buildProtonCommand } from "./linux/proton";
 import { readSteamLibraries } from "./linux/steamLibraries";
@@ -382,10 +383,15 @@ class Steam implements IGameStore {
     }
 
     const steamPath = await this.mBaseFolder;
+    // Proton starts directly even when the tool was configured with shell text.
+    // Decode grouping quotes here instead of sending them as literal characters.
+    const toolArgs = options.shell
+      ? parseCommandLine(args.join(" ")).map((token) => token.value)
+      : args;
     const { executable, args: protonArgs } = buildProtonCommand(
       gameEntry.protonPath,
       exePath,
-      args,
+      toolArgs,
     );
     const protonEnv = buildProtonEnvironment(
       gameEntry.compatDataPath,
