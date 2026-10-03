@@ -10,7 +10,10 @@ import * as which from "which";
 
 type Interpreter = (input: types.IRunParameters) => types.IRunParameters;
 
-const PYTHON = process.platform === "linux" ? which.sync("python3", { nothrow: true }) : undefined;
+const PYTHON =
+  process.platform === "linux"
+    ? (which.sync("python3", { nothrow: true }) ?? undefined)
+    : undefined;
 
 const quote = (arg: string) => `'${arg.replace(/'/g, `'"'"'`)}'`;
 
@@ -221,6 +224,14 @@ with open(sys.argv[1], "w") as output:
     vi.stubEnv("JAVA_HOME", inherited);
     const java = await createRuntime("java", path.join(root, "tool-jdk", "bin"));
     expect(interpret(".jar", { env: { JAVA_HOME: "tool-jdk" } }).executable).toBe(java);
+  });
+
+  it("lets a tool clear the inherited JAVA_HOME and use Java from PATH", async () => {
+    const java = await createRuntime("java");
+    const home = path.join(root, "inherited-jdk");
+    await createRuntime("java", path.join(home, "bin"));
+    vi.stubEnv("JAVA_HOME", home);
+    expect(interpret(".jar", { env: { JAVA_HOME: "" } }).executable).toBe(java);
   });
 
   it.each(["missing", "non-executable", "directory"])(
