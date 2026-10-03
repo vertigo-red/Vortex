@@ -1,0 +1,181 @@
+diff --git a/async.js b/async.js
+index 5eb014e2ccafb79a9e7e6edbbf83ad05d3709aaa..85a086a27ace73ee92603693e6f35bf8f4bc34dc 100644
+--- a/async.js
++++ b/async.js
+@@ -74,3 +74,7 @@ const client = net.connect(process.argv[2], (arg) => {
+   // signal readiness to process messages
+   send({ result: null });
+ });
++
++// The native log callback keeps Node alive. When the parent closes its endpoint after a
++// failed startup or exits, explicitly release the worker process rather than orphaning it.
++client.on('close', () => process.exit(0));
+diff --git a/index.d.ts b/index.d.ts
+index e252fbd8033482499c6f33bf0f4ffd6fc7371bc7..2b4dad8e8b6b4ca11b1a027dd7c4c51af856a832 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -16,7 +16,8 @@ export class Group {
+ }
+ 
+ export type LogCallback = (level: number, message: string) => void;
+-export type ForkFunction = (module: string, args: string[]) => void;
++/** A process handle or a promise settled when the worker ends; void callers use the deadline. */
++export type ForkFunction = (module: string, args: string[]) => void | import('child_process').ChildProcess | PromiseLike<void>;
+ 
+ export class Loot {
+   constructor(gameId: string, gamePath: string, gameLocalPath: string, language: string, logCallback: LogCallback);
+diff --git a/index.js b/index.js
+index a382240f4439b427fe55ec2ada0b79107436a610..76aeda949972e48d14d7ac6211ca68d8c42be838 100644
+--- a/index.js
++++ b/index.js
+@@ -72,8 +72,8 @@ class RemoteDied extends Error {
+ 
+     this.name = this.constructor.name;
+     this.call = call;
+-    // the socket error that ended it, where one was reported before it closed
+-    this.code = code;
++    // The socket error, spawn error or process exit code that ended the worker.
++    this.code = code === undefined ? undefined : String(code);
+   }
+ }
+ 
+@@ -114,7 +114,7 @@ class LootAsync {
+     } else {
+       const cp = require('child_process');
+       this.onFork = (script, args) => {
+-        cp.spawn(process.execPath, [
++        return cp.spawn(process.execPath, [
+           script,
+           ...args,
+         ]);
+@@ -134,6 +134,9 @@ class LootAsync {
+           logCallback(4, err.message);
+         }
+       }
++      if (err) {
++        this.stop(err);
++      }
+       callback(err);
+     }
+ 
+@@ -197,19 +200,7 @@ class LootAsync {
+             this.logCallback(4, err.message);
+           })
+           .on('close', () => {
+-            // nothing more is coming from the child, so every call waiting on it fails here
+-            const pending = [
+-              { call: this.currentCall, callback: this.currentCallback },
+-              ...this.queue.map((entry) => ({ call: entry.message.type, callback: entry.callback })),
+-            ];
+-            this.queue = [];
+-            this.currentCallback = undefined;
+-            this.currentCall = undefined;
+-            for (const { call, callback } of pending) {
+-              if (callback !== undefined) {
+-                callback(new RemoteDied(call, this.socketErrorCode));
+-              }
+-            }
++            this.stop(new RemoteDied(this.currentCall, this.socketErrorCode));
+           });
+         })
+ 
+@@ -224,22 +215,91 @@ class LootAsync {
+   }
+ 
+   restart() {
+-    return new Promise((resolve) => {
+-      this.worker = this.onFork(`${__dirname}${path.sep}async.js`, [this.ipcPath]);
+-      this.currentCallback = () => resolve(this.request({ type: 'init', args: this.initArgs }));
++    if (this.didClose) {
++      return Promise.reject(new AlreadyClosed());
++    }
++    return new Promise((resolve, reject) => {
++      // Watch both readiness and native initialization: a child can fail before connecting,
++      // or connect successfully but never answer init.
++      this.currentCall = 'init';
++      this.currentCallback = (err) => err
++        ? reject(err)
++        : resolve(this.request({ type: 'init', args: this.initArgs }));
++      this.startupTimer = setTimeout(() => {
++        const err = new Error('LOOT worker did not initialize within 30 seconds');
++        err.code = 'ETIMEDOUT';
++        this.stop(err);
++      }, 30000);
++      try {
++        const worker = this.onFork(`${__dirname}${path.sep}async.js`, [this.ipcPath]);
++        this.worker = worker;
++        const died = (err) => {
++          if (this.worker === worker && !this.didStop) {
++            this.stop(new RemoteDied(this.currentCall, err && (err.code ?? err.exitCode)));
++          }
++        };
++        if (worker && typeof worker.then === 'function') {
++          // Vortex's process API returns a promise settled when the process ends.
++          Promise.resolve(worker).then(() => died(), died);
++        } else if (worker && typeof worker.once === 'function') {
++          worker.once('error', died);
++          worker.once('exit', (code, signal) => died({ exitCode: code ?? signal }));
++        }
++      } catch (err) {
++        this.stop(err);
++      }
++    }).then((result) => {
++      clearTimeout(this.startupTimer);
++      this.startupTimer = undefined;
++      return result;
++    }, (err) => {
++      this.stop(err);
++      throw err;
+     });
+   }
+ 
++  stop(err = new AlreadyClosed()) {
++    if (this.didStop) {
++      return;
++    }
++    this.didStop = true;
++    this.didClose = true;
++    clearTimeout(this.startupTimer);
++    this.startupTimer = undefined;
++    const worker = this.worker;
++    this.worker = undefined;
++    if (this.socket) {
++      this.socket.destroy();
++    }
++    // Closing the server also removes the Unix socket file.
++    this.ipc.close();
++    if (worker && typeof worker.kill === 'function') {
++      worker.kill();
++    }
++    const pending = [
++      { call: this.currentCall, callback: this.currentCallback },
++      ...this.queue.map((entry) => ({ call: entry.message.type, callback: entry.callback })),
++    ];
++    this.queue = [];
++    this.currentCallback = undefined;
++    this.currentCall = undefined;
++    for (const { call, callback } of pending) {
++      if (callback !== undefined) {
++        callback(err instanceof RemoteDied ? new RemoteDied(call, err.code) : err);
++      }
++    }
++  }
++
+   close() {
+     if (this.didClose) {
+       return;
+     }
+ 
+-    this.enqueue({ type: 'terminate' }, () => {
+-      this.worker = undefined;
+-      // closing the server removes a unix socket's file
+-      this.ipc.close();
+-    });
++    if (this.startupTimer !== undefined || this.socket === undefined) {
++      this.stop();
++      return;
++    }
++    this.enqueue({ type: 'terminate' }, () => this.stop());
+     this.didClose = true;
+   }
+ 

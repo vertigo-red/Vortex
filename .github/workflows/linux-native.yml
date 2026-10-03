@@ -44,6 +44,8 @@ jobs:
         run: node scripts/verify-packaged-asar.mjs --asar dist/linux-unpacked/resources/app.asar
       - name: Verify relocated native FOMOD
         run: node scripts/verify-linux-fomod.mjs dist/linux-unpacked/resources
+      - name: Verify packaged LOOT sorting and worker lifecycle
+        run: node scripts/verify-linux-loot.mjs dist/linux-unpacked/vortex dist/linux-unpacked/resources
       - name: Verify packaged Linux startup
         run: xvfb-run -a node scripts/smoke-linux-package.mjs dist/linux-unpacked/vortex --no-sandbox
       - name: Install DEB and verify desktop integration
@@ -53,6 +55,7 @@ jobs:
       - name: Verify installed Linux startup with sandbox
         run: |
           node scripts/verify-linux-fomod.mjs /opt/Vortex/resources
+          node scripts/verify-linux-loot.mjs /usr/bin/vortex /opt/Vortex/resources
           xvfb-run -a node scripts/smoke-linux-package.mjs /usr/bin/vortex
       - name: Remove DEB and verify cleanup
         run: |

@@ -9,12 +9,14 @@
 import { writeFile } from "node:fs/promises";
 import * as path from "node:path";
 
+import Bluebird from "bluebird";
 import { describe, expect, onTestFinished, vi } from "vitest";
 
 import { startActivity, stopActivity } from "../../actions/session";
 import { flushAsync } from "../../test-utils/async";
 import { makeLootPluginInterface, makePlugin } from "../../test-utils/builders";
 import { test } from "../../test-utils/gamebryoTest";
+import { UserCanceled } from "../../util/CustomErrors";
 import { setPluginList } from "./actions/plugins";
 import LootInterface from "./autosort";
 import { createLootMock, downloadMasterlistMock } from "./lootMocks";
@@ -37,6 +39,73 @@ vi.mock(
 );
 
 describe("LootInterface libloot lifecycle", () => {
+  test("returns the worker's lifetime promise to LOOT with Electron's Node environment", async ({
+    makeLoot,
+  }) => {
+    const harness = await makeLoot(LootInterface);
+    let finish: () => void;
+    vi.spyOn(harness.api, "runExecutable").mockImplementation(
+      () =>
+        new Bluebird<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const fork = (
+      harness.lootInterface as unknown as {
+        fork: (module: string, args: string[]) => PromiseLike<void>;
+      }
+    ).fork;
+    const worker = fork("/assets/loot/async.js", ["/tmp/loot.sock"]);
+    expect(worker).toHaveProperty("then");
+    expect(harness.api.runExecutable).toHaveBeenCalledWith(
+      process.execPath,
+      ["/assets/loot/async.js", "/tmp/loot.sock"],
+      expect.objectContaining({
+        detach: false,
+        expectSuccess: true,
+        env: { ELECTRON_RUN_AS_NODE: "1" },
+      }),
+    );
+    finish!();
+    await worker;
+  });
+
+  test("preserves a canceled launch as a rejected worker promise", async ({ makeLoot }) => {
+    const harness = await makeLoot(LootInterface);
+    const failure = new UserCanceled();
+    vi.spyOn(harness.api, "runExecutable").mockImplementation(() => Bluebird.reject(failure));
+    const fork = (
+      harness.lootInterface as unknown as {
+        fork: (module: string, args: string[]) => PromiseLike<void>;
+      }
+    ).fork;
+    await expect(fork("/assets/loot/async.js", ["/tmp/loot.sock"])).rejects.toBe(failure);
+  });
+
+  test("waits for an EBUSY retry before settling the worker promise", async ({ makeLoot }) => {
+    const harness = await makeLoot(LootInterface);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    vi.spyOn(harness.api, "runExecutable")
+      .mockImplementationOnce(() =>
+        Bluebird.reject(Object.assign(new Error("busy"), { code: "EBUSY" })),
+      )
+      .mockImplementationOnce(() => Bluebird.resolve());
+    const fork = (
+      harness.lootInterface as unknown as {
+        fork: (module: string, args: string[]) => PromiseLike<void>;
+      }
+    ).fork;
+    const worker = fork("/assets/loot/async.js", ["/tmp/loot.sock"]);
+    await flushAsync();
+    expect(harness.api.runExecutable).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(500);
+    await worker;
+    expect(harness.api.runExecutable).toHaveBeenCalledTimes(2);
+  });
+
   test("recreates the loot instance and reloads its state when helpers restart", async ({
     makeLoot,
   }) => {

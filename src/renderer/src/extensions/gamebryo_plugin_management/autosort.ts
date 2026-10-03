@@ -913,7 +913,8 @@ class LootInterface {
         });
     };
 
-    attempt(5)
+    const worker = attempt(5);
+    void worker
       .catch(UserCanceled, () => null)
       .catch(ProcessCanceled, () => null)
       .catch((err) => {
@@ -935,13 +936,15 @@ class LootInterface {
         if (restarting) {
           const gameMode = activeGameId(this.mExtensionApi.store.getState());
           --this.mRestarts;
-          // the handle outlives the worker and answers isClosed() with false, so drop it here
+          // Reinitialize with a fresh handle after the worker has failed.
           this.mLoot = undefined;
           if (knownGame(gameMode)) {
             this.mInitPromise = this.init(gameMode);
           }
         }
       });
+    // LOOT must observe termination even when the process never connects to its IPC endpoint.
+    return worker;
   };
 
   private logCB = (level: number, message: string) => {

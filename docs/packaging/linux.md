@@ -125,6 +125,16 @@ Packaging replaces the native FOMOD binding's absolute build-machine library
 search path with `$ORIGIN:$ORIGIN/../..`. It modifies a separate copy in the
 deploy tree, so pnpm hardlinks do not change the source or cached binary.
 
+## LOOT sorting
+
+LOOT runs in a separate Electron process with `ELECTRON_RUN_AS_NODE=1` and uses a
+Unix socket on Linux. Vortex returns its process-lifetime promise to the patched,
+pinned LOOT transport so a failed launch or an exit before connection rejects
+initialization. Readiness and native initialization have a 30-second deadline.
+Failures close the endpoint and reject pending calls; each failed call retains
+its own name. The worker explicitly exits when the parent disconnects, because
+the native log callback would otherwise keep Node alive.
+
 ## Nexus links and desktop integration
 
 Enable **Handle Nexus Links** in Vortex. DEB/RPM installations use the package's
@@ -161,6 +171,10 @@ Image tests run a real interactive native XML installer and check both its heade
 and option paths, URL encoding, exact and ambiguous names, invalid images and
 switching options or archives. A native callback test checks that FOMOD logging is
 connected once to Vortex while the library filesystem remains in use.
+LOOT transport tests execute the dependency's JavaScript with simulated sockets
+and cover process launch failures, early exits, deadlines, queued-call rejection,
+Unicode framing, cleanup and the unchanged Windows named-pipe endpoint format.
+Vortex lifecycle tests also cover the returned worker promise and EBUSY retries.
 
 CI verifies the packaged dependency versions and starts the unpacked Linux binary
 under Xvfb with isolated XDG directories. It also installs the DEB through APT,
@@ -173,6 +187,13 @@ Both unpacked and installed packages must also load the native FOMOD binding fro
 a temporary relocated directory with `LD_LIBRARY_PATH` and `LD_PRELOAD` removed.
 The probe calls the native XML detection function and checks that the library
 search path is relative, avoiding a successful test caused by build-machine files.
+They also start relocated native LOOT workers with the packaged Electron binary,
+with those library environment variables removed. The probe loads synthetic TES4
+plugins from a path with spaces and Unicode, sorts a dependent Unicode plugin
+after its master, transfers a Unicode group response larger than 64 KiB, and
+checks worker exit and Unix socket removal after normal closure, a lost parent
+connection and a process exit before connection. This uses temporary fixtures;
+it does not run the real-game E2E suite.
 
 The startup checks read the rendered navigation and save `dist/linux-startup.png`
 and `dist/linux-installed-startup.png`. The unpacked CI process explicitly disables
@@ -200,6 +221,8 @@ Passing those checks does not prove a complete modding session works. In particu
 - `src/main/prepare-dist-package.mjs` - Deployed package metadata and LOOT checks.
 - `scripts/verify-linux-installation.mjs` - DEB integration, sandbox helper and removal checks.
 - `scripts/verify-linux-fomod.mjs` - Relocated native FOMOD loading without build-machine paths.
+- `scripts/verify-linux-loot.mjs` - Native plugin sorting and worker/socket lifecycle through packaged Electron.
+- `patches/loot@7.0.0.patch` - LOOT worker startup observation, deadline and cleanup.
 - `scripts/smoke-linux-package.mjs` - Packaged and installed renderer startup checks.
 - `src/renderer/src/util/linux/steamPaths.ts` - Linux Steam installation candidates.
 - `src/renderer/src/util/linux/steamLibraries.ts` - Current and legacy Steam libraries.
