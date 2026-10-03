@@ -1,18 +1,22 @@
+import { mkdir, readdir, rm } from "node:fs/promises";
 import * as path from "node:path";
 
-import { describe, expect } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import { startActivity, stopActivity } from "../../../actions/session";
 import { makeFakePersistor, makeMod, makePlugin } from "../../../test-utils/builders";
 import { seedPluginDir, test, type IGamebryoFixtures } from "../../../test-utils/gamebryoTest";
 import { makeTempDir } from "../../../test-utils/tempDir";
 import type { ThunkStore } from "../../../types/IExtensionContext";
+import { showError } from "../../../util/message";
 import { setDeploymentNecessary } from "../../mod_management/actions/deployment";
 import type { IMod } from "../../mod_management/types/IMod";
 import { setPluginList } from "../actions/plugins";
 import type { IStateWithGamebryo } from "../types/IStateWithGamebryo";
 import { initGameSupport } from "./gameSupport";
 import { makeUpdatePluginList } from "./updatePluginList";
+
+vi.mock("../../../util/message", () => ({ showError: vi.fn() }));
 
 interface IScenario {
   // plugin files staged per mod (the mod id doubles as its staging folder name); null seeds the
@@ -122,6 +126,128 @@ describe("updatePluginList", () => {
 
     expect(Object.keys(harness.pluginList())).toEqual(["two.esp"]);
   });
+
+  test("recognizes Windows override paths and plugin casing on a Linux host", async ({
+    makeGamebryo,
+  }) => {
+    const { harness, scan } = await arrange(makeGamebryo, {
+      staged: { modX: ["One.esp", "Two.ESP", "Keep.esp"] },
+      fileOverrides: { modX: ["C:\\Games\\Skyrim\\Data\\ONE.ESP", "/games/skyrim/Data/two.esp"] },
+    });
+
+    await scan();
+
+    expect(Object.keys(harness.pluginList())).toEqual(["keep.esp"]);
+  });
+
+  test("attributes a deployed plugin to its mod across casing while keeping its real path", async ({
+    makeGamebryo,
+  }) => {
+    const { harness, dataPath, persistor, scan } = await arrange(makeGamebryo, {
+      staged: { modX: ["Мод 日本語.ESP"] },
+      deployed: ["мод 日本語.esp"],
+    });
+
+    await scan();
+
+    expect(harness.pluginList()["мод 日本語.esp"]).toMatchObject({
+      modId: "modX",
+      filePath: path.join(dataPath, "мод 日本語.esp"),
+      deployed: true,
+    });
+    expect(persistor.setKnownPlugins).toHaveBeenCalledWith(
+      { "мод 日本語.esp": "мод 日本語.esp" },
+      undefined,
+    );
+  });
+
+  test("attributes an overridden plugin to the remaining mod across casing", async ({
+    makeGamebryo,
+  }) => {
+    const { harness, scan } = await arrange(makeGamebryo, {
+      staged: { excluded: ["Mod.esp"], winner: ["MOD.ESP"] },
+      fileOverrides: { excluded: ["C:\\Games\\Skyrim\\Data\\Mod.esp"] },
+      deployed: ["mod.esp"],
+    });
+
+    await scan();
+
+    expect(harness.pluginList()["mod.esp"]).toMatchObject({ modId: "winner", deployed: true });
+  });
+
+  test.skipIf(process.platform !== "linux")(
+    "keeps the previous plugin list when deployed names differ only by case",
+    async ({ makeGamebryo }) => {
+      const { harness, dataPath, persistor, scan } = await arrange(makeGamebryo, {
+        staged: {},
+        deployed: ["Mod.esp", "mod.ESP"],
+      });
+      const previous = { "previous.esp": makePlugin() };
+      harness.api.store.dispatch(setPluginList(previous));
+
+      await scan();
+
+      expect(harness.pluginList()).toEqual(previous);
+      expect(persistor.setKnownPlugins).not.toHaveBeenCalled();
+      expect(showError).toHaveBeenCalledWith(
+        harness.api.store.dispatch,
+        "Failed to update plugin list",
+        expect.objectContaining({
+          message: expect.stringContaining(dataPath),
+        }),
+        { allowReport: false },
+      );
+      expect(harness.dispatched).toContainEqual(stopActivity("plugins", "update-plugin-list"));
+      expect((await readdir(dataPath)).sort()).toEqual(["Mod.esp", "mod.ESP"]);
+
+      await rm(path.join(dataPath, "mod.ESP"));
+      await scan();
+
+      expect(harness.pluginList()["mod.esp"].filePath).toBe(path.join(dataPath, "Mod.esp"));
+      expect(persistor.setKnownPlugins).toHaveBeenCalledWith({ "mod.esp": "Mod.esp" }, undefined);
+    },
+  );
+
+  test.skipIf(process.platform !== "linux")(
+    "does not treat a directory with a plugin extension as a conflicting file",
+    async ({ makeGamebryo }) => {
+      const { harness, dataPath, scan } = await arrange(makeGamebryo, {
+        staged: {},
+        deployed: ["Mod.esp"],
+      });
+      await mkdir(path.join(dataPath, "mod.ESP"));
+
+      await scan();
+
+      expect(Object.keys(harness.pluginList())).toEqual(["mod.esp"]);
+      expect(harness.pluginList()["mod.esp"].filePath).toBe(path.join(dataPath, "Mod.esp"));
+      expect(showError).not.toHaveBeenCalled();
+    },
+  );
+
+  test.skipIf(process.platform !== "linux")(
+    "keeps the previous plugin list when a staged mod has conflicting plugin names",
+    async ({ makeGamebryo }) => {
+      const { harness, persistor, scan } = await arrange(makeGamebryo, {
+        staged: { modX: ["Mod.esp", "mod.ESP"] },
+      });
+      const previous = { "previous.esp": makePlugin() };
+      harness.api.store.dispatch(setPluginList(previous));
+
+      await scan();
+
+      expect(harness.pluginList()).toEqual(previous);
+      expect(persistor.setKnownPlugins).not.toHaveBeenCalled();
+      expect(showError).toHaveBeenCalledWith(
+        harness.api.store.dispatch,
+        "Failed to update plugin list",
+        expect.objectContaining({
+          message: expect.stringContaining(path.join(harness.stagingPath, "modX")),
+        }),
+        { allowReport: false },
+      );
+    },
+  );
 
   test("carries the existing warnings of a plugin into its refreshed entry", async ({
     makeGamebryo,

@@ -30,6 +30,27 @@ type IModStates = Record<string, { enabled: boolean }>;
 // late-bound: the entry module creates the persistor on init
 type PersistorGetter = () => Pick<PluginPersistor, "setKnownPlugins"> | undefined;
 
+class PluginNameCollision extends Error {}
+
+/** Linux can hold both spellings, but the game and Vortex identify them as one plugin. */
+function assertUniquePluginNames(dir: string, fileNames: string[]): void {
+  if (process.platform !== "linux") {
+    return;
+  }
+  const names = new Map<string, string>();
+  for (const fileName of fileNames) {
+    const key = fileName.toLowerCase();
+    const previous = names.get(key);
+    if (previous !== undefined && previous !== fileName) {
+      throw new PluginNameCollision(
+        `Plugin names differ only by case: "${previous}" and "${fileName}" in "${dir}". ` +
+          "Resolve the conflicting filenames before refreshing the list.",
+      );
+    }
+    names.set(key, fileName);
+  }
+}
+
 async function updatePluginListImpl(
   store: ThunkStore<IStateWithGamebryo>,
   newModList: IModStates,
@@ -38,7 +59,7 @@ async function updatePluginListImpl(
 ): Promise<void> {
   const state = store.getState();
 
-  const modIdByFileName: Record<string, string> = {};
+  const modIdByPluginId: Record<string, string> = {};
   const pluginStates: IPlugins = {};
 
   const addPlugin = (basePath: string, fileName: string, modId: string, deployed: boolean) => {
@@ -90,18 +111,23 @@ async function updatePluginListImpl(
         log("error", "mod not found", { gameId, modId });
         return;
       }
-      const overridden = new Set((mod.fileOverrides ?? []).map((name) => path.basename(name)));
+      const overridden = new Set((mod.fileOverrides ?? []).map(toPluginId));
       const modInstPath = path.join(installBasePath, mod.installationPath);
       try {
         const fileNames = await fs.readdirAsync(modInstPath);
         const candidates = fileNames
           .map((fileName) => activator?.getDeployedPath(fileName) ?? fileName)
-          .filter((fileName) => !overridden.has(fileName));
-        for (const fileName of await selectPluginFiles(modInstPath, candidates, gameId)) {
-          modIdByFileName[fileName] = mod.id;
+          .filter((fileName) => !overridden.has(toPluginId(fileName)));
+        const pluginFiles = await selectPluginFiles(modInstPath, candidates, gameId);
+        assertUniquePluginNames(modInstPath, pluginFiles);
+        for (const fileName of pluginFiles) {
+          modIdByPluginId[toPluginId(fileName)] = mod.id;
           addPlugin(modInstPath, fileName, mod.id, false);
         }
       } catch (err) {
+        if (err instanceof PluginNameCollision) {
+          throw err;
+        }
         readErrors.push(mod.id);
         log("warn", "failed to read mod directory", {
           path: mod.installationPath,
@@ -123,8 +149,10 @@ async function updatePluginListImpl(
     store.dispatch(dismissNotification("failed-to-read-mods"));
   }
 
-  for (const fileName of await deployedScan) {
-    addPlugin(modPath, fileName, modIdByFileName[fileName] ?? "", true);
+  const deployedPlugins = await deployedScan;
+  assertUniquePluginNames(modPath, deployedPlugins);
+  for (const fileName of deployedPlugins) {
+    addPlugin(modPath, fileName, modIdByPluginId[toPluginId(fileName)] ?? "", true);
   }
 
   store.dispatch(setPluginList(pluginStates));
@@ -176,7 +204,12 @@ export function makeUpdatePluginList(getPersistor: PersistorGetter) {
       "plugins",
       "update-plugin-list",
       updatePluginListImpl(store, newModList, gameId, getPersistor).catch((err) => {
-        showError(store.dispatch, "Failed to update plugin list", err);
+        showError(
+          store.dispatch,
+          "Failed to update plugin list",
+          err,
+          err instanceof PluginNameCollision ? { allowReport: false } : undefined,
+        );
       }),
     );
 }

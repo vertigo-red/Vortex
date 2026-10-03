@@ -83,6 +83,14 @@ Documents/AppData directories. This routing applies to the standard Steam user;
 custom Wine users, Registry-only redirections and non-Steam prefixes still require
 separate support. Bundled extensions can use `util.getGameUserPath` for these paths.
 
+Bethesda plugin IDs and file overrides use Windows path separators and
+case-insensitive names on Linux, while the scanned paths and the names written to
+plugin lists retain their spelling on disk. A staged `Mod.ESP` remains associated
+with its mod when the deployed file is named `mod.esp`. If a staging or game data
+directory contains two plugin files differing only by case, Vortex reports both
+names and the directory and keeps the previous plugin list. Resolve those files
+before refreshing; the scan does not rename or delete them.
+
 ## Deployment and purge
 
 The pinned `turbowalk` dependency has a repository patch for its non-Windows
@@ -164,6 +172,9 @@ matching, executable wrapper argument handling, AppImage registration, positiona
 Nexus links, XDG paths and the updater platform gate. Filesystem tests also deploy
 and purge real temporary hardlinks, verify timestamps, keep staged and unrelated
 files intact, and check Bethesda INI/plugin paths in secondary-library prefixes.
+Plugin scan tests use real temporary directories to cover Windows override paths,
+deployed-file casing, mod attribution, conflicting names and recovery after the
+conflict is resolved without replacing the prior list during the failed scan.
 Tests of shell wrappers run
 real local processes; they do not start a game or migrate an existing Wine prefix.
 Installation tests process a real native XML FOMOD result into a temporary staging
