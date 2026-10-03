@@ -68,6 +68,16 @@ match `Game`. Nested installations select the deepest matching directory.
 Proton receives the game's app ID, installation path and existing tool
 environment; Vortex no longer injects Steam overlay libraries into tool processes.
 
+Relative executable and required-file paths declared by extensions accept Windows
+separators on Linux. Directory validation, disk searches, relative tool discovery,
+version queries and dashboard game launch paths use the same conversion while
+preserving filename casing. Selecting a nested executable directory also searches
+the necessary parents when the declaration uses Windows separators. Previously
+discovered games use this conversion when their required files are checked again.
+Absolute tool paths selected by users remain Linux paths. Process monitoring
+compares full Linux paths without folding case and revalidates the path of a cached
+PID before retaining it, preventing a different installation from appearing active.
+
 ## Bethesda settings and saves
 
 For discovered Steam/Proton games, Bethesda plugin lists use
@@ -178,8 +188,14 @@ XDG variables must be absolute. Relative values are ignored according to the
 
 Unit tests cover library discovery and aliases, Proton selection and invocation, tool-prefix
 matching, executable wrapper argument handling, AppImage registration, positional
-Nexus links, XDG paths and the updater platform gate. Filesystem tests also deploy
-and purge real temporary hardlinks, verify timestamps, keep staged and unrelated
+Nexus links, XDG paths and the updater platform gate.
+
+Game discovery tests search real Linux directories using nested Windows and mixed
+separator declarations, verify manual root selection and build usable dashboard
+paths. Missing files and incorrect casing still fail validation. Process tests
+check nested game paths, distinct case-sensitive directories and cached PID reuse.
+
+Filesystem tests also deploy and purge real temporary hardlinks, verify timestamps, keep staged and unrelated
 files intact, and check Bethesda INI/plugin paths in secondary-library prefixes.
 Plugin scan tests use real temporary directories to cover Windows override paths,
 deployed-file casing, mod attribution, conflicting names and recovery after the

@@ -94,6 +94,57 @@ const createMonitor = (state: IState, processes: IProcessInfo[]) => {
   };
 };
 
+it.skipIf(process.platform !== "linux")(
+  "tracks nested executables declared with Windows separators",
+  async () => {
+    const executable = path.join(gamePath, "Binaries", "Win64", gameExe);
+    const state = buildState({ gameExe: "Binaries\\Win64\\Game.exe" });
+    const { monitor, store } = createMonitor(state, [
+      { pid: 7001, ppid: 0, name: gameExe, path: executable },
+    ]);
+    await monitor.doCheck();
+    expect(store.dispatch).toHaveBeenCalledWith(setToolPid(executable, 7001, true));
+  },
+);
+
+it.skipIf(process.platform !== "linux")(
+  "does not confuse Linux directories that differ only by case",
+  async () => {
+    const state = buildState();
+    const { monitor, store } = createMonitor(state, [
+      { pid: 7002, ppid: 0, name: gameExe, path: path.join(gamePath.toUpperCase(), gameExe) },
+    ]);
+    await monitor.doCheck();
+    expect(store.dispatch).not.toHaveBeenCalled();
+  },
+);
+
+it.skipIf(process.platform !== "linux")(
+  "drops a cached PID that now belongs to another Linux path",
+  async () => {
+    const state = buildState({
+      toolsRunning: { [makeExeId(gameExePath)]: { pid: 7003, started: 1, exclusive: true } },
+    });
+    const { monitor, store } = createMonitor(state, [
+      { pid: 7003, ppid: 0, name: gameExe, path: path.join(gamePath.toUpperCase(), gameExe) },
+    ]);
+    await monitor.doCheck();
+    expect(store.dispatch).toHaveBeenCalledWith(setToolStopped(gameExePath));
+  },
+);
+
+it("replaces a reused PID with the current game process", async () => {
+  const state = buildState({
+    toolsRunning: { [makeExeId(gameExePath)]: { pid: 7004, started: 1, exclusive: true } },
+  });
+  const { monitor, store } = createMonitor(state, [
+    { pid: 7004, ppid: 0, name: "Other.exe" },
+    { pid: 7005, ppid: 0, name: gameExe, path: gameExePath },
+  ]);
+  await monitor.doCheck();
+  expect(store.dispatch).toHaveBeenCalledWith(setToolPid(gameExePath, 7005, true));
+});
+
 it("dispatches setToolPid for matching child process", async () => {
   const tool = buildTool();
   const state = buildState({ tools: { [tool.id]: tool } });

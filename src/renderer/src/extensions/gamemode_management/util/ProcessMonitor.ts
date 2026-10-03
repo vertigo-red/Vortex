@@ -1,5 +1,3 @@
-import * as path from "path";
-
 import type * as Redux from "redux";
 
 import { setToolPid, setToolStopped } from "../../../actions";
@@ -7,6 +5,7 @@ import { makeExeId } from "../../../reducers/session";
 import type { IDiscoveredTool } from "../../../types/IDiscoveredTool";
 import type { IExtensionApi } from "../../../types/IExtensionContext";
 import type { IState } from "../../../types/IState";
+import { gameFilePath } from "../../../util/gamePaths";
 import { log } from "../../../util/log";
 import { currentGame, currentGameDiscovery } from "../../../util/selectors";
 import { getSafe } from "../../../util/storeHelper";
@@ -326,6 +325,9 @@ class ProcessMonitor {
       // - knownRunning: what we previously recorded as running (may be stale)
       // - exeRunning: all processes with matching basename currently in the process list
       const exeId = makeExeId(exePath);
+      const expectedPath = process.platform === "linux" ? exePath : exePath.toLowerCase();
+      const pathsMatch = (candidate: string) =>
+        (process.platform === "linux" ? candidate : candidate.toLowerCase()) === expectedPath;
       const knownRunning = state.session.base.toolsRunning[exeId];
       const exeRunning = byName[exeId];
 
@@ -342,13 +344,17 @@ class ProcessMonitor {
         const knownProc = byPid[knownRunning.pid];
         if (knownProc !== undefined) {
           // Step 6c-i: Process with cached PID still exists - but is it still "ours"?
-          // For games (considerDetached=true): any process is valid, we're done
+          // Games may be detached; cached PIDs must still refer to the same executable.
           // For tools (considerDetached=false): must still be a Vortex child process
-          if (considerDetached || isChildProcessOfVortex(knownProc, new Set())) {
+          const knownPath = getProcessPath(knownProc);
+          if (
+            makeExeId(knownProc.name) === exeId &&
+            (considerDetached || isChildProcessOfVortex(knownProc, new Set())) &&
+            (knownPath === undefined || pathsMatch(knownPath))
+          ) {
             return; // Still valid, no state change needed
           }
-          // Step 6c-ii: Process exists but is no longer a child - fall through to re-match
-          // This can happen if a tool spawns a subprocess and the original exits
+          // The PID was reused or the tool changed its subprocess; find a fresh match.
         }
         // Step 6c-iii: Cached PID no longer exists (process exited) - fall through to find new match
       }
@@ -359,7 +365,6 @@ class ProcessMonitor {
         : exeRunning.filter((proc) => isChildProcessOfVortex(proc, new Set()));
 
       // Step 6e: Enrich candidates with resolved paths (from proc.path or parsed from proc.cmd)
-      const exePathLower = exePath.toLowerCase();
       const candidatesWithPath = candidates.map((proc) => ({
         proc,
         path: getProcessPath(proc),
@@ -367,7 +372,7 @@ class ProcessMonitor {
 
       // Step 6f: Attempt exact path match (preferred - most reliable)
       const pathMatch = candidatesWithPath.find(
-        (entry) => entry.path !== undefined && entry.path.toLowerCase() === exePathLower,
+        (entry) => entry.path !== undefined && pathsMatch(entry.path),
       );
 
       if (pathMatch !== undefined) {
@@ -408,7 +413,7 @@ class ProcessMonitor {
       return;
     }
 
-    const gameExePath = path.join(gamePath, gameExe);
+    const gameExePath = gameFilePath(gamePath, gameExe);
     update(gameExePath, true, true);
 
     // ─── Step 8: Match each discovered tool ───────────────────────────────────

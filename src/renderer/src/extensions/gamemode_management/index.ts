@@ -26,6 +26,7 @@ import type { IProfile, IRunningTool, IState } from "../../types/IState";
 import type { IEditChoice, ITableAttribute } from "../../types/ITableAttribute";
 import { DataInvalid, ProcessCanceled, SetupError, UserCanceled } from "../../util/CustomErrors";
 import * as fs from "../../util/fs";
+import { gameFilePath, normalizeGameRelativePath } from "../../util/gamePaths";
 import GameStoreHelperInstance from "../../util/GameStoreHelper";
 import { isContributed } from "../../util/isContributed";
 import local from "../../util/local";
@@ -55,6 +56,7 @@ import { currentGame, currentGameDiscovery, discoveryByGame, gameById } from "./
 import type { IDiscoveryResult } from "./types/IDiscoveryResult";
 import type { IGameStored } from "./types/IGameStored";
 import type { IModType } from "./types/IModType";
+import { findGamePath } from "./util/findGamePath";
 import getDriveList from "./util/getDriveList";
 import { getGame, getGameStore, getGameStores } from "./util/getGame";
 import { identifyStore } from "./util/identifyStore";
@@ -185,53 +187,6 @@ function refreshGameInfo(store: Redux.Store<IState>, gameId: string): PromiseBB<
   }).then(() => undefined);
 }
 
-function verifyGamePath(game: IGame, gamePath: string): PromiseBB<void> {
-  return PromiseBB.map(game.requiredFiles || [], (file) =>
-    PromiseBB.resolve(fsExtra.stat(path.join(gamePath, file))),
-  )
-    .then(() => undefined)
-    .catch((err) => {
-      // if the error is anything other than "the file doesn't exist" we assume
-      // the file is there and can't be accessed because of permissions or something.
-      // If the game gets started through the launcher, that may be completely valid
-      // so this isn't the place to report an error.
-      if (err.code !== "ENOENT") {
-        return undefined;
-      }
-      return PromiseBB.reject(err);
-    });
-}
-
-function searchDepth(files: string[]): number {
-  return files.reduce((prev, filePath) => {
-    const len =
-      process.platform === "win32"
-        ? filePath.split(/[/\\]/).length
-        : filePath.split(path.sep).length;
-    return Math.max(prev, len);
-  }, 0);
-}
-
-// based on a path the user selected, traverse the directory tree upwards because
-// if the game contains a directory hierarchy like Game/Binaries/Win64/foobar.exe, the user
-// may have selected the "Win64" directory instead of "Game"
-function findGamePath(
-  game: IGame,
-  selectedPath: string,
-  depth: number,
-  maxDepth: number,
-): PromiseBB<string> {
-  if (depth > maxDepth) {
-    return PromiseBB.reject(new ProcessCanceled("not found"));
-  }
-
-  return verifyGamePath(game, selectedPath)
-    .then(() => selectedPath)
-    .catch({ code: "ENOENT" }, () =>
-      findGamePath(game, path.dirname(selectedPath), depth + 1, maxDepth),
-    );
-}
-
 async function manualGameStoreSelection(
   api: IExtensionApi,
   correctedGamePath: string,
@@ -313,10 +268,7 @@ async function browseGameLocation(api: IExtensionApi, gameId: string): Promise<v
   if (!selectedDirectory) return;
 
   try {
-    // TODO: Bluebird to native
-    const correctedGamePath = await Promise.resolve(
-      findGamePath(game, selectedDirectory, 0, searchDepth(game.requiredFiles || [])),
-    );
+    const correctedGamePath = await findGamePath(game, selectedDirectory);
 
     let store: string | undefined = undefined;
 
@@ -330,8 +282,8 @@ async function browseGameLocation(api: IExtensionApi, gameId: string): Promise<v
       store = await manualGameStoreSelection(api, correctedGamePath);
     }
 
-    let executable = game.executable(correctedGamePath);
-    if (executable === game.executable()) {
+    let executable = normalizeGameRelativePath(game.executable(correctedGamePath));
+    if (executable === normalizeGameRelativePath(game.executable())) {
       executable = undefined;
     }
     // different paths depending on whether the game was previously detected
@@ -500,7 +452,7 @@ function removeDisappearedGames(
       return PromiseBB.resolve();
     }
     return PromiseBB.map(requiredFiles, (file) =>
-      fsExtra.stat(path.join(discovered[gameId].path, file)),
+      fsExtra.stat(gameFilePath(discovered[gameId].path, file)),
     )
       .then(() => undefined)
       .catch((err) => {

@@ -1,11 +1,11 @@
 import { stat } from "node:fs/promises";
-import path from "node:path";
 
 import { getErrorMessageOrDefault } from "@vortex/shared";
 import { ProcessCanceled } from "@vortex/shared/errors";
 import exeVersion from "exe-version";
 
 import { log } from "@/logging";
+import { gameFilePath, normalizeGameRelativePath } from "@/util/gamePaths";
 
 import type { IGame } from "../../../types/IGame";
 import type { IDiscoveryResult } from "../types/IDiscoveryResult";
@@ -13,11 +13,14 @@ import type { IDiscoveryResult } from "../types/IDiscoveryResult";
 export type GameVersionResolver = (game: IGame, discovery: IDiscoveryResult) => Promise<string>;
 
 async function fromExtension(game: IGame, discovery: IDiscoveryResult): Promise<string> {
-  return game.getGameVersion(discovery.path, discovery.executable || game.executable());
+  return game.getGameVersion(
+    discovery.path,
+    normalizeGameRelativePath(discovery.executable || game.executable()),
+  );
 }
 
 async function fromExecutable(game: IGame, discovery: IDiscoveryResult): Promise<string> {
-  const exePath = path.join(discovery.path, discovery.executable || game.executable());
+  const exePath = gameFilePath(discovery.path, discovery.executable || game.executable());
 
   try {
     await stat(exePath);

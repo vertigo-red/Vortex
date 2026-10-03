@@ -24,6 +24,7 @@ import {
   UserCanceled,
 } from "./CustomErrors";
 import { emitGameLaunched, recordLaunchExit } from "./gameLaunchAnalytics";
+import { gameFilePath } from "./gamePaths";
 import getVortexPath from "./getVortexPath";
 import { findSteamGameForTool } from "./linux/gameEntry";
 import { isWindowsExecutable } from "./linux/proton";
@@ -482,7 +483,7 @@ class StarterInfo implements IStarterInfo {
 
   private initFromGame(game: IGameStored, gameDiscovery: IDiscoveryResult) {
     this.name = gameDiscovery.name || game.name;
-    this.exePath = path.join(gameDiscovery.path, gameDiscovery.executable || game.executable);
+    this.exePath = gameFilePath(gameDiscovery.path, gameDiscovery.executable || game.executable);
     this.commandLine = getSafe(gameDiscovery, ["parameters"], getSafe(game, ["parameters"], []));
     this.workingDirectory = path.dirname(this.exePath);
     this.originalEnvironment = getSafe(game, ["environment"], {});

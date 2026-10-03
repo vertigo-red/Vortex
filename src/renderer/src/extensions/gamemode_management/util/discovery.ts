@@ -18,6 +18,7 @@ import type { ITool } from "../../../types/ITool";
 import { ProcessCanceled, SetupError } from "../../../util/CustomErrors";
 import extractExeIcon from "../../../util/exeIcon";
 import * as fs from "../../../util/fs";
+import { gameFilePath, normalizeGameRelativePath } from "../../../util/gamePaths";
 import type { Normalize } from "../../../util/getNormalizeFunc";
 import getNormalizeFunc from "../../../util/getNormalizeFunc";
 import getVortexPath from "../../../util/getVortexPath";
@@ -57,9 +58,10 @@ export async function quickDiscoveryTools(
       if (typeof toolPath !== "string") throw new Error("Invalid return type");
 
       if (toolPath) {
+        const exePath = gameFilePath(toolPath, tool.executable(toolPath));
         try {
           // TODO: Bluebird to native
-          await Promise.resolve(autoGenIcon(tool, toolPath, gameId));
+          await Promise.resolve(autoGenIcon(tool, exePath, gameId));
         } catch (err) {
           log("debug", "failed to generate tool icon", {
             err,
@@ -72,7 +74,7 @@ export async function quickDiscoveryTools(
 
         onDiscoveredTool(gameId, {
           ...tool,
-          path: path.join(toolPath, tool.executable(toolPath)),
+          path: exePath,
           hidden: false,
           parameters: tool.parameters || [],
           custom: false,
@@ -222,10 +224,10 @@ async function handleDiscoveredGame(
   if (!resolvedPath) return undefined;
   log("info", "found game", { name: game.name, location: resolvedPath, store });
 
-  const exe = game.executable(resolvedPath);
+  const exe = normalizeGameRelativePath(game.executable(resolvedPath));
   const discovery: IDiscoveryResult = {
     path: resolvedPath,
-    executable: exe !== game.executable() ? exe : undefined,
+    executable: exe !== normalizeGameRelativePath(game.executable()) ? exe : undefined,
     store,
   };
 
@@ -423,7 +425,7 @@ function verifyToolDir(tool: ITool, testPath: string): Bluebird<void> {
     // is not something we want at this point because we don't even know yet if the user
     // wants to manage the game at all.
     (fileName: string) =>
-      fsExtra.stat(path.join(testPath, fileName)).catch((err) => {
+      fsExtra.stat(gameFilePath(testPath, fileName)).catch((err) => {
         return Bluebird.reject(err);
       }),
   ).then(() => undefined);
@@ -489,7 +491,7 @@ export function discoverRelativeTools(
   const files: IFileEntry[] = relativeTools.reduce((prev: IFileEntry[], tool: ITool) => {
     for (const required of tool.requiredFiles) {
       prev.push({
-        fileName: normalize(required),
+        fileName: normalize(normalizeGameRelativePath(required)),
         gameId: game.id,
         application: tool,
       });
@@ -532,16 +534,16 @@ function testApplicationDirValid(
     .then(() => {
       const game = application as IGame;
       if (game.queryModPath !== undefined) {
-        const exe = game.executable(testPath);
+        const exe = normalizeGameRelativePath(game.executable(testPath));
         const disco: IDiscoveryResult = {
           path: testPath,
-          executable: exe !== game.executable() ? exe : undefined,
+          executable: exe !== normalizeGameRelativePath(game.executable()) ? exe : undefined,
         };
         onDiscoveredGame(gameId, disco);
 
         return discoverRelativeTools(game, testPath, discoveredGames, onDiscoveredTool, normalize);
       } else {
-        const exePath = path.join(testPath, application.executable(testPath));
+        const exePath = gameFilePath(testPath, application.executable(testPath));
         return autoGenIcon(application, exePath, gameId).then(() => {
           onDiscoveredTool(gameId, {
             ...application,
@@ -571,7 +573,7 @@ function toolFilesForGame(
         if (getSafe(discoveredTools, [tool.id, "path"], undefined) === undefined) {
           for (const required of tool.requiredFiles) {
             result.push({
-              fileName: normalize(required),
+              fileName: normalize(normalizeGameRelativePath(required)),
               gameId: game.id,
               application: tool,
             });
@@ -659,7 +661,7 @@ export function searchDiscovery(
             if (discoveredGame?.path === undefined) {
               for (const required of knownGame.requiredFiles) {
                 files.push({
-                  fileName: normalize(required),
+                  fileName: normalize(normalizeGameRelativePath(required)),
                   gameId: knownGame.id,
                   application: knownGame,
                 });
