@@ -1,5 +1,5 @@
 diff --git a/async.js b/async.js
-index 5eb014e2ccafb79a9e7e6edbbf83ad05d3709aaa..85a086a27ace73ee92603693e6f35bf8f4bc34dc 100644
+index 5eb014e2ccafb79a9e7e6edbbf83ad05d3709aaa..b864882831f3cb7ab6cfab94fcde412aa4f86f0c 100644
 --- a/async.js
 +++ b/async.js
 @@ -74,3 +74,7 @@ const client = net.connect(process.argv[2], (arg) => {
@@ -9,7 +9,7 @@ index 5eb014e2ccafb79a9e7e6edbbf83ad05d3709aaa..85a086a27ace73ee92603693e6f35bf8
 +
 +// The native log callback keeps Node alive. When the parent closes its endpoint after a
 +// failed startup or exits, explicitly release the worker process rather than orphaning it.
-+client.on('close', () => process.exit(0));
++client.on('close', () => process.exit(1));
 diff --git a/index.d.ts b/index.d.ts
 index e252fbd8033482499c6f33bf0f4ffd6fc7371bc7..2b4dad8e8b6b4ca11b1a027dd7c4c51af856a832 100644
 --- a/index.d.ts

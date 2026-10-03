@@ -133,7 +133,9 @@ pinned LOOT transport so a failed launch or an exit before connection rejects
 initialization. Readiness and native initialization have a 30-second deadline.
 Failures close the endpoint and reject pending calls; each failed call retains
 its own name. The worker explicitly exits when the parent disconnects, because
-the native log callback would otherwise keep Node alive.
+the native log callback would otherwise keep Node alive. An unexpected connection
+loss exits with a failure code so Vortex's existing recovery initializes a fresh
+handle; the normal terminate command still exits successfully.
 
 ## Nexus links and desktop integration
 

@@ -101,7 +101,7 @@ async function probe(packageRoot, gamePath, localPath) {
     loot = await LootAsync.create("skyrimse", gamePath, localPath, "en", () => {}, launch);
     const disconnected = once(workers.at(-1), "exit");
     loot.socket.destroy();
-    assert.deepEqual(await disconnected, [0, null]);
+    assert.deepEqual(await disconnected, [1, null]);
     await waitForRemoval(endpoint);
 
     await assert.rejects(

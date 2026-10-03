@@ -293,6 +293,6 @@ describe("LOOT worker lifecycle", () => {
     });
     await flush();
     client.emit("close");
-    expect(exit).toHaveBeenCalledWith(0);
+    expect(exit).toHaveBeenCalledWith(1);
   });
 });

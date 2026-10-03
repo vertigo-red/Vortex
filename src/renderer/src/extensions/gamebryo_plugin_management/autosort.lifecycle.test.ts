@@ -106,6 +106,21 @@ describe("LootInterface libloot lifecycle", () => {
     expect(harness.api.runExecutable).toHaveBeenCalledTimes(2);
   });
 
+  test("reinitializes LOOT after a worker reports a lost connection", async ({ makeLoot }) => {
+    const harness = await makeLoot(LootInterface);
+    const failure = Object.assign(new Error("LOOT connection lost"), { exitCode: 1 });
+    vi.spyOn(harness.api, "runExecutable").mockImplementation(() => Bluebird.reject(failure));
+    const fork = (
+      harness.lootInterface as unknown as {
+        fork: (module: string, args: string[]) => PromiseLike<void>;
+      }
+    ).fork;
+    await expect(fork("/assets/loot/async.js", ["/tmp/loot.sock"])).rejects.toBe(failure);
+    await harness.lootInterface.wait();
+    expect(createLootMock).toHaveBeenCalledOnce();
+    expect(harness.loot.loadCurrentLoadOrderState).toHaveBeenCalledOnce();
+  });
+
   test("recreates the loot instance and reloads its state when helpers restart", async ({
     makeLoot,
   }) => {
