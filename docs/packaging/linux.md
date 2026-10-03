@@ -131,6 +131,22 @@ launch. Running-state notifications and the configured hide/close action happen
 after the child process has actually spawned, rather than after a failed launch
 attempt.
 
+The bundled common interpreters resolve their runtimes on each launch. Python
+scripts prefer `python3`, falling back to `python` if needed. Java archives prefer
+an executable `JAVA_HOME/bin/java`, then `java` on `PATH`; a stale or
+non-executable Java home can fall back to the installed runtime. Both searches
+use the tool's `PATH` override, otherwise Vortex's original launch path. Java
+also honors the tool's `JAVA_HOME` override. Relative and empty `PATH` entries
+and relative Java homes resolve in the tool's working directory, which defaults
+to the script's directory. Installing a runtime or changing the tool environment
+does not require restarting Vortex.
+
+Python and Java script paths retain spaces, quotes and Unicode in direct and
+shell launches. In shell mode the interpreter's script argument is quoted
+literally while user arguments retain their shell expansion. Missing runtimes
+produce the interpreter error shown by the launcher. VBScript reports that
+Windows Script Host is required; it does not run natively on Linux.
+
 ## Deployment and purge
 
 The pinned `turbowalk` dependency has a repository patch for its non-Windows
@@ -219,6 +235,10 @@ Tool-launch tests run actual Linux child processes to verify literal arguments,
 start-hook directories/environments, shebang scripts with special-character paths,
 spawn/exit notifications and missing or non-executable tools. Dashboard tests
 cover argument editing, settings round trips and legacy quote compatibility.
+Common-interpreter tests run real Python 3 scripts and executable capture
+wrappers in isolated paths to verify runtime selection, tool environments,
+working directories, argument preservation and shell expansion. They also check
+missing runtimes, unsupported VBScript and the Windows interpreter contracts.
 
 Filesystem tests also deploy and purge real temporary hardlinks, verify timestamps, keep staged and unrelated
 files intact, and check Bethesda INI/plugin paths in secondary-library prefixes.
@@ -296,6 +316,7 @@ Passing those checks does not prove a complete modding session works. In particu
 - `src/renderer/src/util/linux/proton.ts` - Compatibility tool and prefix resolution.
 - `src/renderer/src/util/linux/gameEntry.ts` - External-tool game matching.
 - `src/renderer/src/util/getGameUserPath.ts` - Steam/Proton user settings paths.
+- `extensions/common-interpreters/src/index.ts` - Python, Java and Windows script runtimes.
 - `src/renderer/src/extensions/mod_management/util/installerPaths.ts` - Installer separators and archive source lookup.
 - `patches/turbowalk@3.1.1.patch` - Linux directory metadata and traversal behavior.
 - `src/renderer/src/util/protocolRegistration/linux/nxm.ts` - Native desktop handlers.

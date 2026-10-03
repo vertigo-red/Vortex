@@ -6,7 +6,8 @@
   "license": "GPL-3.0",
   "scripts": {
     "build": "node build.mjs && pnpm extractInfo",
-    "typecheck": "pnpm tsc"
+    "typecheck": "pnpm tsc",
+    "test": "pnpm exec vitest run"
   },
   "devDependencies": {
     "@types/node": "catalog:",
