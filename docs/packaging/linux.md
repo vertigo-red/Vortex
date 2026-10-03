@@ -91,6 +91,15 @@ directory contains two plugin files differing only by case, Vortex reports both
 names and the directory and keeps the previous plugin list. Resolve those files
 before refreshing; the scan does not rename or delete them.
 
+The plugin-list persistor also reuses existing `plugins.txt` and `loadorder.txt`
+filenames: exact canonical spelling wins, otherwise a unique case-insensitive
+match is used. Both names are resolved before either file is written; ambiguous
+variants stop the operation without replacing a list. Missing files are created
+with their canonical names, and existing file symlinks retain their targets.
+Directory watch events recognize either spelling and detect atomic file
+replacement even when the replacement retains an older modification time. The
+existing choice to keep or revert a foreign load order still applies.
+
 ## Deployment and purge
 
 The pinned `turbowalk` dependency has a repository patch for its non-Windows
@@ -175,6 +184,10 @@ files intact, and check Bethesda INI/plugin paths in secondary-library prefixes.
 Plugin scan tests use real temporary directories to cover Windows override paths,
 deployed-file casing, mod attribution, conflicting names and recovery after the
 conflict is resolved without replacing the prior list during the failed scan.
+Plugin-list tests use actual Linux directory watchers and files to verify casing,
+symlink writes, ambiguity, fresh directories, external renames and replacements
+with preserved timestamps in both plugin-list formats. Pending conflict choices
+must keep the foreign files unchanged until the choice is resolved.
 Tests of shell wrappers run
 real local processes; they do not start a game or migrate an existing Wine prefix.
 Installation tests process a real native XML FOMOD result into a temporary staging
