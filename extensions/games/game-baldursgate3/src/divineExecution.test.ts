@@ -12,6 +12,7 @@ import {
   DivineMissingDotNet,
   DivinePakInvalid,
   DivineTimedOut,
+  DivineUnsupportedToolPath,
   resolveDivineExecutable,
   runDivineCore,
 } from "./divineCore";
@@ -93,6 +94,21 @@ describe("Divine shell-free execution", () => {
         },
       ),
     ).rejects.toBeInstanceOf(DivineMissingDotNet);
+  });
+
+  it("classifies an unsupported Windows runtime tool path as a configuration failure", async () => {
+    await expect(
+      runDivineCore(
+        executable,
+        "list-package",
+        { source: "unused" },
+        {
+          command: command(
+            "process.stderr.write('VORTEX_BG3_UNSUPPORTED_TOOL_PATH');process.exit(87)",
+          ),
+        },
+      ),
+    ).rejects.toBeInstanceOf(DivineUnsupportedToolPath);
   });
 
   it("rejects bracketed PAK failures even on exit zero", async () => {

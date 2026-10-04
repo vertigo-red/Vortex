@@ -20,6 +20,16 @@ export class DivineMissingDotNet extends Error {
   }
 }
 
+export class DivineUnsupportedToolPath extends Error {
+  constructor() {
+    super(
+      "The Windows .NET runtime cannot load Divine from a tools directory containing ';'. " +
+        "Choose a BG3 staging folder without a semicolon.",
+    );
+    this.name = "DivineUnsupportedToolPath";
+  }
+}
+
 export class DivineTimedOut extends Error {
   constructor() {
     super("Divine process timed out");
@@ -119,6 +129,9 @@ export function translateDivineError(
   // indistinguishable from a timeout by signal name alone.
   if (signalAborted) {
     return new DivineAborted();
+  }
+  if ([err.stderr, err.stdout].some((text) => text?.includes("VORTEX_BG3_UNSUPPORTED_TOOL_PATH"))) {
+    return new DivineUnsupportedToolPath();
   }
   if (err.code === "ENOENT") {
     return new DivineExecMissing();

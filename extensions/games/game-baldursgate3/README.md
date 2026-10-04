@@ -59,6 +59,11 @@ console. Divine belongs to the bundled launcher's Windows Job Object, so cancell
 the operation also terminates its Windows children. These helpers do not change the
 prefix's Registry or other applications' console settings.
 
+Choose a BG3 staging directory without `;`: Windows .NET cannot initialize Divine
+from a tool directory containing a semicolon. Vortex reports this as a configuration
+error and preserves the previous load order. Semicolons in PAK source and destination
+paths remain supported.
+
 Please ensure that the tool is always enabled and deployed on the mods page. Some Anti-Virus software may flag this tool as malicious due to the nature of what it does. We suggest you ensure that your security software is configured to allow this tool to install.
 
 # Settings

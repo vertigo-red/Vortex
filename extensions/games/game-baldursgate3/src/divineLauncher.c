@@ -3,7 +3,8 @@
 #include <stdlib.h>
 #include <wchar.h>
 
-static wchar_t *skip_program(wchar_t *cursor) {
+static wchar_t *command_tail(void) {
+    wchar_t *cursor = GetCommandLineW();
     if (*cursor == L'"') {
         ++cursor;
         while (*cursor && *cursor != L'"') ++cursor;
@@ -12,11 +13,7 @@ static wchar_t *skip_program(wchar_t *cursor) {
         while (*cursor && *cursor != L' ' && *cursor != L'\t') ++cursor;
     }
     while (*cursor == L' ' || *cursor == L'\t') ++cursor;
-    return cursor;
-}
-
-static wchar_t *command_tail(void) {
-    return _wcsdup(skip_program(GetCommandLineW()));
+    return _wcsdup(cursor);
 }
 
 static int fail(const wchar_t *operation) {
@@ -42,49 +39,20 @@ static int configure_output_hook(void) {
         SetLastError(ERROR_DIRECTORY);
         return fail(L"Find output hook");
     }
-    // Startup hooks use a semicolon-delimited Windows path list. Short names
-    // preserve literal semicolons in staging directory names without splitting it.
-    wchar_t short_path[32768];
-    if (wcschr(hook, L';')) {
-        length = GetShortPathNameW(hook, short_path, 32768);
-        if (!length || length >= 32768) return fail(L"GetShortPathName");
-        if (wcschr(short_path, L';')) {
-            SetLastError(ERROR_INVALID_NAME);
-            return fail(L"Encode output hook path");
-        }
-        return SetEnvironmentVariableW(L"DOTNET_STARTUP_HOOKS", short_path)
-            ? 0 : fail(L"Set output hook");
-    }
     return SetEnvironmentVariableW(L"DOTNET_STARTUP_HOOKS", hook)
         ? 0 : fail(L"Set output hook");
 }
 
 int wmain(int count, wchar_t **args) {
     if (count < 2) return 87;
-    if (configure_output_hook()) return 1;
-    const wchar_t *executable = args[1];
-    const wchar_t *directory = NULL;
-    wchar_t short_executable[32768];
-    wchar_t short_directory[32768];
-    if (wcschr(executable, L';')) {
-        // CoreCLR's assembly search paths also use semicolons as separators.
-        // Load the apphost through its short path; keep its CLI argv verbatim.
-        DWORD length = GetShortPathNameW(executable, short_executable, 32768);
-        if (!length || length >= 32768) return fail(L"Get executable short path");
-        if (wcschr(short_executable, L';')) {
-            SetLastError(ERROR_INVALID_NAME);
-            return fail(L"Encode executable path");
-        }
-        wcscpy(short_directory, short_executable);
-        wchar_t *filename = wcsrchr(short_directory, L'\\');
-        if (!filename) {
-            SetLastError(ERROR_INVALID_NAME);
-            return fail(L"Locate executable directory");
-        }
-        *filename = L'\0';
-        executable = short_executable;
-        directory = short_directory;
+    // CoreCLR expands DOS short names before building its semicolon-delimited
+    // assembly paths. Reject this unsupported tool location before startup.
+    if (wcschr(args[1], L';')) {
+        fputs("VORTEX_BG3_UNSUPPORTED_TOOL_PATH: Divine's tools directory contains a semicolon.\n",
+              stderr);
+        return 87;
     }
+    if (configure_output_hook()) return 1;
     HANDLE job = CreateJobObjectW(NULL, NULL);
     if (!job) return fail(L"CreateJobObject");
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = {0};
@@ -103,21 +71,9 @@ int wmain(int count, wchar_t **args) {
     startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
     wchar_t *command = command_tail();
     if (!command) { CloseHandle(job); return 8; }
-    if (directory) {
-        const wchar_t *arguments = skip_program(command);
-        size_t length = wcslen(executable) + wcslen(arguments) + 4;
-        wchar_t *normalized = calloc(length, sizeof(wchar_t));
-        if (!normalized) { free(command); CloseHandle(job); return 8; }
-        wcscpy(normalized, L"\"");
-        wcscat(normalized, executable);
-        wcscat(normalized, L"\" ");
-        wcscat(normalized, arguments);
-        free(command);
-        command = normalized;
-    }
     // Preserve the caller's Windows argv quoting verbatim; no cmd.exe expansion.
-    BOOL created = CreateProcessW(executable, command, NULL, NULL, TRUE, CREATE_SUSPENDED,
-                                 NULL, directory, &startup, &child);
+    BOOL created = CreateProcessW(args[1], command, NULL, NULL, TRUE, CREATE_SUSPENDED,
+                                 NULL, NULL, &startup, &child);
     free(command);
     if (!created) {
         int result = fail(L"CreateProcess");

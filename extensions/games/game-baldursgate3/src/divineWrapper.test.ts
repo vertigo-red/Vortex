@@ -132,6 +132,20 @@ describe.skipIf(process.platform !== "linux")("BG3 Proton wrapper", () => {
     );
   });
 
+  it("stops scanning when the Windows runtime rejects the tool location", async () => {
+    vi.mocked(util.getProtonToolCommand).mockResolvedValue({
+      executable: process.execPath,
+      args: [
+        "-e",
+        "process.stderr.write('VORTEX_BG3_UNSUPPORTED_TOOL_PATH');process.exit(87)",
+      ],
+      env: {},
+    });
+    await expect(
+      listPackage(api, path.join(fixture.modsDirectory, "mod.pak")),
+    ).rejects.toBeInstanceOf(util.ProcessCanceled);
+  });
+
   it("treats an interrupted environment lookup as cancellation", async () => {
     let rejectLookup: (error: Error) => void;
     vi.mocked(util.getProtonToolCommand).mockImplementationOnce(

@@ -344,7 +344,9 @@ isolated test prefixes. Wine 9 and 10 run real create/list/extract/glob operatio
 with Unicode, shell characters and a custom Z mapping, plus missing-runtime,
 corrupt-PAK, deadline and cancellation checks. Native receivers additionally verify
 literal Windows argv and termination of a running Windows child. Package lists
-must preserve their Unicode filenames, including a staging path with a semicolon.
+must preserve their Unicode filenames. A semicolon in Divine's tool directory is
+rejected as a configuration error before scanning; CoreCLR cannot load its assemblies
+from that location. PAK source and destination paths can still contain semicolons.
 These CLI integration checks use a
 test receiver for Proton's command shape; they do not run a Steam Proton build or
 a real BG3 installation. BG3 on Linux currently supports Steam/Proton; its Windows

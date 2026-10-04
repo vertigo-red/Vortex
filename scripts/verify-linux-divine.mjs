@@ -36,7 +36,7 @@ const execute = promisify(execFile);
 const root = await mkdtemp(path.join(tmpdir(), "vortex-divine-wine-"));
 const compatData = path.join(root, "Secondary library", "compatdata", "1086940");
 const prefix = path.join(compatData, "pfx");
-const tools = path.join(root, "Staging 日本語 'quote' $() ! ;", "tools");
+const tools = path.join(root, "Staging 日本語 'quote' $() !", "tools");
 const selectedProton = path.join(root, "Selected compatibility tool");
 const runtimeDirectory = path.join(root, "runtime");
 const launcher = path.join(tools, "vortex-divine-launcher.exe");
@@ -285,6 +285,14 @@ int wmain(int count, wchar_t **args) {
     }),
     core.DivineMissingDotNet,
   );
+  const unsupportedTools = path.join(root, "Unsupported ; staging");
+  await mkdir(unsupportedTools);
+  const unsupportedExecutable = path.join(unsupportedTools, "Divine.exe");
+  await cp(executable, unsupportedExecutable);
+  await assert.rejects(
+    invoke(unsupportedExecutable, "create-package", creation),
+    core.DivineUnsupportedToolPath,
+  );
   await invoke(executable, "create-package", creation);
   const listed = await invoke(executable, "list-package", { source: pak });
   assert.match(listed.stdout, /meta\.lsx/);
@@ -326,10 +334,10 @@ int wmain(int count, wchar_t **args) {
   controller.abort();
   await assert.rejects(aborted, core.DivineAborted);
   console.log(
-    `Real Divine v1.20.4 with Windows .NET 8.0.31 on ${version.stdout.trim()}: 10 CLI checks passed`,
+    `Real Divine v1.20.4 with Windows .NET 8.0.31 on ${version.stdout.trim()}: 11 CLI checks passed`,
   );
   console.log(
-    "Verified UTF-8 package output, literal argv, running Windows child cancellation, runtime diagnostics, create/list/extract/glob, Unicode and custom Z paths, corrupt PAK, timeout and cancellation.",
+    "Verified UTF-8 package output, literal argv, running Windows child cancellation, runtime diagnostics, unsupported tool path rejection, create/list/extract/glob, Unicode and custom Z paths, corrupt PAK, timeout and cancellation.",
   );
   succeeded = true;
 } finally {

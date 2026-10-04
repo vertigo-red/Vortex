@@ -9,6 +9,7 @@ import {
   DivineAborted,
   DivineMissingDotNet,
   DivinePakInvalid,
+  DivineUnsupportedToolPath,
   IDivineRunOptions,
   buildDivineArgs,
   parsePackageListOutput,
@@ -82,6 +83,9 @@ async function runDivine(
       return await runDivineCore(exePath, action, divineOpts, runOpts);
     } catch (error) {
       if (signal.aborted) throw new DivineAborted();
+      if (error instanceof DivineUnsupportedToolPath) {
+        throw new util.ProcessCanceled(error.message);
+      }
       throw error;
     }
   });
