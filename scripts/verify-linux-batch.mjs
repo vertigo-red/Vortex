@@ -12,6 +12,7 @@ const working = path.join(root, "Working directory");
 const script = path.join(tools, "Capture Args.cmd");
 const capture = path.join(tools, "capture.exe");
 const captureFile = path.join(root, "capture.txt");
+const wrapper = path.join(root, "wrapper.cmd");
 const wine = process.env.VORTEX_TEST_WINE ?? "/usr/lib/wine/wine64";
 const server = process.env.VORTEX_TEST_WINESERVER ?? "/usr/lib/wine/wineserver64";
 const environment = {
@@ -97,6 +98,7 @@ try {
   ]);
   assert.equal(compiler.code, 0, compiler.stderr);
   await writeFile(script, '@echo off\r\n"%VORTEX_CAPTURE_EXE%" %*\r\nexit /b 37\r\n');
+  await writeFile(wrapper, "@echo off\r\n%VORTEX_PROTON_BATCH_COMMAND%\r\n");
   const version = await run(wine, ["cmd.exe", "/c", "ver"]);
   assert.equal(version.code, 0, version.stderr);
   console.log(`Real Wine runtime ready: ${version.stdout.trim()}`);
@@ -115,25 +117,37 @@ try {
     ['{"key":"a & echo injected>sentinel.txt"}', 'a"b'],
   ];
   for (const [index, args] of inputs.entries()) {
-    const command = `@ ${quoteArgument(script)} ${args.map(quoteArgument).join(" ")}`;
-    const escaped = `@ ${quoteArgument(script)} ${args
-      .map((arg) => quoteArgument(arg).replace(/[()%!^"<>&|]/g, "^$&"))
+    const command = `${quoteArgument(script)} ${args.map(quoteArgument).join(" ")}`;
+    const escaped = `${quoteArgument(script)} ${args
+      .map((arg) => quoteArgument(arg).replace(/[()%!^"<>&|;, *?]/g, "^$&"))
+      .join(" ")}`;
+    const doubleEscaped = `${quoteArgument(script)} ${args
+      .map((arg) =>
+        quoteArgument(arg)
+          .replace(/[()%!^"<>&|;, *?]/g, "^$&")
+          .replace(/[()%!^"<>&|;, *?]/g, "^$&"),
+      )
       .join(" ")}`;
     const cases = {
-      direct: { args: ["cmd.exe", "/c", script, ...args] },
-      quiet: { args: ["cmd.exe", "/d", "/v:off", "/c", "@", script, ...args] },
-      start: { args: ["start.exe", "/b", "/wait", "/unix", script, ...args] },
       environment: {
-        args: ["cmd.exe", "/d", "/v:off", "/c", "%VORTEX_PROTON_BATCH_COMMAND%"],
+        args: ["cmd.exe", "/d", "/v:off", "/c", "@", "%VORTEX_PROTON_BATCH_COMMAND%"],
         env: { ...environment, VORTEX_PROTON_BATCH_COMMAND: command },
       },
       escaped: {
-        args: ["cmd.exe", "/d", "/v:off", "/c", "%VORTEX_PROTON_BATCH_COMMAND%"],
+        args: ["cmd.exe", "/d", "/v:off", "/c", "@", "%VORTEX_PROTON_BATCH_COMMAND%"],
         env: { ...environment, VORTEX_PROTON_BATCH_COMMAND: escaped },
       },
-      delayed: {
-        args: ["cmd.exe", "/d", "/v:on", "/c", "!VORTEX_PROTON_BATCH_COMMAND!"],
+      wrapper: {
+        args: ["cmd.exe", "/d", "/v:off", "/c", "@", wrapper],
         env: { ...environment, VORTEX_PROTON_BATCH_COMMAND: command },
+      },
+      wrapperEscaped: {
+        args: ["cmd.exe", "/d", "/v:off", "/c", "@", wrapper],
+        env: { ...environment, VORTEX_PROTON_BATCH_COMMAND: escaped },
+      },
+      wrapperDoubleEscaped: {
+        args: ["cmd.exe", "/d", "/v:off", "/c", "@", wrapper],
+        env: { ...environment, VORTEX_PROTON_BATCH_COMMAND: doubleEscaped },
       },
     };
     for (const [name, plan] of Object.entries(cases)) {
