@@ -229,7 +229,8 @@ function init(context: types.IExtensionContext) {
           return Promise.resolve();
         }
 
-        return calcChecksum(discovery.path, deployment)
+        const dataPath = util.getGame(profile.gameId).getModPaths(discovery.path)[""];
+        return calcChecksum(dataPath, deployment)
           .then(({ checksum, mods }) => {
             log("debug", "Animations checksum calculated", checksum);
             lastChecksum = checksum;
@@ -267,7 +268,8 @@ function init(context: types.IExtensionContext) {
           //   callback but _not_ for everything else that is triggered separately
           const didNeedDeployment = state.persistent.deployment.needToDeploy[profile.gameId];
           let dependentMods: string[];
-          return calcChecksum(discovery.path, deployment)
+          const dataPath = util.getGame(profile.gameId).getModPaths(discovery.path)[""];
+          return calcChecksum(dataPath, deployment)
             .then(({ checksum, mods }) => {
               dependentMods = mods;
               log("debug", "Animations checksum after deployment", checksum);
@@ -318,10 +320,14 @@ function init(context: types.IExtensionContext) {
                 );
               } else {
                 const isMisconfigured = err instanceof util.SetupError;
+                const expectedError =
+                  isMisconfigured ||
+                  err instanceof util.ProcessCanceled ||
+                  err instanceof util.MissingInterpreter;
                 context.api.showErrorNotification(
                   "Failed to run FNIS",
                   isMisconfigured ? "Please install FNIS and add it as a tool inside Vortex" : err,
-                  { allowReport: !isMisconfigured, id: "fnis-failed-to-run" },
+                  { allowReport: !expectedError, id: "fnis-failed-to-run" },
                 );
               }
             });

@@ -1,12 +1,41 @@
 import * as path from "path";
 
 import { selectors, types, util } from "@nexusmods/vortex-api";
-import * as Redux from "redux";
 
 interface IGameSupport {
-  settingsPath?: () => string;
-  appDataPath?: () => string;
+  folder: string;
 }
+
+let discoveryForGame: (gameId: string) => types.IDiscoveryResult = () => undefined;
+
+const gameSupport = util.makeOverlayableDictionary<string, IGameSupport>(
+  {
+    fallout3: { folder: "Fallout3" },
+    falloutnv: { folder: "FalloutNV" },
+    fallout4: { folder: "Fallout4" },
+    fallout4vr: { folder: "Fallout4VR" },
+    starfield: { folder: "Starfield" },
+    oblivion: { folder: "Oblivion" },
+    skyrim: { folder: "Skyrim" },
+    skyrimse: { folder: "Skyrim Special Edition" },
+    skyrimvr: { folder: "SkyrimVR" },
+  },
+  {
+    xbox: {
+      skyrimse: { folder: "Skyrim Special Edition MS" },
+      fallout4: { folder: "Fallout4 MS" },
+    },
+    gog: {
+      skyrimse: { folder: "Skyrim Special Edition GOG" },
+      enderalspecialedition: { folder: "Enderal Special Edition GOG" },
+    },
+    epic: {
+      skyrimse: { folder: "Skyrim Special Edition EPIC" },
+      fallout4: { folder: "Fallout4 EPIC" },
+    },
+  },
+  (gameId) => discoveryForGame(gameId)?.store,
+);
 
 const localAppData: () => string = (() => {
   let cached: string;
@@ -19,96 +48,51 @@ const localAppData: () => string = (() => {
   };
 })();
 
-const gameSupport = util.makeOverlayableDictionary<string, IGameSupport>(
-  {
-    fallout3: {
-      settingsPath: () => path.join(util.getVortexPath("documents"), "My Games", "Fallout3"),
-      appDataPath: () => path.join(localAppData(), "Fallout3"),
-    },
-    falloutnv: {
-      settingsPath: () => path.join(util.getVortexPath("documents"), "My Games", "FalloutNV"),
-      appDataPath: () => path.join(localAppData(), "FalloutNV"),
-    },
-    fallout4: {
-      settingsPath: () => path.join(util.getVortexPath("documents"), "My Games", "Fallout4"),
-      appDataPath: () => path.join(localAppData(), "Fallout4"),
-    },
-    fallout4vr: {
-      settingsPath: () => path.join(util.getVortexPath("documents"), "My Games", "Fallout4VR"),
-      appDataPath: () => path.join(localAppData(), "Fallout4VR"),
-    },
-    starfield: {
-      settingsPath: () => path.join(util.getVortexPath("documents"), "My Games", "Starfield"),
-      appDataPath: () => path.join(localAppData(), "Starfield"),
-    },
-    oblivion: {
-      settingsPath: () => path.join(util.getVortexPath("documents"), "My Games", "Oblivion"),
-      appDataPath: () => path.join(localAppData(), "Oblivion"),
-    },
-    skyrim: {
-      settingsPath: () => path.join(util.getVortexPath("documents"), "My Games", "Skyrim"),
-      appDataPath: () => path.join(localAppData(), "Skyrim"),
-    },
-    skyrimse: {
-      settingsPath: () =>
-        path.join(util.getVortexPath("documents"), "My Games", "Skyrim Special Edition"),
-      appDataPath: () => path.join(localAppData(), "Skyrim Special Edition"),
-    },
-    skyrimvr: {
-      settingsPath: () => path.join(util.getVortexPath("documents"), "My Games", "SkyrimVR"),
-      appDataPath: () => path.join(localAppData(), "SkyrimVR"),
-    },
-  },
-  {
-    xbox: {
-      skyrimse: {
-        settingsPath: () =>
-          path.join(util.getVortexPath("documents"), "My Games", "Skyrim Special Edition MS"),
-        appDataPath: () => path.join(localAppData(), "Skyrim Special Edition MS"),
-      },
-      fallout4: {
-        settingsPath: () => path.join(util.getVortexPath("documents"), "My Games", "Fallout4 MS"),
-        appDataPath: () => path.join(localAppData(), "Fallout4 MS"),
-      },
-    },
-    gog: {
-      skyrimse: {
-        settingsPath: () =>
-          path.join(util.getVortexPath("documents"), "My Games", "Skyrim Special Edition GOG"),
-        appDataPath: () => path.join(localAppData(), "Skyrim Special Edition GOG"),
-      },
-      enderalspecialedition: {
-        settingsPath: () =>
-          path.join(util.getVortexPath("documents"), "My Games", "Enderal Special Edition GOG"),
-        appDataPath: () => path.join(localAppData(), "Enderal Special Edition GOG"),
-      },
-    },
-    epic: {
-      skyrimse: {
-        settingsPath: () =>
-          path.join(util.getVortexPath("documents"), "My Games", "Skyrim Special Edition EPIC"),
-        appDataPath: () => path.join(localAppData(), "Skyrim Special Edition EPIC"),
-      },
-      fallout4: {
-        settingsPath: () => path.join(util.getVortexPath("documents"), "My Games", "Fallout4 EPIC"),
-        appDataPath: () => path.join(localAppData(), "Fallout4 EPIC"),
-      },
-    },
-  },
-  (gameId) => gameStoreForGame(gameId),
-);
-
-let gameStoreForGame: (gameId: string) => string = () => undefined;
+function userFolder(id: "documents" | "localAppData", gameId: string): string {
+  if (process.platform !== "linux") {
+    return id === "documents" ? util.getVortexPath("documents") : localAppData();
+  }
+  const discovery = discoveryForGame(gameId);
+  if (!discovery?.path) {
+    throw new util.ProcessCanceled(
+      "Discover the game's Steam installation before opening its user folders.",
+    );
+  }
+  // These Bethesda integrations use Windows user folders. Require a matching
+  // Steam/Proton prefix rather than falling back to Linux host directories.
+  return util.getGameUserPath(id, { ...discovery, store: "steam" });
+}
 
 export function initGameSupport(api: types.IExtensionApi) {
-  gameStoreForGame = (gameId: string) =>
-    selectors.discoveryByGame(api.store.getState(), gameId)?.store;
+  discoveryForGame = (gameId) => selectors.discoveryByGame(api.store.getState(), gameId);
+}
+
+export function hasSettingsPath(game: types.IGame): boolean {
+  return (
+    game !== undefined &&
+    (gameSupport.get(game.id, "folder") !== undefined || game.details?.settingsPath !== undefined)
+  );
+}
+
+export function hasAppDataPath(game: types.IGame): boolean {
+  return (
+    game !== undefined &&
+    (gameSupport.get(game.id, "folder") !== undefined || game.details?.appDataPath !== undefined)
+  );
 }
 
 export function settingsPath(game: types.IGame): string {
-  return gameSupport.get(game.id, "settingsPath")?.() ?? game.details?.settingsPath?.();
+  if (!game) return undefined;
+  const folder = gameSupport.get(game.id, "folder");
+  return folder !== undefined
+    ? path.join(userFolder("documents", game.id), "My Games", folder)
+    : game.details?.settingsPath?.();
 }
 
 export function appDataPath(game: types.IGame): string {
-  return gameSupport.get(game.id, "appDataPath")?.() ?? game.details?.appDataPath?.();
+  if (!game) return undefined;
+  const folder = gameSupport.get(game.id, "folder");
+  return folder !== undefined
+    ? path.join(userFolder("localAppData", game.id), folder)
+    : game.details?.appDataPath?.();
 }

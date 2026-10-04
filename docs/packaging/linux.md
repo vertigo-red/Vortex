@@ -183,6 +183,13 @@ prefixes still require separate support. Changes not yet saved by wineserver are
 not visible to this filesystem resolver. Bundled extensions can use
 `util.getGameUserPath` for these paths.
 
+The Open menu's Bethesda settings and application-data actions use this same
+resolver, including Registry redirections and secondary Steam libraries. They
+reread discovery when clicked. An unavailable discovery or prefix is reported
+without opening a host directory, and action visibility does not access the prefix
+or Registry. Windows store-specific folder names and other extensions' custom
+folder callbacks are retained.
+
 The Wine 9/10 CI also checks 16 real user folder resolutions per runtime. A Windows
 receiver obtains Documents and Local AppData through `SHGetFolderPathW` and writes
 marker files there; the production resolver must read those same files. The checks
@@ -208,6 +215,19 @@ replacement even when the replacement retains an older modification time. The
 existing choice to keep or revert a foreign load order still applies.
 
 ## External tools and arguments
+
+FNIS automation uses the discovered Skyrim/Enderal game's selected Proton build
+and initialized prefix. Its generated-data staging directory is mapped through
+that prefix's actual DOS drive links and passed as one literal `RedirectFiles`
+argument. Preparation failures leave the patch list and FNIS mod metadata intact;
+an unsuccessful or canceled launch cannot enable and deploy stale generated data.
+Animation checksums use the game's declared mod directory (normally `Data`) and
+accept both separator styles in deployment records. Changes to animation contents,
+skeletons and FNIS lists therefore remain detectable on case-sensitive Linux disks.
+The Wine CLI fixture additionally checks four FNIS argument contracts per runtime,
+including a custom staging drive, Unicode, literal percent/control characters and
+a Windows receiver writing back into that mapped directory. These checks do not
+run FNIS itself or generate animations for an installed game.
 
 On Linux, direct tool launches pass each argument literally, preserving spaces,
 quotes, JSON, empty arguments and Windows paths passed to Proton. The tool editor

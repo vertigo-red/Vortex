@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -12,6 +12,20 @@ const commandSource = await readFile(
 );
 const { buildProtonCommand } = await import(
   `data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(commandSource)).toString("base64")}`
+);
+const argumentsSource = await readFile(
+  new URL("../extensions/fnis-integration/src/fnisArguments.ts", import.meta.url),
+  "utf8",
+);
+const { fnisArguments } = await import(
+  `data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(argumentsSource)).toString("base64")}`
+);
+const pathsSource = await readFile(
+  new URL("../src/renderer/src/util/linux/winePaths.ts", import.meta.url),
+  "utf8",
+);
+const { toWinePath } = await import(
+  `data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(pathsSource)).toString("base64")}`
 );
 const execute = promisify(execFile);
 const root = await mkdtemp(path.join(tmpdir(), "vortex-wine-batch-"));
@@ -80,6 +94,15 @@ int wmain(int count, wchar_t **args) {
   line(number);
   for (int index = 1; index < count; index++) line(args[index]);
   CloseHandle(output);
+  if (GetEnvironmentVariableW(L"VORTEX_FNIS_REDIRECT_CHECK", number, 32)) {
+    if (count < 2 || wcsncmp(args[1], L"RedirectFiles=", 14)) return 93;
+    _snwprintf(filename, 32768, L"%ls\\\\fnIS-redirect.txt", args[1] + 14);
+    output = CreateFileW(filename, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                         FILE_ATTRIBUTE_NORMAL, NULL);
+    if (output == INVALID_HANDLE_VALUE) return 94;
+    WriteFile(output, "redirected", 10, &written, NULL);
+    CloseHandle(output);
+  }
   return 0;
 }
 `;
@@ -138,6 +161,38 @@ try {
     }
   }
   console.log("Verified 28 real Wine batch launches: argv, cwd and exit status");
+  const staging = path.join(root, "Staging drive");
+  await mkdir(staging);
+  await symlink(staging, path.join(environment.WINEPREFIX, "dosdevices", "d:"));
+  for (const name of ["FNIS Data (Default)", "FNIS Data (日本語 ! %VORTEX_EXPAND_ME% ; &)"]) {
+    const outputDirectory = path.join(staging, name);
+    await mkdir(outputDirectory);
+    const mappedDirectory = toWinePath(environment.WINEPREFIX, outputDirectory);
+    assert.equal(mappedDirectory, `D:\\${name}`);
+    for (const interactive of [true, false]) {
+      await rm(captureFile, { force: true });
+      const args = fnisArguments(mappedDirectory, interactive);
+      const plan = buildProtonCommand(
+        "/Fixture Proton",
+        toWinePath(environment.WINEPREFIX, capture),
+        args,
+      );
+      const output = await run(wine, plan.args.slice(1), {
+        ...environment,
+        VORTEX_FNIS_REDIRECT_CHECK: "1",
+      });
+      assert.equal(output.code, 0, output.stderr);
+      assert.deepEqual((await readCapture())?.args, args);
+      assert.equal(
+        await readFile(path.join(outputDirectory, "fnIS-redirect.txt"), "utf8"),
+        "redirected",
+      );
+      await rm(path.join(outputDirectory, "fnIS-redirect.txt"));
+    }
+  }
+  console.log(
+    "Verified 4 real Wine FNIS argument contracts: custom drive, Unicode, literal percent/control characters and redirected output",
+  );
 } finally {
   await run(server, ["-k"]).catch(() => undefined);
   await rm(root, { recursive: true, force: true });

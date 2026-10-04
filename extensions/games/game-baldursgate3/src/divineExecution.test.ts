@@ -115,21 +115,23 @@ describe("Divine shell-free execution", () => {
   it.each([
     "Failed to create CoreCLR, HRESULT: 0x80070057",
     "Vortex BG3 launcher: Find output hook failed (Windows error 2)",
-  ])("classifies runtime and launcher startup failures before PAK parsing: %s", async (diagnostic) => {
-    await expect(
-      runDivineCore(
-        executable,
-        "list-package",
-        { source: "unused" },
-        {
-          command: command(
-            "process.stderr.write(process.argv[1]);process.exit(137)",
-            [diagnostic],
-          ),
-        },
-      ),
-    ).rejects.toBeInstanceOf(DivineLaunchFailed);
-  });
+  ])(
+    "classifies runtime and launcher startup failures before PAK parsing: %s",
+    async (diagnostic) => {
+      await expect(
+        runDivineCore(
+          executable,
+          "list-package",
+          { source: "unused" },
+          {
+            command: command("process.stderr.write(process.argv[1]);process.exit(137)", [
+              diagnostic,
+            ]),
+          },
+        ),
+      ).rejects.toBeInstanceOf(DivineLaunchFailed);
+    },
+  );
 
   it("rejects bracketed PAK failures even on exit zero", async () => {
     await expect(

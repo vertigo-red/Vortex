@@ -3,6 +3,7 @@ import * as path from "path";
 import { actions, fs, log, selectors, types, util } from "@nexusmods/vortex-api";
 import { GetProcessWindowList, SetForegroundWindow } from "winapi-bindings";
 
+import { fnisArguments } from "./fnisArguments";
 import { patchListName } from "./gameSupport";
 import { IDeployment, IFNISPatch } from "./types";
 
@@ -131,20 +132,21 @@ export function stringChecksum(data: string): string {
 }
 
 const expressions = [
-  new RegExp(/\\FNIS_.*_List\.txt$/i),
-  new RegExp(/\\FNIS.*Behavior\.txt$/i),
-  new RegExp(/\\PatchList\.txt$/i),
-  new RegExp(/\\skeleton.*\.hkx$/i),
-  new RegExp(/\\animations\\.*\.hkx$/i),
+  /\/FNIS_.*_List\.txt$/i,
+  /\/FNIS.*Behavior\.txt$/i,
+  /\/PatchList\.txt$/i,
+  /\/skeleton.*\.hkx$/i,
+  /\/animations\/.*\.hkx$/i,
 ];
 
 export async function calcChecksum(
-  basePath: string,
+  dataPath: string,
   deployment: IDeployment,
 ): Promise<{ checksum: string; mods: string[] }> {
   const mods = new Set<string>();
-  const animationFiles = deployment[""].filter((file: types.IDeployedFile) => {
-    const res = expressions.find((expr) => expr.test(file.relPath)) !== undefined;
+  const animationFiles = (deployment[""] ?? []).filter((file: types.IDeployedFile) => {
+    const relativePath = file.relPath.replaceAll("\\", "/");
+    const res = expressions.some((expr) => expr.test(`/${relativePath}`));
     if (res) {
       mods.add(file.source);
     }
@@ -160,7 +162,7 @@ export async function calcChecksum(
       name: file.relPath,
       checksum: await conlim.do(async () => {
         try {
-          return await fileChecksum(path.join(basePath, "data", file.relPath));
+          return await fileChecksum(path.join(dataPath, file.relPath.replaceAll("\\", "/")));
         } catch (err) {
           // this will likely lead to unnecessarily running fnis
           if (err.code !== "ENOENT") {
@@ -294,20 +296,50 @@ async function runFNIS(
     return Promise.reject(new util.SetupError("FNIS not installed or not configured correctly"));
   }
 
-  const patches = util.getSafe(state, ["settings", "fnis", "patches", profile.id], []);
-  await writePatches(path.dirname(tool.path), patches);
-
   const installPath = (selectors as any).installPathForGame(state, profile.gameId);
-  const modId = await ensureFNISMod(api, profile);
+  const modId = fnisDataMod(profile.name);
   const modPath = path.join(installPath, modId);
-  const args = [`RedirectFiles="${modPath}"`];
-  if (!interactive) {
-    args.push("InstantExecute=1");
-  }
-  await api.runExecutable(tool.path, args, {
+  let executable = tool.path;
+  let args = fnisArguments(modPath, interactive);
+  let options: types.IRunOptions = {
     suggestDeploy: false,
     onSpawned: genSpawnedHandler(api) as any,
+  };
+  if (process.platform === "linux") {
+    const discovery = selectors.discoveryByGame(state, profile.gameId);
+    const command = await util.getProtonToolCommand(tool.path, [{ path: modPath }], discovery);
+    // The mapped output path is the only tool argument in this prepared command.
+    // Pass RedirectFiles as one literal argument, without shell quote characters.
+    const mappedOutput = command.args.at(-1);
+    executable = command.executable;
+    args = [...command.args.slice(0, -1), ...fnisArguments(mappedOutput, interactive)];
+    options = {
+      suggestDeploy: false,
+      cwd: path.dirname(tool.path),
+      env: command.env,
+      shell: false,
+      expectSuccess: true,
+    };
+  } else {
+    // Retain the Windows launcher's existing quote handling.
+    args = fnisArguments(`"${modPath}"`, interactive);
+  }
+
+  const patches = util.getSafe(state, ["settings", "fnis", "patches", profile.id], []);
+  await writePatches(path.dirname(tool.path), patches);
+  await ensureFNISMod(api, profile);
+  let exitCode: number | null | undefined;
+  await api.runExecutable(executable, args, {
+    ...options,
+    onExit: (code) => {
+      exitCode = code;
+    },
   });
+  // runExecutable treats ProcessCanceled as a normal cancellation. Automation
+  // must not enable and deploy stale FNIS output after that cancellation.
+  if (process.platform === "linux" && exitCode !== 0) {
+    throw new util.ProcessCanceled("FNIS did not complete successfully.");
+  }
 }
 
 export default runFNIS;

@@ -3,7 +3,13 @@ import * as path from "path";
 import { fs, selectors, types, util } from "@nexusmods/vortex-api";
 import Promise from "bluebird";
 
-import { appDataPath, initGameSupport, settingsPath } from "./gameSupport";
+import {
+  appDataPath,
+  hasAppDataPath,
+  hasSettingsPath,
+  initGameSupport,
+  settingsPath,
+} from "./gameSupport";
 
 /**
  * The mods toolbar's own group. These sit behind its "Open" button so that they take one
@@ -76,16 +82,20 @@ function init(context: types.IExtensionContext) {
       const state = context.api.getState();
       const gameId = selectors.activeGameId(state);
       const game = util.getGame(gameId);
-      const target = settingsPath(game);
-      if (target !== undefined) {
-        openPath(target);
+      try {
+        const target = settingsPath(game);
+        if (target !== undefined) openPath(target);
+      } catch (err) {
+        context.api.showErrorNotification("Failed to open game settings folder", err, {
+          allowReport: false,
+        });
       }
     },
     () => {
       const state = context.api.getState();
       const gameId = selectors.activeGameId(state);
       const game = util.getGame(gameId);
-      return settingsPath(game) !== undefined;
+      return hasSettingsPath(game);
     },
   );
 
@@ -99,16 +109,20 @@ function init(context: types.IExtensionContext) {
       const state = context.api.getState();
       const gameId = selectors.activeGameId(state);
       const game = util.getGame(gameId);
-      const target = appDataPath(game);
-      if (target !== undefined) {
-        openPath(target);
+      try {
+        const target = appDataPath(game);
+        if (target !== undefined) openPath(target);
+      } catch (err) {
+        context.api.showErrorNotification("Failed to open game application data folder", err, {
+          allowReport: false,
+        });
       }
     },
     () => {
       const state = context.api.getState();
       const gameId = selectors.activeGameId(state);
       const game = util.getGame(gameId);
-      return appDataPath(game) !== undefined;
+      return hasAppDataPath(game);
     },
   );
 

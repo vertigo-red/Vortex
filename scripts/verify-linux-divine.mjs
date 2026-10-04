@@ -345,7 +345,9 @@ int wmain(int count, wchar_t **args) {
     const trace = await readFile(traceFile, "utf8").catch(() => "No .NET host trace was written");
     const relevant = trace
       .split(/\r?\n/)
-      .filter((line) => /Property|apphost|app_path|app_root|CoreCLR|Invalid|hook|Divine|LSLib/i.test(line))
+      .filter((line) =>
+        /Property|apphost|app_path|app_root|CoreCLR|Invalid|hook|Divine|LSLib/i.test(line),
+      )
       .map((line) => line.slice(0, 2500))
       .slice(-40);
     console.error(`Windows .NET host diagnostics:\n${relevant.join("\n")}`);
