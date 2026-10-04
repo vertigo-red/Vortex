@@ -15,6 +15,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  wine-tools:
+    name: Wine CLI tool launches
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24.20.0"
+      - name: Install Wine test runtime
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends wine64
+      - name: Probe Wine batch launches
+        run: node scripts/verify-linux-batch.mjs
   linux-x64:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
