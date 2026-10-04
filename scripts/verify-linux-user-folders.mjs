@@ -29,7 +29,10 @@ async function run(executable, args) {
 }
 
 async function flush() {
-  await run(server, ["-k"]);
+  await run(server, ["-k"]).catch((error) => {
+    // An idle server can exit before the kill request; -w still verifies shutdown.
+    if (error.code !== 1 || error.stdout || error.stderr) throw error;
+  });
   await run(server, ["-w"]);
 }
 
