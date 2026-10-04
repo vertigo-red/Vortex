@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 
 const execute = promisify(execFile);
 const root = await mkdtemp(path.join(tmpdir(), "vortex-wine-batch-"));
-const tools = path.join(root, "Tools '日本語' %VORTEX_EXPAND_ME%");
+const tools = path.join(root, "Tools '日本語'");
 const working = path.join(root, "Working directory");
 const script = path.join(tools, "Capture Args.cmd");
 const capture = path.join(tools, "capture.js");
@@ -87,6 +87,7 @@ try {
     const command = `${quoteArgument(script)} ${args.map(quoteArgument).join(" ")}`;
     const cases = {
       direct: { args: ["cmd.exe", "/c", script, ...args] },
+      quiet: { args: ["cmd.exe", "/d", "/v:off", "/c", "@", script, ...args] },
       call: { args: ["cmd.exe", "/d", "/v:off", "/c", "call", script, ...args] },
       start: { args: ["start.exe", "/b", "/wait", "/unix", script, ...args] },
       environment: {
