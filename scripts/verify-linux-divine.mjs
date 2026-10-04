@@ -6,8 +6,9 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+
+import { buildDivineTools } from "../extensions/games/game-baldursgate3/buildDivineTools.mjs";
 
 async function loadSource(relative, replacements = {}) {
   let source = await readFile(new URL(relative, import.meta.url), "utf8");
@@ -35,7 +36,7 @@ const execute = promisify(execFile);
 const root = await mkdtemp(path.join(tmpdir(), "vortex-divine-wine-"));
 const compatData = path.join(root, "Secondary library", "compatdata", "1086940");
 const prefix = path.join(compatData, "pfx");
-const tools = path.join(root, "Staging 日本語 'quote' $() !", "tools");
+const tools = path.join(root, "Staging 日本語 'quote' $() ! ;", "tools");
 const selectedProton = path.join(root, "Selected compatibility tool");
 const runtimeDirectory = path.join(root, "runtime");
 const launcher = path.join(tools, "vortex-divine-launcher.exe");
@@ -134,21 +135,7 @@ try {
   const release = path.join(root, "release");
   await run("unzip", ["-q", lslibZip, "-d", release]);
   await cp(path.join(release, "Packed", "Tools"), tools, { recursive: true });
-  await run("x86_64-w64-mingw32-gcc", [
-    "-municode",
-    "-mconsole",
-    "-static",
-    "-Os",
-    "-s",
-    "-Wall",
-    "-Wextra",
-    "-Werror",
-    fileURLToPath(
-      new URL("../extensions/games/game-baldursgate3/src/divineLauncher.c", import.meta.url),
-    ),
-    "-o",
-    launcher,
-  ]);
+  buildDivineTools(tools);
   const executable = await core.resolveDivineExecutable(tools);
   assert.equal(path.basename(executable), "Divine.exe");
   const driver = path.join(selectedProton, "proton");
@@ -178,7 +165,7 @@ static void line(HANDLE file, const wchar_t *value) {
   WriteFile(file, L"\r\n", 4, &written, NULL);
 }
 int wmain(int count, wchar_t **args) {
-  if (count < 3 || GetConsoleOutputCP() != CP_UTF8) return 81;
+  if (count < 3) return 81;
   HANDLE file = CreateFileW(args[2], GENERIC_WRITE, FILE_SHARE_READ, NULL,
                            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
   if (file == INVALID_HANDLE_VALUE) return 82;
@@ -338,7 +325,7 @@ int wmain(int count, wchar_t **args) {
     `Real Divine v1.20.4 with Windows .NET 8.0.31 on ${version.stdout.trim()}: 10 CLI checks passed`,
   );
   console.log(
-    "Verified UTF-8 console, literal argv, running Windows child cancellation, runtime diagnostics, create/list/extract/glob, Unicode and custom Z paths, corrupt PAK, timeout and cancellation.",
+    "Verified UTF-8 package output, literal argv, running Windows child cancellation, runtime diagnostics, create/list/extract/glob, Unicode and custom Z paths, corrupt PAK, timeout and cancellation.",
   );
 } finally {
   await run(server, ["-k"]).catch((error) => {

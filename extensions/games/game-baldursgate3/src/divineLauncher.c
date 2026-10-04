@@ -22,16 +22,51 @@ static int fail(const wchar_t *operation) {
     return 1;
 }
 
+static int configure_output_hook(void) {
+    wchar_t hook[32768];
+    const wchar_t *name = L"vortex-divine-utf8.dll";
+    DWORD length = GetModuleFileNameW(NULL, hook, 32768);
+    if (!length || length >= 32768) return fail(L"GetModuleFileName");
+    wchar_t *filename = wcsrchr(hook, L'\\');
+    if (!filename || (size_t)(filename - hook) + 1 + wcslen(name) >= 32768) {
+        SetLastError(ERROR_INVALID_NAME);
+        return fail(L"Locate output hook");
+    }
+    wcscpy(filename + 1, name);
+    DWORD attributes = GetFileAttributesW(hook);
+    if (attributes == INVALID_FILE_ATTRIBUTES) return fail(L"Find output hook");
+    if (attributes & FILE_ATTRIBUTE_DIRECTORY) {
+        SetLastError(ERROR_DIRECTORY);
+        return fail(L"Find output hook");
+    }
+    // Startup hooks use a semicolon-delimited Windows path list. Short names
+    // preserve literal semicolons in staging directory names without splitting it.
+    wchar_t short_path[32768];
+    if (wcschr(hook, L';')) {
+        length = GetShortPathNameW(hook, short_path, 32768);
+        if (!length || length >= 32768) return fail(L"GetShortPathName");
+        if (wcschr(short_path, L';')) {
+            SetLastError(ERROR_INVALID_NAME);
+            return fail(L"Encode output hook path");
+        }
+        return SetEnvironmentVariableW(L"DOTNET_STARTUP_HOOKS", short_path)
+            ? 0 : fail(L"Set output hook");
+    }
+    return SetEnvironmentVariableW(L"DOTNET_STARTUP_HOOKS", hook)
+        ? 0 : fail(L"Set output hook");
+}
+
 int wmain(int count, wchar_t **args) {
     if (count < 2) return 87;
-    if (!SetConsoleOutputCP(CP_UTF8)) return fail(L"SetConsoleOutputCP");
+    if (configure_output_hook()) return 1;
     HANDLE job = CreateJobObjectW(NULL, NULL);
     if (!job) return fail(L"CreateJobObject");
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = {0};
     limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
     if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) {
+        int result = fail(L"SetInformationJobObject");
         CloseHandle(job);
-        return fail(L"SetInformationJobObject");
+        return result;
     }
     STARTUPINFOW startup = {0};
     PROCESS_INFORMATION child = {0};
@@ -46,7 +81,11 @@ int wmain(int count, wchar_t **args) {
     BOOL created = CreateProcessW(args[1], command, NULL, NULL, TRUE, CREATE_SUSPENDED,
                                  NULL, NULL, &startup, &child);
     free(command);
-    if (!created) { CloseHandle(job); return fail(L"CreateProcess"); }
+    if (!created) {
+        int result = fail(L"CreateProcess");
+        CloseHandle(job);
+        return result;
+    }
     if (!AssignProcessToJobObject(job, child.hProcess)) {
         int result = fail(L"AssignProcessToJobObject");
         TerminateProcess(child.hProcess, 1);
@@ -55,7 +94,13 @@ int wmain(int count, wchar_t **args) {
         CloseHandle(job);
         return result;
     }
-    ResumeThread(child.hThread);
+    if (ResumeThread(child.hThread) == (DWORD)-1) {
+        int result = fail(L"ResumeThread");
+        CloseHandle(child.hThread);
+        CloseHandle(child.hProcess);
+        CloseHandle(job);
+        return result;
+    }
     CloseHandle(child.hThread);
     DWORD result = 1;
     if (WaitForSingleObject(child.hProcess, INFINITE) == WAIT_OBJECT_0) {

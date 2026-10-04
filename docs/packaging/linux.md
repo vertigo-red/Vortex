@@ -9,7 +9,9 @@ establish compatibility with every bundled or third-party game extension.
 Install the distribution prerequisites and follow [shared setup](../install-instructions/shared.md).
 Builds need the .NET 9 SDK, fontconfig development headers and the MinGW x64 C
 compiler (`gcc-mingw-w64-x86-64` on Debian/Ubuntu). MinGW builds BG3's small Windows
-CLI launcher; FOMOD, font-scanner and dotnetprobe need the other prerequisites. Building an RPM on
+CLI launcher; the SDK builds its dependency-free UTF-8 startup hook targeting
+netstandard2.1 for Divine's .NET 8 runtime. FOMOD, font-scanner and dotnetprobe need
+the other prerequisites. Building an RPM on
 Debian/Ubuntu also needs `rpm`. Linux packaging uses `patchelf` to make the
 native FOMOD library lookup relative to the installed module
 (`sudo apt install patchelf rpm`).
@@ -328,17 +330,19 @@ read and shares the existing `PlayerProfiles/Public/modsettings.lsx` across setu
 import and export. Divine uses the selected Proton build, resolves its actual
 filename casing and converts path arguments using that prefix's DOS drive
 mappings. CLI arguments bypass the host shell; timeout and cancellation terminate
-the launch's own Linux process group. A bundled Windows launcher selects UTF-8 for
-its own console and owns Divine's Windows Job Object, terminating its children
-when it exits. It is staged atomically beside LSLib without changing the prefix's
-Registry or other consoles. A missing Windows .NET runtime or unresolved
+the launch's own Linux process group. A bundled Windows launcher owns Divine's
+Windows Job Object, terminating its children when it exits. It selects a .NET
+startup hook that writes stdout and stderr directly in UTF-8 without requiring a
+Wine console code-page change. Both helpers are staged atomically beside LSLib
+without changing the prefix's Registry or other consoles. A missing Windows .NET runtime or unresolved
 Proton environment stops scanning before the saved load order is replaced.
 
 CI downloads checksum-pinned official Divine 1.20.4 and Windows .NET 8.0.31 into
 isolated test prefixes. Wine 9 and 10 run real create/list/extract/glob operations
 with Unicode, shell characters and a custom Z mapping, plus missing-runtime,
 corrupt-PAK, deadline and cancellation checks. Native receivers additionally verify
-literal Windows argv, console UTF-8 and termination of a running Windows child.
+literal Windows argv and termination of a running Windows child. Package lists
+must preserve their Unicode filenames, including a staging path with a semicolon.
 These CLI integration checks use a
 test receiver for Proton's command shape; they do not run a Steam Proton build or
 a real BG3 installation. BG3 on Linux currently supports Steam/Proton; its Windows

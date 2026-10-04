@@ -49,7 +49,10 @@
         "inputs": [
           "default",
           "typescript",
-          "vortex-api"
+          "vortex-api",
+          "{projectRoot}/buildDivineTools.mjs",
+          "{projectRoot}/src/divineLauncher.c",
+          "{projectRoot}/src/divineUtf8Hook/**/*"
         ]
       }
     }
