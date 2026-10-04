@@ -59,6 +59,29 @@ static int configure_output_hook(void) {
 int wmain(int count, wchar_t **args) {
     if (count < 2) return 87;
     if (configure_output_hook()) return 1;
+    const wchar_t *executable = args[1];
+    const wchar_t *directory = NULL;
+    wchar_t short_executable[32768];
+    wchar_t short_directory[32768];
+    if (wcschr(executable, L';')) {
+        // CoreCLR's assembly search paths also use semicolons as separators.
+        // Load the apphost through its short path; keep its CLI argv verbatim.
+        DWORD length = GetShortPathNameW(executable, short_executable, 32768);
+        if (!length || length >= 32768) return fail(L"Get executable short path");
+        if (wcschr(short_executable, L';')) {
+            SetLastError(ERROR_INVALID_NAME);
+            return fail(L"Encode executable path");
+        }
+        wcscpy(short_directory, short_executable);
+        wchar_t *filename = wcsrchr(short_directory, L'\\');
+        if (!filename) {
+            SetLastError(ERROR_INVALID_NAME);
+            return fail(L"Locate executable directory");
+        }
+        *filename = L'\0';
+        executable = short_executable;
+        directory = short_directory;
+    }
     HANDLE job = CreateJobObjectW(NULL, NULL);
     if (!job) return fail(L"CreateJobObject");
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = {0};
@@ -78,8 +101,8 @@ int wmain(int count, wchar_t **args) {
     wchar_t *command = command_tail();
     if (!command) { CloseHandle(job); return 8; }
     // Preserve the caller's Windows argv quoting verbatim; no cmd.exe expansion.
-    BOOL created = CreateProcessW(args[1], command, NULL, NULL, TRUE, CREATE_SUSPENDED,
-                                 NULL, NULL, &startup, &child);
+    BOOL created = CreateProcessW(executable, command, NULL, NULL, TRUE, CREATE_SUSPENDED,
+                                 NULL, directory, &startup, &child);
     free(command);
     if (!created) {
         int result = fail(L"CreateProcess");
