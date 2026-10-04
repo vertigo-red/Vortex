@@ -15,6 +15,7 @@ import {
   resolveDivineExecutable,
   runDivineCore,
 } from "./divineCore";
+import { ensureDivineLauncher } from "./divineLauncher";
 import { DivineAction, IDivineOptions, IDivineOutput } from "./types";
 import { getLatestLSLibMod, logError } from "./util";
 
@@ -57,12 +58,23 @@ async function runDivine(
       const exePath = await resolveExePath(api);
       const runOpts: IDivineRunOptions = { signal, timeoutMs: DEFAULT_TIMEOUT_MS };
       if (process.platform === "linux") {
+        let launcherPath: string;
+        try {
+          launcherPath = await ensureDivineLauncher(path.dirname(exePath));
+        } catch (error) {
+          throw new util.ProcessCanceled(
+            `Vortex's BG3 launcher could not be prepared: ${error.message}`,
+          );
+        }
         const args = buildDivineArgs(action, divineOpts);
         runOpts.command = await util.getProtonToolCommand(
-          exePath,
-          args.map((arg, index) =>
-            ["--source", "--destination"].includes(args[index - 1]) ? { path: arg } : arg,
-          ),
+          launcherPath,
+          [
+            { path: exePath },
+            ...args.map((arg, index) =>
+              ["--source", "--destination"].includes(args[index - 1]) ? { path: arg } : arg,
+            ),
+          ],
           api.getState().settings.gameMode.discovered?.[GAME_ID],
         );
         runOpts.command.env.WINEDEBUG = "-all";

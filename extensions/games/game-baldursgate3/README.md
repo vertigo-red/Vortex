@@ -53,6 +53,11 @@ without a host shell. Missing Proton/runtime configuration stops the scan before
 replacing the existing load order. Wine installations outside Steam and Linux
 GOG prefixes still require separate support.
 
+A bundled launcher selects UTF-8 for this CLI's console, preserving Unicode
+filenames in package lists. Divine belongs to the launcher's Windows Job Object,
+so cancelling the operation also terminates its Windows children. The launcher
+does not change the prefix's Registry or other applications' console settings.
+
 Please ensure that the tool is always enabled and deployed on the mods page. Some Anti-Virus software may flag this tool as malicious due to the nature of what it does. We suggest you ensure that your security software is configured to allow this tool to install.
 
 # Settings

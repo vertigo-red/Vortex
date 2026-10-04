@@ -5,6 +5,8 @@ import { chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "nod
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 async function loadSource(relative, replacements = {}) {
@@ -35,9 +37,17 @@ const compatData = path.join(root, "Secondary library", "compatdata", "1086940")
 const prefix = path.join(compatData, "pfx");
 const tools = path.join(root, "Staging 日本語 'quote' $() !", "tools");
 const selectedProton = path.join(root, "Selected compatibility tool");
+const runtimeDirectory = path.join(root, "runtime");
+const launcher = path.join(tools, "vortex-divine-launcher.exe");
 const wine = process.env.VORTEX_TEST_WINE ?? "/usr/lib/wine/wine64";
 const server = process.env.VORTEX_TEST_WINESERVER ?? "/usr/lib/wine/wineserver64";
-const env = { ...process.env, WINEPREFIX: prefix, WINEARCH: "win64", WINEDEBUG: "-all" };
+const env = {
+  ...process.env,
+  WINEPREFIX: prefix,
+  WINEARCH: "win64",
+  WINEDEBUG: "-all",
+  XDG_RUNTIME_DIR: runtimeDirectory,
+};
 const runtimeUrl =
   "https://builds.dotnet.microsoft.com/dotnet/Runtime/8.0.31/dotnet-runtime-8.0.31-win-x64.zip";
 const runtimeHash =
@@ -65,7 +75,10 @@ function launch(executable, action, options) {
       ["--source", "--destination"].includes(all[index - 1]) ? toWinePath(prefix, arg) : arg,
     );
   return {
-    ...buildProtonCommand(selectedProton, toWinePath(prefix, executable), args),
+    ...buildProtonCommand(selectedProton, toWinePath(prefix, launcher), [
+      toWinePath(prefix, executable),
+      ...args,
+    ]),
     env: {
       WINEPREFIX: prefix,
       WINEDEBUG: "-all",
@@ -74,6 +87,7 @@ function launch(executable, action, options) {
       STEAM_COMPAT_DATA_PATH: compatData,
       DOTNET_ROOT_X64: "C:\\dotnet",
       DOTNET_ROOT: "C:\\dotnet",
+      XDG_RUNTIME_DIR: runtimeDirectory,
     },
   };
 }
@@ -86,7 +100,19 @@ async function invoke(executable, action, options, extra = {}) {
   });
 }
 
+function nativeCommand(executable, args) {
+  const command = launch(executable, "list-package", { source: root });
+  return {
+    ...command,
+    ...buildProtonCommand(selectedProton, toWinePath(prefix, launcher), [
+      toWinePath(prefix, executable),
+      ...args,
+    ]),
+  };
+}
+
 try {
+  await mkdir(runtimeDirectory, { mode: 0o700 });
   await Promise.all(
     [tools, selectedProton, compatData].map((directory) => mkdir(directory, { recursive: true })),
   );
@@ -108,6 +134,21 @@ try {
   const release = path.join(root, "release");
   await run("unzip", ["-q", lslibZip, "-d", release]);
   await cp(path.join(release, "Packed", "Tools"), tools, { recursive: true });
+  await run("x86_64-w64-mingw32-gcc", [
+    "-municode",
+    "-mconsole",
+    "-static",
+    "-Os",
+    "-s",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    fileURLToPath(
+      new URL("../extensions/games/game-baldursgate3/src/divineLauncher.c", import.meta.url),
+    ),
+    "-o",
+    launcher,
+  ]);
   const executable = await core.resolveDivineExecutable(tools);
   assert.equal(path.basename(executable), "Divine.exe");
   const driver = path.join(selectedProton, "proton");
@@ -124,6 +165,112 @@ child.on('exit', (code) => { process.exitCode = code ?? 93; });
 `,
   );
   await chmod(driver, 0o755);
+  const receiverSource = path.join(root, "receiver.c");
+  const receiver = path.join(tools, "receiver.exe");
+  await writeFile(
+    receiverSource,
+    String.raw`
+#include <windows.h>
+#include <wchar.h>
+static void line(HANDLE file, const wchar_t *value) {
+  DWORD written;
+  WriteFile(file, value, (DWORD)(wcslen(value) * sizeof(wchar_t)), &written, NULL);
+  WriteFile(file, L"\r\n", 4, &written, NULL);
+}
+int wmain(int count, wchar_t **args) {
+  if (count < 3 || GetConsoleOutputCP() != CP_UTF8) return 81;
+  HANDLE file = CreateFileW(args[2], GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (file == INVALID_HANDLE_VALUE) return 82;
+  DWORD written;
+  if (!wcscmp(args[1], L"capture")) {
+    WriteFile(file, L"\ufeff", 2, &written, NULL);
+    for (int index = 3; index < count; index++) line(file, args[index]);
+    CloseHandle(file);
+    return 0;
+  }
+  CloseHandle(file);
+  if (count < 4) return 83;
+  file = CreateFileW(args[3], GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                    CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (file == INVALID_HANDLE_VALUE) return 84;
+  for (;;) { WriteFile(file, "x", 1, &written, NULL); Sleep(20); }
+}
+`,
+  );
+  await run("x86_64-w64-mingw32-gcc", [
+    "-municode",
+    "-mconsole",
+    "-static",
+    "-Os",
+    "-s",
+    receiverSource,
+    "-o",
+    receiver,
+  ]);
+  const captured = path.join(root, "argv.txt");
+  const literalArgs = [
+    "Unicode 日本語",
+    "",
+    '{"key":"value with space"}',
+    "tail\\",
+    'embedded"quote',
+    "%literal%",
+    "bang!",
+    "x & | ; $()",
+    "fullwidth\u3000space",
+  ];
+  await core.runDivineCore(
+    receiver,
+    "list-package",
+    { source: "unused" },
+    {
+      command: nativeCommand(receiver, ["capture", toWinePath(prefix, captured), ...literalArgs]),
+      timeoutMs: 30000,
+    },
+  );
+  const capturedArgs = (await readFile(captured))
+    .toString("utf16le")
+    .replace(/^\uFEFF/, "")
+    .split("\r\n");
+  assert.deepEqual(capturedArgs.slice(0, -1), literalArgs);
+  const ready = path.join(root, "running.txt");
+  const heartbeat = path.join(root, "heartbeat.txt");
+  const activeController = new AbortController();
+  const active = core
+    .runDivineCore(
+      receiver,
+      "list-package",
+      { source: "unused" },
+      {
+        command: nativeCommand(receiver, [
+          "wait",
+          toWinePath(prefix, ready),
+          toWinePath(prefix, heartbeat),
+        ]),
+        timeoutMs: 30000,
+        signal: activeController.signal,
+      },
+    )
+    .catch((error) => error);
+  let started = false;
+  for (let attempt = 0; attempt < 200 && !started; attempt++) {
+    started = await readFile(ready)
+      .then(() => true)
+      .catch(() => false);
+    if (!started) await delay(25);
+  }
+  activeController.abort();
+  const activeResult = await active;
+  assert.ok(started, `Windows child did not start: ${activeResult.message}`);
+  assert.ok(activeResult instanceof core.DivineAborted, activeResult.message);
+  const before = await readFile(heartbeat, "utf8").catch(() => "");
+  await delay(150);
+  assert.equal(
+    await readFile(heartbeat, "utf8").catch(() => ""),
+    before,
+    "Cancelled Windows child kept running",
+  );
   const source = path.join(root, "Source 日本語 ' $() ! %literal%");
   const destination = path.join(root, "Destination 日本語 & ; !");
   await mkdir(source);
@@ -188,10 +335,10 @@ child.on('exit', (code) => { process.exitCode = code ?? 93; });
   controller.abort();
   await assert.rejects(aborted, core.DivineAborted);
   console.log(
-    `Real Divine v1.20.4 with Windows .NET 8.0.31 on ${version.stdout.trim()}: 8 CLI checks passed`,
+    `Real Divine v1.20.4 with Windows .NET 8.0.31 on ${version.stdout.trim()}: 10 CLI checks passed`,
   );
   console.log(
-    "Verified runtime diagnostics, create/list/extract/glob, Unicode and custom Z paths, corrupt PAK, timeout and cancellation.",
+    "Verified UTF-8 console, literal argv, running Windows child cancellation, runtime diagnostics, create/list/extract/glob, Unicode and custom Z paths, corrupt PAK, timeout and cancellation.",
   );
 } finally {
   await run(server, ["-k"]).catch((error) => {

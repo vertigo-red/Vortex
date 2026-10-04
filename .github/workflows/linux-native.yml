@@ -64,7 +64,7 @@ jobs:
         with:
           dotnet-version: "9.0.x"
       - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev patchelf rpm xvfb xauth libgtk-3-0t64 libnss3 libasound2t64
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev patchelf rpm xvfb xauth libgtk-3-0t64 libnss3 libasound2t64 gcc-mingw-w64-x86-64
       - uses: ./.github/actions/setup-pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @vortex/main exec electron-rebuild

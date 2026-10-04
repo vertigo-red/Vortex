@@ -26,6 +26,10 @@ vi.mock("./util", () => ({
   modsPath: () => fixture.modsDirectory,
 }));
 vi.mock("./cache", () => ({ default: { getInstance: () => fixture } }));
+vi.mock("./divineLauncher", () => ({
+  ensureDivineLauncher: (directory: string) =>
+    Promise.resolve(path.join(directory, "vortex-divine-launcher.exe")),
+}));
 
 let root: string;
 let api: types.IExtensionApi;
@@ -77,8 +81,9 @@ describe.skipIf(process.platform !== "linux")("BG3 Proton wrapper", () => {
     const destination = path.join(root, "extract");
     const result = await extractPak(api, pak, destination, "*.lsx");
     expect(util.getProtonToolCommand).toHaveBeenCalledWith(
-      path.join(root, "lslib", "tools", "Divine.exe"),
+      path.join(root, "lslib", "tools", "vortex-divine-launcher.exe"),
       [
+        { path: path.join(root, "lslib", "tools", "Divine.exe") },
         "--action",
         "extract-package",
         "--source",
