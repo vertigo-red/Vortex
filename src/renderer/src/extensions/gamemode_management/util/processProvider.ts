@@ -1,22 +1,24 @@
 import psList from "ps-list";
 
+import { LinuxProcessProvider } from "./linuxProcessProvider";
+
 /**
  * A single process snapshot from the provider.
  * - `pid`/`ppid` are OS process IDs (numeric identifiers only; not time/memory units).
- * - `name` is the executable basename used to build exe IDs.
+ * - `name` is the OS process name (may be truncated on Linux).
  * - `cmd` is the raw command line when available.
- * - `path` is the absolute executable path when available (may be derived from cmd).
+ * - `path` is the absolute launch target when available: a binary, script or Wine executable.
  */
 export interface IProcessInfo {
   /** OS process id (numeric identifier only; no time/memory units). */
   pid: number;
   /** Parent process id (numeric identifier only); 0 for root/system processes. */
   ppid: number;
-  /** Executable basename used to normalize exe IDs. */
+  /** OS process name; Linux matching uses the full path instead. */
   name: string;
   /** Raw command line, if provided by the OS/provider. */
   cmd?: string;
-  /** Absolute executable path when available; may be derived from cmd. */
+  /** Absolute launch target when available; may be derived from cmd outside Linux. */
   path?: string;
 }
 
@@ -48,4 +50,5 @@ export class PsListProcessProvider implements IProcessProvider {
   }
 }
 
-export const defaultProcessProvider = new PsListProcessProvider();
+export const defaultProcessProvider: IProcessProvider =
+  process.platform === "linux" ? new LinuxProcessProvider() : new PsListProcessProvider();

@@ -74,9 +74,43 @@ version queries and dashboard game launch paths use the same conversion while
 preserving filename casing. Selecting a nested executable directory also searches
 the necessary parents when the declaration uses Windows separators. Previously
 discovered games use this conversion when their required files are checked again.
-Absolute tool paths selected by users remain Linux paths. Process monitoring
-compares full Linux paths without folding case and revalidates the path of a cached
-PID before retaining it, preventing a different installation from appearing active.
+Absolute tool paths selected by users remain Linux paths.
+
+Process monitoring reads Linux procfs directly, preserving argument boundaries and
+using the full launch path instead of the truncated process name. Native binaries,
+Python scripts, shell scripts and Java archives launched with `-jar` are identified
+by their own paths. Relative script paths resolve in the process's working directory;
+quotes and Unicode remain literal. Shell command strings, Python `-c`/`-m` and
+ordinary data arguments do not identify a script. Existing installation and
+executable symlinks resolve to their targets, and Linux path comparisons preserve
+case. A cached PID is retained only while its path still matches. An unlinked native
+binary remains tracked while its process runs, including when a replacement file
+appears at the same path.
+
+Wine processes identify the executable rather than the Wine loader. Absolute Unix
+paths and relative paths in the process's working directory are supported. Windows
+drive paths use that process's `WINEPREFIX/dosdevices` links, with
+`STEAM_COMPAT_DATA_PATH/pfx` used only when `WINEPREFIX` is absent. There is no
+assumption that `Z:` maps to the host root or that another prefix can substitute
+for the selected one. Windows path components prefer exact spelling, otherwise a
+unique case-insensitive match; ambiguous names are not guessed. The loader/argv
+handling follows Wine's `rebuild_argv` in
+[Wine 10.0](https://github.com/wine-mirror/wine/blob/wine-10.0/dlls/ntdll/unix/env.c).
+This is process detection, not support for launching arbitrary Wine prefixes.
+
+Each procfs snapshot reads at most 16 processes concurrently and checks process
+start times before and after collecting identity data. Exited, zombie, malformed
+and inaccessible entries do not abort the entire poll; readable ancestors still
+allow Vortex to identify its own tool children. Missing path information never
+falls back to a basename match on Linux. Windows retains its existing name fallback
+and case-insensitive comparisons. Environment and command-line contents are not
+retained in the returned Linux process records.
+
+Detection requires a procfs mount that exposes the application's PID namespace and
+readable process paths. Custom renamed interpreters/loaders, Java argument files,
+UNC paths and an unavailable Wine prefix can prevent identification. The tests
+cover synthetic Wine/procfs layouts and real native/Python processes; real Proton
+game launches and desktop sessions still need the game-level checks below.
 
 ## Bethesda settings and saves
 
@@ -315,6 +349,8 @@ Passing those checks does not prove a complete modding session works. In particu
 - `src/renderer/src/util/linux/steamLibraries.ts` - Current and legacy Steam libraries.
 - `src/renderer/src/util/linux/proton.ts` - Compatibility tool and prefix resolution.
 - `src/renderer/src/util/linux/gameEntry.ts` - External-tool game matching.
+- `src/renderer/src/extensions/gamemode_management/util/linuxProcessProvider.ts` - Native, interpreted and Wine process identities.
+- `src/renderer/src/extensions/gamemode_management/util/ProcessMonitor.ts` - Game/tool matching and cached PID validation.
 - `src/renderer/src/util/getGameUserPath.ts` - Steam/Proton user settings paths.
 - `extensions/common-interpreters/src/index.ts` - Python, Java and Windows script runtimes.
 - `src/renderer/src/extensions/mod_management/util/installerPaths.ts` - Installer separators and archive source lookup.

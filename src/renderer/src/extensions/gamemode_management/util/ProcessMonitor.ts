@@ -1,3 +1,6 @@
+import { realpath } from "node:fs/promises";
+import * as path from "node:path";
+
 import type * as Redux from "redux";
 
 import { setToolPid, setToolStopped } from "../../../actions";
@@ -9,7 +12,6 @@ import { gameFilePath } from "../../../util/gamePaths";
 import { log } from "../../../util/log";
 import { currentGame, currentGameDiscovery } from "../../../util/selectors";
 import { getSafe } from "../../../util/storeHelper";
-import { setdefault } from "../../../util/util";
 import type { IProcessInfo, IProcessProvider } from "./processProvider";
 import { defaultProcessProvider } from "./processProvider";
 
@@ -30,7 +32,7 @@ import { defaultProcessProvider } from "./processProvider";
  * - Non-overlapping: waits for current check to complete before scheduling next
  *
  * ## Process Matching
- * 1. Builds lookup maps by PID and normalized exe name (exeId)
+ * 1. Builds lookup maps by PID and launch path (Linux) or exe name (other platforms)
  * 2. For each tracked executable (game + discovered tools):
  *    - Prefers exact full path match
  *    - Falls back to name-only match when paths unavailable (Windows)
@@ -98,7 +100,7 @@ class ProcessMonitor {
    * @param api - Extension API providing access to the Redux store for reading
    *              game/tool configuration and dispatching state updates.
    * @param processProvider - Optional process list provider for dependency injection.
-   *                          Defaults to ps-list based implementation. Useful for
+   *                          Defaults to procfs on Linux and ps-list elsewhere. Useful for
    *                          testing with mock process data.
    */
   constructor(api: IExtensionApi, processProvider: IProcessProvider = defaultProcessProvider) {
@@ -271,7 +273,7 @@ class ProcessMonitor {
 
     // Prefer explicit process path; fall back to cmd-derived path when available.
     const getProcessPath = (proc: IProcessInfo): string | undefined =>
-      proc.path ?? getCommandPath(proc);
+      proc.path ?? (process.platform === "linux" ? undefined : getCommandPath(proc));
 
     // ─── Step 3: Build lookup maps ────────────────────────────────────────────
 
@@ -281,14 +283,40 @@ class ProcessMonitor {
       return prev;
     }, {});
 
-    // Step 3b: Map by exeId (normalized lowercase basename) for name-based candidate lookup
-    const byName: { [exeId: string]: IProcessInfo[] } = processes.reduce(
-      (prev: { [exeId: string]: IProcessInfo[] }, proc) => {
-        setdefault(prev, makeExeId(proc.name), []).push(proc);
-        return prev;
-      },
-      {} as { [exeId: string]: IProcessInfo[] },
-    );
+    const linux = process.platform === "linux";
+    const byName = new Map<string, IProcessInfo[]>();
+    if (!linux) {
+      for (const proc of processes) {
+        const exeId = makeExeId(proc.name);
+        const matches = byName.get(exeId) ?? [];
+        matches.push(proc);
+        byName.set(exeId, matches);
+      }
+    }
+    const canonicalPaths = new Map<string, Promise<string>>();
+    const canonicalPath = (value: string): Promise<string> => {
+      let pending = canonicalPaths.get(value);
+      if (pending === undefined) {
+        pending = realpath(value).catch(() => path.normalize(value));
+        canonicalPaths.set(value, pending);
+      }
+      return pending;
+    };
+    const linuxPaths = new Map<number, string>();
+    const byPath = new Map<string, IProcessInfo[]>();
+    if (linux) {
+      await Promise.all(
+        processes.map(async (proc) => {
+          const executable = getProcessPath(proc);
+          if (executable === undefined) return;
+          const resolved = await canonicalPath(executable);
+          linuxPaths.set(proc.pid, resolved);
+          const matches = byPath.get(resolved) ?? [];
+          matches.push(proc);
+          byPath.set(resolved, matches);
+        }),
+      );
+    }
 
     // ─── Step 4: Capture current state and Vortex PID ─────────────────────────
     const state = this.mStore.getState();
@@ -311,27 +339,17 @@ class ProcessMonitor {
       return proc.ppid === vortexPid || isChildProcessOfVortex(byPid[proc.ppid], visited);
     };
 
-    // ─── Step 6: Define the update() matching closure ─────────────────────────
-    // This closure matches a given exePath against running processes and updates
-    // Redux state accordingly. It prefers full path matches but falls back to
-    // name-only matching when path info is unavailable (common on Windows).
-    //
-    // Parameters:
-    // - exePath: full path to the executable we're looking for
-    // - exclusive: whether this tool should block other tools from running
-    // - considerDetached: if true, match any process; if false, only match Vortex children
-    const update = (exePath: string, exclusive: boolean, considerDetached: boolean) => {
-      // Step 6a: Lookup current state
-      // - knownRunning: what we previously recorded as running (may be stale)
-      // - exeRunning: all processes with matching basename currently in the process list
+    const update = async (exePath: string, exclusive: boolean, considerDetached: boolean) => {
       const exeId = makeExeId(exePath);
-      const expectedPath = process.platform === "linux" ? exePath : exePath.toLowerCase();
+      const expectedPath = linux ? await canonicalPath(exePath) : exePath.toLowerCase();
       const pathsMatch = (candidate: string) =>
-        (process.platform === "linux" ? candidate : candidate.toLowerCase()) === expectedPath;
+        (linux ? candidate : candidate.toLowerCase()) === expectedPath;
+      const processPath = (proc: IProcessInfo) =>
+        linux ? linuxPaths.get(proc.pid) : getProcessPath(proc);
       const knownRunning = state.session.base.toolsRunning[exeId];
-      const exeRunning = byName[exeId];
+      // Linux comm is truncated and can name an interpreter rather than the launch target.
+      const exeRunning = linux ? byPath.get(expectedPath) : byName.get(exeId);
 
-      // Step 6b: Early exit - no process with this name is running
       if (exeRunning === undefined) {
         if (knownRunning !== undefined) {
           this.mStore.dispatch(setToolStopped(exePath));
@@ -339,38 +357,29 @@ class ProcessMonitor {
         return;
       }
 
-      // Step 6c: Validate cached PID - if we already track this tool, verify it's still valid
       if (knownRunning !== undefined) {
         const knownProc = byPid[knownRunning.pid];
         if (knownProc !== undefined) {
-          // Step 6c-i: Process with cached PID still exists - but is it still "ours"?
-          // Games may be detached; cached PIDs must still refer to the same executable.
-          // For tools (considerDetached=false): must still be a Vortex child process
-          const knownPath = getProcessPath(knownProc);
+          const knownPath = processPath(knownProc);
           if (
-            makeExeId(knownProc.name) === exeId &&
+            (linux || makeExeId(knownProc.name) === exeId) &&
             (considerDetached || isChildProcessOfVortex(knownProc, new Set())) &&
-            (knownPath === undefined || pathsMatch(knownPath))
+            (knownPath === undefined ? !linux : pathsMatch(knownPath))
           ) {
-            return; // Still valid, no state change needed
+            return;
           }
-          // The PID was reused or the tool changed its subprocess; find a fresh match.
         }
-        // Step 6c-iii: Cached PID no longer exists (process exited) - fall through to find new match
       }
 
-      // Step 6d: Build candidate list - filter by child status if required
       const candidates = considerDetached
         ? exeRunning
         : exeRunning.filter((proc) => isChildProcessOfVortex(proc, new Set()));
 
-      // Step 6e: Enrich candidates with resolved paths (from proc.path or parsed from proc.cmd)
       const candidatesWithPath = candidates.map((proc) => ({
         proc,
-        path: getProcessPath(proc),
+        path: processPath(proc),
       }));
 
-      // Step 6f: Attempt exact path match (preferred - most reliable)
       const pathMatch = candidatesWithPath.find(
         (entry) => entry.path !== undefined && pathsMatch(entry.path),
       );
@@ -380,10 +389,9 @@ class ProcessMonitor {
         return;
       }
 
-      // Step 6g: Fallback - name-only match when ALL candidates lack path info
-      // This handles Windows where ps-list often cannot retrieve executable paths.
-      // Warning: basename collisions (e.g., multiple "launcher.exe") cause false positives.
+      // ps-list on Windows cannot always supply paths. Linux must never guess from a basename.
       if (
+        !linux &&
         candidatesWithPath.length > 0 &&
         candidatesWithPath.every((entry) => entry.path === undefined)
       ) {
@@ -391,10 +399,6 @@ class ProcessMonitor {
         return;
       }
 
-      // Step 6h: No match found - if we previously thought it was running, mark it stopped
-      // This happens when:
-      // - All candidates had paths, but none matched our target path (different exe with same name)
-      // - Candidates existed but weren't child processes (and considerDetached=false)
       if (knownRunning !== undefined) {
         this.mStore.dispatch(setToolStopped(exePath));
       }
@@ -407,14 +411,15 @@ class ProcessMonitor {
     const game = currentGame(state);
     const gameDiscovery = currentGameDiscovery(state);
     const gameExe =
-      getSafe(gameDiscovery, ["executable"], undefined) || getSafe(game, ["executable"], undefined);
-    const gamePath = getSafe(gameDiscovery, ["path"], undefined);
+      getSafe<string | undefined>(gameDiscovery, ["executable"], undefined) ||
+      getSafe<string | undefined>(game, ["executable"], undefined);
+    const gamePath = getSafe<string | undefined>(gameDiscovery, ["path"], undefined);
     if (gameExe === undefined || gamePath === undefined) {
       return;
     }
 
     const gameExePath = gameFilePath(gamePath, gameExe);
-    update(gameExePath, true, true);
+    await update(gameExePath, true, true);
 
     // ─── Step 8: Match each discovered tool ───────────────────────────────────
     // Tools use considerDetached=false - we only want to track tools that Vortex launched.
@@ -425,12 +430,12 @@ class ProcessMonitor {
       {},
     );
 
-    Object.keys(discoveredTools).forEach((toolId) => {
+    for (const toolId of Object.keys(discoveredTools)) {
       if (discoveredTools[toolId].path === undefined) {
-        return;
+        continue;
       }
-      update(discoveredTools[toolId].path, discoveredTools[toolId].exclusive || false, false);
-    });
+      await update(discoveredTools[toolId].path, discoveredTools[toolId].exclusive || false, false);
+    }
   }
 
   /**

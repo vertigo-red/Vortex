@@ -1,3 +1,8 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { readFileSync } from "node:fs";
+import { copyFile, mkdtemp, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import * as path from "path";
 
 import { it, expect, vi } from "vitest";
@@ -9,6 +14,7 @@ import type { IExtensionApi } from "../../../types/IExtensionContext";
 import type { IState } from "../../../types/IState";
 import ProcessMonitor from "./ProcessMonitor";
 import type { IProcessInfo, IProcessProvider } from "./processProvider";
+import { defaultProcessProvider } from "./processProvider";
 
 const gameId = "test-game";
 const profileId = "profile-1";
@@ -16,6 +22,15 @@ const gamePath = "/games/test";
 const gameExe = "Game.exe";
 const gameExePath = path.join(gamePath, gameExe);
 const toolPath = "/games/test/Tool.exe";
+const hasMatchingProcfs =
+  process.platform === "linux" &&
+  (() => {
+    try {
+      return readFileSync("/proc/self/stat", "utf8").startsWith(`${process.pid} (`);
+    } catch {
+      return false;
+    }
+  })();
 
 const buildTool = (overrides: Partial<IDiscoveredTool> = {}): IDiscoveredTool => ({
   id: "tool-1",
@@ -93,6 +108,16 @@ const createMonitor = (state: IState, processes: IProcessInfo[]) => {
     processProvider,
   };
 };
+
+async function windowsContract(check: () => Promise<void>): Promise<void> {
+  const platform = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { value: "win32" });
+  try {
+    await check();
+  } finally {
+    Object.defineProperty(process, "platform", platform);
+  }
+}
 
 it.skipIf(process.platform !== "linux")(
   "tracks nested executables declared with Windows separators",
@@ -208,28 +233,29 @@ it("matches detached game but filters non-child tools", async () => {
   expect(store.dispatch).toHaveBeenNthCalledWith(2, setToolStopped(toolPath));
 });
 
-it("parses unquoted cmd paths with spaces", async () => {
-  const spacedGamePath = "/games/test path";
-  const spacedGameExe = "StardewValley";
-  const spacedGameExePath = path.join(spacedGamePath, spacedGameExe);
-  const state = buildState({
-    gamePath: spacedGamePath,
-    gameExe: spacedGameExe,
-  });
-  const processes: IProcessInfo[] = [
-    {
-      pid: 8001,
-      ppid: 0,
-      name: spacedGameExe,
-      cmd: `${spacedGameExePath} --arg`,
-    },
-  ];
-  const { monitor, store } = createMonitor(state, processes);
+it("preserves command-path parsing outside Linux", () =>
+  windowsContract(async () => {
+    const spacedGamePath = "/games/test path";
+    const spacedGameExe = "StardewValley";
+    const spacedGameExePath = path.join(spacedGamePath, spacedGameExe);
+    const state = buildState({
+      gamePath: spacedGamePath,
+      gameExe: spacedGameExe,
+    });
+    const processes: IProcessInfo[] = [
+      {
+        pid: 8001,
+        ppid: 0,
+        name: spacedGameExe,
+        cmd: `${spacedGameExePath} --arg`,
+      },
+    ];
+    const { monitor, store } = createMonitor(state, processes);
 
-  await monitor.doCheck();
+    await monitor.doCheck();
 
-  expect(store.dispatch).toHaveBeenCalledWith(setToolPid(spacedGameExePath, 8001, true));
-});
+    expect(store.dispatch).toHaveBeenCalledWith(setToolPid(spacedGameExePath, 8001, true));
+  }));
 
 it("skips dispatch when known pid still exists", async () => {
   const state = buildState({
@@ -256,3 +282,137 @@ it("skips dispatch when known pid still exists", async () => {
 
   expect(store.dispatch).not.toHaveBeenCalled();
 });
+
+it.skipIf(process.platform !== "linux")(
+  "matches a Linux path despite a truncated process name",
+  async () => {
+    const executable = "VeryLongGameExecutableName";
+    const state = buildState({ gameExe: executable });
+    const { monitor, store } = createMonitor(state, [
+      { pid: 9001, ppid: 0, name: executable.slice(0, 15), path: path.join(gamePath, executable) },
+    ]);
+    await monitor.doCheck();
+    expect(store.dispatch).toHaveBeenCalledWith(
+      setToolPid(path.join(gamePath, executable), 9001, true),
+    );
+  },
+);
+
+it.skipIf(process.platform !== "linux")(
+  "tracks a script by its launch path instead of its interpreter name",
+  async () => {
+    const tool = buildTool({ path: "/tools/Sort Mods.py" });
+    const { monitor, store } = createMonitor(buildState({ tools: { [tool.id]: tool } }), [
+      { pid: 9002, ppid: process.pid, name: "python3", path: tool.path },
+    ]);
+    await monitor.doCheck();
+    expect(store.dispatch).toHaveBeenCalledWith(setToolPid(tool.path, 9002, false));
+  },
+);
+
+it.skipIf(process.platform !== "linux")(
+  "requires a Linux path before detecting a game",
+  async () => {
+    const { monitor, store } = createMonitor(buildState(), [{ pid: 9003, ppid: 0, name: gameExe }]);
+    await monitor.doCheck();
+    expect(store.dispatch).not.toHaveBeenCalled();
+  },
+);
+
+it.skipIf(process.platform !== "linux")(
+  "does not let an unrelated process name abort the poll",
+  async () => {
+    const { monitor, store } = createMonitor(buildState(), [
+      { pid: 9301, ppid: 0, name: "constructor", path: "/usr/bin/constructor" },
+      { pid: 9302, ppid: 0, name: gameExe, path: gameExePath },
+    ]);
+    await monitor.doCheck();
+    expect(store.dispatch).toHaveBeenCalledWith(setToolPid(gameExePath, 9302, true));
+  },
+);
+
+it.skipIf(process.platform !== "linux")(
+  "revalidates a cached Linux PID when its path becomes unavailable",
+  async () => {
+    const state = buildState({
+      toolsRunning: { [makeExeId(gameExePath)]: { pid: 9004, started: 1, exclusive: true } },
+    });
+    const { monitor, store } = createMonitor(state, [{ pid: 9004, ppid: 0, name: gameExe }]);
+    await monitor.doCheck();
+    expect(store.dispatch).toHaveBeenCalledWith(setToolStopped(gameExePath));
+  },
+);
+
+it.skipIf(process.platform !== "linux")(
+  "ignores a joined command line without an exact Linux launch path",
+  async () => {
+    const { monitor, store } = createMonitor(buildState(), [
+      { pid: 9005, ppid: 0, name: gameExe, cmd: `${gameExePath} --data` },
+    ]);
+    await monitor.doCheck();
+    expect(store.dispatch).not.toHaveBeenCalled();
+  },
+);
+
+it("preserves the Windows basename fallback", () =>
+  windowsContract(async () => {
+    const { monitor, store } = createMonitor(buildState(), [{ pid: 9101, ppid: 0, name: gameExe }]);
+    await monitor.doCheck();
+    expect(store.dispatch).toHaveBeenCalledWith(setToolPid(gameExePath, 9101, true));
+  }));
+
+it("retains a known Windows PID without path information", () =>
+  windowsContract(async () => {
+    const state = buildState({
+      toolsRunning: { [makeExeId(gameExePath)]: { pid: 9102, started: 1, exclusive: true } },
+    });
+    const { monitor, store } = createMonitor(state, [{ pid: 9102, ppid: 0, name: gameExe }]);
+    await monitor.doCheck();
+    expect(store.dispatch).not.toHaveBeenCalled();
+  }));
+
+it("preserves case-insensitive Windows path matching", () =>
+  windowsContract(async () => {
+    const { monitor, store } = createMonitor(buildState(), [
+      { pid: 9103, ppid: 0, name: gameExe.toUpperCase(), path: gameExePath.toUpperCase() },
+    ]);
+    await monitor.doCheck();
+    expect(store.dispatch).toHaveBeenCalledWith(setToolPid(gameExePath, 9103, true));
+  }));
+
+it.skipIf(!hasMatchingProcfs).each([
+  { executable: "VeryLongGameExecutableName", remove: false },
+  { executable: "VeryLongGameExecutableName", remove: true },
+  { executable: "VeryLongGameExecutableName", remove: true, replace: true },
+  { executable: "VeryLongGameExecutableName (deleted)", remove: false },
+])(
+  "detects a real Linux process through a symlink: $executable, unlinked=$remove, replaced=$replace",
+  async ({ executable, remove, replace }) => {
+    const root = await mkdtemp(path.join(tmpdir(), "vortex-process-monitor-"));
+    const installation = path.join(root, "Steam Games '日本語'");
+    const binary = path.join(root, executable);
+    await copyFile("/bin/sleep", binary);
+    await symlink(root, installation);
+    const child = spawn(path.join(installation, executable), ["30"]);
+    try {
+      await once(child, "spawn");
+      if (remove) await rm(binary);
+      if (replace) await copyFile("/bin/sleep", binary);
+      const processes = await defaultProcessProvider.list();
+      expect(processes.some((proc) => proc.pid === child.pid)).toBe(true);
+      const { monitor, store } = createMonitor(
+        buildState({ gamePath: installation, gameExe: executable }),
+        processes,
+      );
+      await monitor.doCheck();
+      expect(store.dispatch).toHaveBeenCalledWith(
+        setToolPid(path.join(installation, executable), child.pid, true),
+      );
+    } finally {
+      const exited = once(child, "exit");
+      child.kill();
+      await exited;
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
