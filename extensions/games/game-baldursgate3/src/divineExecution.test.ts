@@ -34,6 +34,19 @@ function command(script: string, args: string[] = []) {
 }
 
 describe("Divine shell-free execution", () => {
+  it.skipIf(process.platform !== "linux")(
+    "runs Proton from Divine's tools directory instead of an unmapped host directory",
+    async () => {
+      const result = await runDivineCore(
+        executable,
+        "list-package",
+        { source: "unused" },
+        { command: command("process.stdout.write(process.cwd())") },
+      );
+      expect(result.stdout).toBe(root);
+    },
+  );
+
   it("keeps paths, JSON, quotes, empty values and shell characters as literal argv", async () => {
     const options = {
       source: path.join(root, "日本語 '$()' `quoted` &;.pak"),

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
 interface IDivineProcessOptions {
+  cwd?: string;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
   timeoutMs: number;
@@ -21,6 +22,7 @@ export function executeDivine(
     }
     const grouped = process.platform === "linux";
     const child = spawn(executable, args, {
+      cwd: options.cwd,
       env: options.env,
       detached: grouped,
       shell: false,

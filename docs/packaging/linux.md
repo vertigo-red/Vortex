@@ -329,7 +329,9 @@ discovered game's Proton Local AppData. It refreshes profile directories on each
 read and shares the existing `PlayerProfiles/Public/modsettings.lsx` across setup,
 import and export. Divine uses the selected Proton build, resolves its actual
 filename casing and converts path arguments using that prefix's DOS drive
-mappings. CLI arguments bypass the host shell; timeout and cancellation terminate
+mappings. The Proton launcher starts in Divine's tools directory so its working
+folder is visible through those mappings. CLI arguments bypass the host shell;
+timeout and cancellation terminate
 the launch's own Linux process group. A bundled Windows launcher owns Divine's
 Windows Job Object, terminating its children when it exits. It selects a .NET
 startup hook that writes stdout and stderr directly in UTF-8 without requiring a

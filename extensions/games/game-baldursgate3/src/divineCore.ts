@@ -213,6 +213,7 @@ export async function runDivineCore(
       command?.executable ?? exePath,
       command?.args ?? buildDivineArgs(action, opts),
       {
+        cwd: process.platform === "linux" && command ? path.dirname(exePath) : undefined,
         env: command ? commandEnvironment(command) : undefined,
         timeoutMs: runOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         signal: runOpts.signal,
