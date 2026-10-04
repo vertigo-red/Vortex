@@ -40,6 +40,8 @@ const tools = path.join(root, "Staging 日本語 'quote' $() ! ;", "tools");
 const selectedProton = path.join(root, "Selected compatibility tool");
 const runtimeDirectory = path.join(root, "runtime");
 const launcher = path.join(tools, "vortex-divine-launcher.exe");
+const traceFile = path.join(root, "corehost-trace.log");
+let succeeded = false;
 const wine = process.env.VORTEX_TEST_WINE ?? "/usr/lib/wine/wine64";
 const server = process.env.VORTEX_TEST_WINESERVER ?? "/usr/lib/wine/wineserver64";
 const env = {
@@ -89,6 +91,8 @@ function launch(executable, action, options) {
       DOTNET_ROOT_X64: "C:\\dotnet",
       DOTNET_ROOT: "C:\\dotnet",
       XDG_RUNTIME_DIR: runtimeDirectory,
+      COREHOST_TRACE: "1",
+      COREHOST_TRACEFILE: toWinePath(prefix, traceFile),
     },
   };
 }
@@ -327,7 +331,17 @@ int wmain(int count, wchar_t **args) {
   console.log(
     "Verified UTF-8 package output, literal argv, running Windows child cancellation, runtime diagnostics, create/list/extract/glob, Unicode and custom Z paths, corrupt PAK, timeout and cancellation.",
   );
+  succeeded = true;
 } finally {
+  if (!succeeded) {
+    const trace = await readFile(traceFile, "utf8").catch(() => "No .NET host trace was written");
+    const relevant = trace
+      .split(/\r?\n/)
+      .filter((line) => /Property|apphost|app_path|app_root|CoreCLR|Invalid|hook|Divine|LSLib/i.test(line))
+      .map((line) => line.slice(0, 2500))
+      .slice(-40);
+    console.error(`Windows .NET host diagnostics:\n${relevant.join("\n")}`);
+  }
   await run(server, ["-k"]).catch((error) => {
     if (error.code !== 1 || error.stdout || error.stderr) throw error;
   });

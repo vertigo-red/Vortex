@@ -3,8 +3,7 @@
 #include <stdlib.h>
 #include <wchar.h>
 
-static wchar_t *command_tail(void) {
-    wchar_t *cursor = GetCommandLineW();
+static wchar_t *skip_program(wchar_t *cursor) {
     if (*cursor == L'"') {
         ++cursor;
         while (*cursor && *cursor != L'"') ++cursor;
@@ -13,7 +12,11 @@ static wchar_t *command_tail(void) {
         while (*cursor && *cursor != L' ' && *cursor != L'\t') ++cursor;
     }
     while (*cursor == L' ' || *cursor == L'\t') ++cursor;
-    return _wcsdup(cursor);
+    return cursor;
+}
+
+static wchar_t *command_tail(void) {
+    return _wcsdup(skip_program(GetCommandLineW()));
 }
 
 static int fail(const wchar_t *operation) {
@@ -100,6 +103,18 @@ int wmain(int count, wchar_t **args) {
     startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
     wchar_t *command = command_tail();
     if (!command) { CloseHandle(job); return 8; }
+    if (directory) {
+        const wchar_t *arguments = skip_program(command);
+        size_t length = wcslen(executable) + wcslen(arguments) + 4;
+        wchar_t *normalized = calloc(length, sizeof(wchar_t));
+        if (!normalized) { free(command); CloseHandle(job); return 8; }
+        wcscpy(normalized, L"\"");
+        wcscat(normalized, executable);
+        wcscat(normalized, L"\" ");
+        wcscat(normalized, arguments);
+        free(command);
+        command = normalized;
+    }
     // Preserve the caller's Windows argv quoting verbatim; no cmd.exe expansion.
     BOOL created = CreateProcessW(executable, command, NULL, NULL, TRUE, CREATE_SUSPENDED,
                                  NULL, directory, &startup, &child);
