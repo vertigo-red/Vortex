@@ -100,6 +100,19 @@ handling follows Wine's `rebuild_argv` in
 [Wine 10.0](https://github.com/wine-mirror/wine/blob/wine-10.0/dlls/ntdll/unix/env.c).
 This is process detection, not support for launching arbitrary Wine prefixes.
 
+Direct `cmd.exe /c <script.bat|script.cmd>` tool launches identify the batch script
+instead of `cmd.exe`. The script uses the same per-process drive mappings and
+working-directory resolution, so identical commands in separate prefixes remain
+distinct. The monitor keeps that tool's running status while the identified command
+process exists and revalidates its command on each poll. Only a separate script
+argument is accepted, with optional `/d`, `/q`, `/a` or `/u` switches before `/c`.
+Interactive `/k`, `/s`, `call`, command strings, expansions and command-control
+characters do not identify a batch script; later data arguments are never scanned
+for a candidate. Script names containing comma, equals or semicolon are also
+excluded rather than guessing cmd's quoting mode. This follows the command lifetime in
+[Wine's cmd implementation](https://github.com/wine-mirror/wine/blob/wine-10.0/programs/cmd/wcmdmain.c),
+and does not infer the lifetime of detached programs started by a batch file.
+
 Each procfs snapshot reads at most 16 processes concurrently and checks process
 start times before and after collecting identity data. Exited, zombie, malformed
 and inaccessible entries do not abort the entire poll; readable ancestors still

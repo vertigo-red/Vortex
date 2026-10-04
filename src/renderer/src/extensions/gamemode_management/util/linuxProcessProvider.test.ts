@@ -224,6 +224,117 @@ describe.skipIf(process.platform !== "linux")("Linux procfs process identities",
     },
   );
 
+  it.each([true, false])(
+    "identifies a directly invoked Proton batch tool with loader argv present=%s",
+    async (loaderPresent) => {
+      const script = await file("Steam Games '日本語'/Sort Mods.CMD");
+      await processFixture({
+        runtime: "wine64-preloader",
+        name: "cmd.exe",
+        args: [...(loaderPresent ? ["wine64"] : []), "cmd.exe", "/c", script, "--mode", "sort"],
+      });
+      expect(await new LinuxProcessProvider(procRoot).list()).toMatchObject([{ path: script }]);
+    },
+  );
+
+  it("keeps the same batch command in two Wine prefixes distinct", async () => {
+    const first = await file("Prefix A/drive_c/Tools '日本語'/Sort Mods.cmd");
+    const second = await file("Prefix B/drive_c/Tools '日本語'/Sort Mods.cmd");
+    const prefixA = await prefix("Prefix A", "c", path.join(root, "Prefix A/drive_c"));
+    const prefixB = await prefix("Prefix B", "c", path.join(root, "Prefix B/drive_c"));
+    for (const [pid, winePrefix] of [
+      [4401, prefixA],
+      [4402, prefixB],
+    ] as const) {
+      await processFixture({
+        pid,
+        runtime: "wine64",
+        name: "cmd.exe",
+        args: [
+          "C:\\windows\\system32\\CMD.EXE",
+          "/D",
+          "/Q",
+          "/C",
+          "c:\\tools '日本語'\\SORT MODS.CMD",
+        ],
+        environment: { WINEPREFIX: winePrefix },
+      });
+    }
+    expect(await new LinuxProcessProvider(procRoot).list()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ pid: 4401, path: first }),
+        expect.objectContaining({ pid: 4402, path: second }),
+      ]),
+    );
+  });
+
+  it("resolves a batch tool relative to cmd.exe's working directory", async () => {
+    const script = await file("Steam Games/Tools/Sort.bat");
+    await processFixture({
+      runtime: "wine",
+      args: ["cmd.exe", "/c", "tools\\SORT.BAT", "one"],
+      cwd: path.join(root, "Steam Games"),
+    });
+    expect(await new LinuxProcessProvider(procRoot).list()).toMatchObject([{ path: script }]);
+  });
+
+  it("does not guess a batch tool's drive mapping without its Wine prefix", async () => {
+    await file("Sort.cmd");
+    const proc = await processFixture({
+      runtime: "wine64",
+      args: ["cmd.exe", "/c", "Z:\\Sort.cmd"],
+    });
+    expect(await new LinuxProcessProvider(procRoot).list()).toMatchObject([{ path: proc.runtime }]);
+  });
+
+  it.each([
+    ["cmd.exe", "/k", "<script>"],
+    ["cmd.exe", "/c", "echo", "<script>"],
+    ["cmd.exe", "/c", "call", "<script>"],
+    ["other.exe", "/c", "<script>"],
+    ["cmd.exe", "/unknown", "/c", "<script>"],
+    ["cmd.exe", "/s", "/c", "<script>"],
+    ["cmd.exe", "/c", "<script>", "&&", "other.exe"],
+    ["cmd.exe", "/c", "<script>", "%NEXT_COMMAND%"],
+    ["cmd.exe", "/c", '"<script>" && echo ready'],
+  ])("does not infer a batch target from %j", async (...command) => {
+    const script = await file("Tools/Sort.cmd");
+    const proc = await processFixture({
+      runtime: "wine64",
+      args: command.map((arg) => arg.replace("<script>", script)),
+    });
+    expect(await new LinuxProcessProvider(procRoot).list()).toMatchObject([{ path: proc.runtime }]);
+  });
+
+  it("preserves cmd.exe's own path when a batch filename is an echo argument", async () => {
+    const command = await file("drive_c/windows/system32/cmd.exe");
+    await file("drive_c/Tools/Sort.cmd");
+    const winePrefix = await prefix("pfx", "c", path.join(root, "drive_c"));
+    await processFixture({
+      runtime: "wine64",
+      args: ["C:\\windows\\system32\\cmd.exe", "/c", "echo", "C:\\Tools\\Sort.cmd"],
+      environment: { WINEPREFIX: winePrefix },
+    });
+    expect(await new LinuxProcessProvider(procRoot).list()).toMatchObject([{ path: command }]);
+  });
+
+  it("does not interpret a native binary named cmd.exe as Wine's batch interpreter", async () => {
+    const script = await file("Tools/Sort.cmd");
+    const proc = await processFixture({ runtime: "cmd.exe", args: ["cmd.exe", "/c", script] });
+    expect(await new LinuxProcessProvider(procRoot).list()).toMatchObject([{ path: proc.runtime }]);
+  });
+
+  it.each(["Sort,Mods.cmd", "Sort=Mods.cmd", "Sort;Mods.cmd"])(
+    "does not mistake cmd's unquoted command-name delimiters for the filename %s",
+    async (name) => {
+      const script = await file(`Tools/${name}`);
+      const proc = await processFixture({ runtime: "wine64", args: ["cmd.exe", "/c", script] });
+      expect(await new LinuxProcessProvider(procRoot).list()).toMatchObject([
+        { path: proc.runtime },
+      ]);
+    },
+  );
+
   it("maps a Windows drive through that process's Wine prefix and preserves disk spelling", async () => {
     const executable = await file("Prefix A/drive_c/Games '日本語'/Game.exe");
     const winePrefix = await prefix("Prefix A", "c", path.join(root, "Prefix A", "drive_c"));

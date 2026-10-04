@@ -97,6 +97,23 @@ function jarArgument(args: string[]): string | undefined {
   return undefined;
 }
 
+function batchArgument(args: string[]): string | undefined {
+  if (path.win32.basename(args[0] ?? "").toLowerCase() !== "cmd.exe") return undefined;
+  let index = 1;
+  while (["/d", "/q", "/a", "/u"].includes(args[index]?.toLowerCase())) index++;
+  if (args[index]?.toLowerCase() !== "/c") return undefined;
+  const script = args[index + 1];
+  if (script === undefined || !/\.(?:bat|cmd)$/i.test(script) || script.startsWith("@")) {
+    return undefined;
+  }
+  // cmd treats these as command-name delimiters unless quoted; do not guess its quote mode.
+  if (/[,=;]/.test(script)) return undefined;
+  // Only the direct argv form used by buildProtonCommand is identifiable here.
+  // cmd's /k, /s, command strings, expansions and compound commands need other semantics.
+  if (args.slice(index + 1).some((arg) => /["%^!&|<>()\r\n]/.test(arg))) return undefined;
+  return script;
+}
+
 async function unixPath(value: string | undefined, cwd?: string): Promise<string | undefined> {
   if (!value || (!path.isAbsolute(value) && cwd === undefined)) return undefined;
   try {
@@ -200,7 +217,8 @@ async function launchPath(
   if (WINE_LOADER.test(runtime)) {
     // Wine removes its loader argv[0] after startup. Support either stage, never arbitrary arguments.
     // See Wine 10.0 dlls/ntdll/unix/env.c, rebuild_argv().
-    const command = WINE_LOADER.test(path.basename(args[0] ?? "")) ? args[1] : args[0];
+    const wineArgs = WINE_LOADER.test(path.basename(args[0] ?? "")) ? args.slice(1) : args;
+    const command = batchArgument(wineArgs) ?? wineArgs[0];
     return (await winePath(command, cwd, directory)) ?? nativePath;
   }
   if (PYTHON.test(runtime) || SHELL.test(runtime)) {

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFileSync } from "node:fs";
-import { copyFile, link, mkdtemp, rm, symlink } from "node:fs/promises";
+import { copyFile, link, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "path";
 
@@ -12,6 +12,7 @@ import { makeExeId } from "../../../reducers/session";
 import type { IDiscoveredTool } from "../../../types/IDiscoveredTool";
 import type { IExtensionApi } from "../../../types/IExtensionContext";
 import type { IState } from "../../../types/IState";
+import { LinuxProcessProvider } from "./linuxProcessProvider";
 import ProcessMonitor from "./ProcessMonitor";
 import type { IProcessInfo, IProcessProvider } from "./processProvider";
 import { defaultProcessProvider } from "./processProvider";
@@ -93,14 +94,14 @@ const buildState = (
   } as unknown as IState;
 };
 
-const createMonitor = (state: IState, processes: IProcessInfo[]) => {
+const createMonitor = (state: IState, processes: IProcessInfo[] | IProcessProvider) => {
   const store = {
     dispatch: vi.fn(),
     getState: vi.fn(() => state),
   };
-  const processProvider: IProcessProvider = {
-    list: vi.fn().mockResolvedValue(processes),
-  };
+  const processProvider: IProcessProvider = Array.isArray(processes)
+    ? { list: vi.fn().mockResolvedValue(processes) }
+    : processes;
   const monitor = new ProcessMonitor({ store } as unknown as IExtensionApi, processProvider);
   return {
     monitor: monitor as unknown as { doCheck(): Promise<void> },
@@ -307,6 +308,52 @@ it.skipIf(process.platform !== "linux")(
     ]);
     await monitor.doCheck();
     expect(store.dispatch).toHaveBeenCalledWith(setToolPid(tool.path, 9002, false));
+  },
+);
+
+it.skipIf(process.platform !== "linux")(
+  "detects a batch tool through cmd.exe, retains its PID and clears it when the command changes",
+  async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vortex-batch-monitor-"));
+    try {
+      const tools = path.join(root, "Tools '日本語'");
+      const dosdevices = path.join(root, "pfx/dosdevices");
+      const procRoot = path.join(root, "proc");
+      const directory = path.join(procRoot, "9401");
+      await Promise.all(
+        [tools, dosdevices, directory].map((dir) => mkdir(dir, { recursive: true })),
+      );
+      const script = path.join(tools, "Sort Mods.cmd");
+      const runtime = path.join(root, "wine64");
+      await Promise.all([writeFile(script, "fixture"), writeFile(runtime, "fixture")]);
+      await symlink(tools, path.join(dosdevices, "g:"));
+      await symlink(runtime, path.join(directory, "exe"));
+      const fields = ["S", String(process.pid), ...Array<string>(17).fill("0"), "12345"];
+      await writeFile(path.join(directory, "stat"), `9401 (cmd.exe) ${fields.join(" ")}`);
+      await writeFile(path.join(directory, "environ"), `WINEPREFIX=${path.join(root, "pfx")}\0`);
+      const commandLine = path.join(directory, "cmdline");
+      await writeFile(commandLine, "cmd.exe\0/c\0G:\\SORT MODS.CMD\0--mode\0sort\0");
+      const tool = buildTool({ path: script });
+      const state = buildState({ tools: { [tool.id]: tool } });
+      const { monitor, store } = createMonitor(state, new LinuxProcessProvider(procRoot));
+      await monitor.doCheck();
+      expect(store.dispatch).toHaveBeenCalledExactlyOnceWith(setToolPid(script, 9401, false));
+
+      state.session.base.toolsRunning[makeExeId(script)] = {
+        pid: 9401,
+        started: 1,
+        exclusive: false,
+      };
+      store.dispatch.mockClear();
+      await monitor.doCheck();
+      expect(store.dispatch).not.toHaveBeenCalled();
+
+      await writeFile(commandLine, "cmd.exe\0/c\0echo\0G:\\SORT MODS.CMD\0");
+      await monitor.doCheck();
+      expect(store.dispatch).toHaveBeenCalledExactlyOnceWith(setToolStopped(script));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   },
 );
 
