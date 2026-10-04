@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: "24.20.0"
       - name: Install Wine test runtime
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends wine64
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends wine64 gcc-mingw-w64-x86-64
       - name: Probe Wine batch launches
         run: node scripts/verify-linux-batch.mjs
   linux-x64:
