@@ -36,7 +36,7 @@ jobs:
       VORTEX_TEST_WINE_MAJOR: ${{ matrix.runtime.version }}
     steps:
       - name: Install Wine test runtime
-        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates wine64 gcc-mingw-w64-x86-64 unzip libicu-dev
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl wine64 gcc-mingw-w64-x86-64 unzip libicu-dev
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
