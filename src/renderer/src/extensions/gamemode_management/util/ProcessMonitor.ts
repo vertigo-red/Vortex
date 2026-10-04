@@ -15,6 +15,24 @@ import { getSafe } from "../../../util/storeHelper";
 import type { IProcessInfo, IProcessProvider } from "./processProvider";
 import { defaultProcessProvider } from "./processProvider";
 
+async function canonicalExecutablePath(input: string): Promise<string> {
+  const resolved = path.resolve(input);
+  let directory = resolved;
+  const suffix: string[] = [];
+  for (;;) {
+    try {
+      return path.join(await realpath(directory), ...suffix);
+    } catch {
+      // A running native binary can have been unlinked. Resolve its existing parents
+      // so an installation symlink still matches the kernel's original executable path.
+      const parent = path.dirname(directory);
+      if (parent === directory) return resolved;
+      suffix.unshift(path.basename(directory));
+      directory = parent;
+    }
+  }
+}
+
 /**
  * Monitors running processes to track game and tool execution state.
  *
@@ -297,7 +315,7 @@ class ProcessMonitor {
     const canonicalPath = (value: string): Promise<string> => {
       let pending = canonicalPaths.get(value);
       if (pending === undefined) {
-        pending = realpath(value).catch(() => path.normalize(value));
+        pending = canonicalExecutablePath(value);
         canonicalPaths.set(value, pending);
       }
       return pending;

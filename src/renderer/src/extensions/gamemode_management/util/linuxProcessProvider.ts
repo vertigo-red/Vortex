@@ -1,6 +1,8 @@
 import { readFile, readdir, readlink, realpath, stat } from "node:fs/promises";
 import * as path from "node:path";
 
+import { getErrorCode } from "@vortex/shared";
+
 import type { IProcessInfo, IProcessProvider } from "./processProvider";
 
 const WINE_LOADER = /^wine(?:64)?(?:-preloader)?$/;
@@ -120,7 +122,17 @@ async function nativeExecutable(directory: string): Promise<string | undefined> 
     try {
       // procfs still refers to the running inode after unlink. A literal suffix in a
       // linked filename must remain intact, and a replacement file must not hide the process.
-      if ((await stat(filename)).nlink === 0) return executable.slice(0, -suffix.length);
+      const running = await stat(filename, { bigint: true });
+      if (running.nlink === 0n) return executable.slice(0, -suffix.length);
+      try {
+        const literal = await stat(executable, { bigint: true });
+        if (literal.dev !== running.dev || literal.ino !== running.ino) {
+          return executable.slice(0, -suffix.length);
+        }
+      } catch (err) {
+        // Another hardlink can keep nlink positive after the original entry is removed.
+        if (getErrorCode(err) === "ENOENT") return executable.slice(0, -suffix.length);
+      }
     } catch {
       /* Keep the readable link if inode metadata is unavailable. */
     }

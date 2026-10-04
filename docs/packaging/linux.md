@@ -85,7 +85,9 @@ ordinary data arguments do not identify a script. Existing installation and
 executable symlinks resolve to their targets, and Linux path comparisons preserve
 case. A cached PID is retained only while its path still matches. An unlinked native
 binary remains tracked while its process runs, including when a replacement file
-appears at the same path.
+appears at the same path or another hardlink keeps the running inode linked.
+The deleted-path check compares full-width device/inode IDs, so a literal
+` (deleted)` filename suffix remains intact.
 
 Wine processes identify the executable rather than the Wine loader. Absolute Unix
 paths and relative paths in the process's working directory are supported. Windows

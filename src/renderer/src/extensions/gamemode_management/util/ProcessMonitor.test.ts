@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFileSync } from "node:fs";
-import { copyFile, mkdtemp, rm, symlink } from "node:fs/promises";
+import { copyFile, link, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "path";
 
@@ -384,14 +384,17 @@ it.skipIf(!hasMatchingProcfs).each([
   { executable: "VeryLongGameExecutableName", remove: false },
   { executable: "VeryLongGameExecutableName", remove: true },
   { executable: "VeryLongGameExecutableName", remove: true, replace: true },
+  { executable: "VeryLongGameExecutableName", remove: true, keepLink: true },
+  { executable: "VeryLongGameExecutableName", remove: true, replace: true, keepLink: true },
   { executable: "VeryLongGameExecutableName (deleted)", remove: false },
 ])(
-  "detects a real Linux process through a symlink: $executable, unlinked=$remove, replaced=$replace",
-  async ({ executable, remove, replace }) => {
+  "detects a real Linux process: $executable, unlinked=$remove, replaced=$replace, hardlink=$keepLink",
+  async ({ executable, remove, replace, keepLink }) => {
     const root = await mkdtemp(path.join(tmpdir(), "vortex-process-monitor-"));
     const installation = path.join(root, "Steam Games '日本語'");
     const binary = path.join(root, executable);
     await copyFile("/bin/sleep", binary);
+    if (keepLink) await link(binary, path.join(root, "staged-binary"));
     await symlink(root, installation);
     const child = spawn(path.join(installation, executable), ["30"]);
     try {
@@ -412,6 +415,26 @@ it.skipIf(!hasMatchingProcfs).each([
       const exited = once(child, "exit");
       child.kill();
       await exited;
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+it.skipIf(process.platform !== "linux")(
+  "resolves a symlinked installation after its running executable was removed",
+  async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vortex-unlinked-game-"));
+    const alias = path.join(root, "Steam Games '日本語'");
+    try {
+      await symlink(root, alias);
+      const { monitor, store } = createMonitor(buildState({ gamePath: alias }), [
+        { pid: 9401, ppid: 0, name: gameExe, path: path.join(root, gameExe) },
+      ]);
+      await monitor.doCheck();
+      expect(store.dispatch).toHaveBeenCalledWith(
+        setToolPid(path.join(alias, gameExe), 9401, true),
+      );
+    } finally {
       await rm(root, { recursive: true, force: true });
     }
   },

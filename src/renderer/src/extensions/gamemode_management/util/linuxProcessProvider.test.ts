@@ -1,13 +1,20 @@
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import type * as fsPromises from "node:fs/promises";
+import { link, mkdir, mkdtemp, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LinuxProcessProvider } from "./linuxProcessProvider";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const fs = await importOriginal<typeof fsPromises>();
+  const mockedFs = { ...fs, readlink: vi.fn(fs.readlink) };
+  return { ...mockedFs, default: mockedFs };
+});
 
 let root: string;
 let procRoot: string;
@@ -88,6 +95,7 @@ describe.skipIf(process.platform !== "linux")("Linux procfs process identities",
     await mkdir(procRoot);
   });
   afterEach(async () => {
+    vi.mocked(readlink).mockReset();
     await rm(root, { recursive: true, force: true });
   });
 
@@ -107,6 +115,29 @@ describe.skipIf(process.platform !== "linux")("Linux procfs process identities",
     expect(await new LinuxProcessProvider(procRoot).list()).toMatchObject([
       { pid: 4001, ppid: 123 },
     ]);
+  });
+
+  it.each([false, true])(
+    "retains an unlinked native target with a surviving hardlink, replaced=%s",
+    async (replace) => {
+      const proc = await processFixture({ runtime: "Game.exe" });
+      const staged = path.join(root, "staged-binary");
+      await link(proc.runtime, staged);
+      await rm(proc.runtime);
+      await rm(path.join(proc.directory, "exe"));
+      await symlink(staged, path.join(proc.directory, "exe"));
+      if (replace) await writeFile(proc.runtime, "replacement");
+      // Only procfs's decorated readlink result is simulated; stat sees a real retained inode.
+      vi.mocked(readlink).mockResolvedValueOnce(`${proc.runtime} (deleted)`);
+      expect(await new LinuxProcessProvider(procRoot).list()).toMatchObject([
+        { path: proc.runtime },
+      ]);
+    },
+  );
+
+  it("retains a literal deleted suffix on a linked native filename", async () => {
+    const proc = await processFixture({ runtime: "Game.exe (deleted)" });
+    expect(await new LinuxProcessProvider(procRoot).list()).toMatchObject([{ path: proc.runtime }]);
   });
 
   it.each(["Z", "X"])("excludes a process in state %s", async (state) => {
