@@ -153,15 +153,39 @@ game launches and desktop sessions still need the game-level checks below.
 For discovered Steam/Proton games, Bethesda plugin lists use
 `steamapps/compatdata/<app-id>/pfx/drive_c/users/steamuser/AppData/Local` in the
 game's own library. INI tweaks, local profile settings and savegame management use
-that user's `Documents/My Games` directory. Existing Wine directory symlinks and
-the older `My Documents` name are respected. Skyrim, Enderal, Fallout New Vegas
+that user's `Documents/My Games` directory by default. Persisted `User Shell Folders`
+values for `Personal` and `Local AppData` override those defaults, including
+redirections made only in the Registry. The game's `user.reg` takes precedence over
+`system.reg`; the expanded `Shell Folders` cache does not override either. Wine
+Version 2 string/Unicode escapes and leading `%USERPROFILE%`/`%SystemDrive%`
+expansion are supported. Leading variables expand in `REG_SZ` as well as
+`REG_EXPAND_SZ`, matching Wine's Shell API; percent text after a drive path remains
+literal. Registry and drive mappings are reread when resolving a
+folder. The selected prefix's `dosdevices` links resolve Windows drive paths,
+including custom `Z:` mappings. Existing components prefer exact spelling,
+otherwise a unique case-insensitive match; new subdirectories retain their declared
+spelling. A configured path with an unavailable drive, ambiguous component,
+unsupported environment variable or invalid Registry value stops the operation
+instead of writing to a default folder.
+
+Existing Wine directory symlinks and the older `My Documents` name are respected
+when no Registry value applies. Skyrim, Enderal, Fallout New Vegas
 and Oblivion folder names retain their Windows spelling on case-sensitive disks.
 
 Launch the game once in Steam and refresh discovery before managing these files.
 An unavailable Steam prefix produces an error rather than writing into the host's
 Documents/AppData directories. This routing applies to the standard Steam user;
-custom Wine users, Registry-only redirections and non-Steam prefixes still require
-separate support. Bundled extensions can use `util.getGameUserPath` for these paths.
+custom Wine profile layouts, other environment-variable expansions and non-Steam
+prefixes still require separate support. Changes not yet saved by wineserver are
+not visible to this filesystem resolver. Bundled extensions can use
+`util.getGameUserPath` for these paths.
+
+The Wine 9/10 CI also checks 16 real user folder resolutions per runtime. A Windows
+receiver obtains Documents and Local AppData through `SHGetFolderPathW` and writes
+marker files there; the production resolver must read those same files. The checks
+cover Unicode and quotes, profile expansion, redirected drives, filename casing,
+directory symlinks and a custom `Z:` mapping. These do not establish game-level
+compatibility.
 
 Bethesda plugin IDs and file overrides use Windows path separators and
 case-insensitive names on Linux, while the scanned paths and the names written to

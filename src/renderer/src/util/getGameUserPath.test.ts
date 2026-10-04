@@ -20,6 +20,7 @@ vi.mock("./Steam", () => ({ default: { snapshot: () => ({ entries: steam.entries
 
 let root: string;
 let user: string;
+let prefix: string;
 let gamePath: string;
 const discovery = () => ({ path: gamePath, store: "steam" });
 
@@ -40,7 +41,8 @@ describe.skipIf(process.platform !== "linux")("Steam/Proton game user paths", ()
       "compatdata",
       "489830",
     );
-    user = path.join(compatDataPath, "pfx", "drive_c", "users", "steamuser");
+    prefix = path.join(compatDataPath, "pfx");
+    user = path.join(prefix, "drive_c", "users", "steamuser");
     await mkdir(gamePath, { recursive: true });
     await mkdir(path.join(user, "Documents"), { recursive: true });
     steam.entries = [
@@ -80,6 +82,49 @@ describe.skipIf(process.platform !== "linux")("Steam/Proton game user paths", ()
     await rm(path.join(user, "Documents"), { recursive: true });
     await mkdir(path.join(user, "My Documents"));
     expect(getGameUserPath("documents", discovery())).toBe(path.join(user, "My Documents"));
+  });
+
+  it("uses Registry-only Documents and Local AppData redirections from the selected prefix", async () => {
+    const redirected = path.join(root, "Redirected 日本語");
+    await mkdir(path.join(redirected, "Game settings"), { recursive: true });
+    await mkdir(path.join(prefix, "dosdevices"));
+    await symlink(redirected, path.join(prefix, "dosdevices", "d:"));
+    await writeFile(
+      path.join(prefix, "user.reg"),
+      String.raw`WINE REGISTRY Version 2
+
+[Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders] 1234
+"Personal"="D:\\Game settings"
+"Local AppData"="D:\\New AppData"
+`,
+    );
+    const settings = getGameUserPath("documents", discovery());
+    expect(settings).toBe(path.join(redirected, "Game settings"));
+    expect(getGameUserPath("localAppData", discovery())).toBe(path.join(redirected, "New AppData"));
+    const harness = makeGamebryoHarness({ gameId: "skyrimse", gamePath });
+    await initGameSupport(harness.api);
+    expect(appDataPath("skyrimse")).toBe(
+      path.join(redirected, "New AppData", "Skyrim Special Edition"),
+    );
+    expect(iniFiles("skyrimse", discovery())[0]).toBe(
+      path.join(settings, "My Games", "Skyrim Special Edition", "Skyrim.ini"),
+    );
+    await writeFile(path.join(settings, "test.ini"), "redirected settings");
+    expect(await readFile(path.join(redirected, "Game settings", "test.ini"), "utf8")).toBe(
+      "redirected settings",
+    );
+  });
+
+  it("reports unmapped Registry redirections instead of writing into the default Documents", async () => {
+    await writeFile(
+      path.join(prefix, "user.reg"),
+      String.raw`WINE REGISTRY Version 2
+
+[Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders]
+"Personal"="Q:\\Missing drive"
+`,
+    );
+    expect(() => getGameUserPath("documents", discovery())).toThrow(ProcessCanceled);
   });
 
   it("uses the correct prefix when discovery uses a game directory symlink", async () => {

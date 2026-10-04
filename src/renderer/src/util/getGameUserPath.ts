@@ -1,10 +1,13 @@
 import { statSync } from "node:fs";
 import * as path from "node:path";
 
+import { getErrorMessageOrDefault } from "@vortex/shared";
+
 import type { IDiscoveryResult } from "../extensions/gamemode_management/types/IDiscoveryResult";
 import { ProcessCanceled } from "./CustomErrors";
 import getVortexPath from "./getVortexPath";
 import { findSteamGameForTool } from "./linux/gameEntry";
+import { getWineUserFolder } from "./linux/wineUserFolders";
 import Steam, { type ISteamEntry } from "./Steam";
 
 export type GameUserPath = "documents" | "localAppData";
@@ -28,16 +31,25 @@ export function getGameUserPath(
     return getVortexPath(id);
   }
 
-  const userPath = entry?.compatDataPath
-    ? path.join(entry.compatDataPath, "pfx", "drive_c", "users", "steamuser")
-    : undefined;
+  const prefix = entry?.compatDataPath ? path.join(entry.compatDataPath, "pfx") : undefined;
+  const userPath = prefix ? path.join(prefix, "drive_c", "users", "steamuser") : undefined;
   if (
     !entry?.usesProton ||
+    prefix === undefined ||
     userPath === undefined ||
     !statSync(userPath, { throwIfNoEntry: false })?.isDirectory()
   ) {
     throw new ProcessCanceled(
       "The game's Proton user directory could not be found. Launch the game once in Steam and refresh game discovery before managing its settings or plugins.",
+    );
+  }
+
+  try {
+    const redirected = getWineUserFolder(prefix, id);
+    if (redirected !== undefined) return redirected;
+  } catch (err) {
+    throw new ProcessCanceled(
+      `The game's Proton user folder could not be resolved: ${getErrorMessageOrDefault(err)}`,
     );
   }
 
