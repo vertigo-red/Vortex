@@ -321,6 +321,23 @@ Unit tests cover library discovery and aliases, Proton selection and invocation,
 matching, executable wrapper argument handling, AppImage registration, positional
 Nexus links, XDG paths and the updater platform gate.
 
+BG3 routes Mods, PlayerProfiles and Script Extender configuration through the
+discovered game's Proton Local AppData. It refreshes profile directories on each
+read and shares the existing `PlayerProfiles/Public/modsettings.lsx` across setup,
+import and export. Divine uses the selected Proton build, resolves its actual
+filename casing and converts path arguments using that prefix's DOS drive
+mappings. CLI arguments bypass the host shell; timeout and cancellation terminate
+the launch's own Linux process group. A missing Windows .NET runtime or unresolved
+Proton environment stops scanning before the saved load order is replaced.
+
+CI downloads checksum-pinned official Divine 1.20.4 and Windows .NET 8.0.31 into
+isolated test prefixes. Wine 9 and 10 run real create/list/extract/glob operations
+with Unicode, shell characters and a custom Z mapping, plus missing-runtime,
+corrupt-PAK, deadline and cancellation checks. These CLI integration checks use a
+test receiver for Proton's command shape; they do not run a Steam Proton build or
+a real BG3 installation. BG3 on Linux currently supports Steam/Proton; its Windows
+.NET runtime must be installed in the game's prefix.
+
 Game discovery tests search real Linux directories using nested Windows and mixed
 separator declarations, verify manual root selection and build usable dashboard
 paths. Missing files and incorrect casing still fail validation. Process tests
@@ -383,7 +400,7 @@ a default application flag; the installed package check uses the normal sandbox.
 
 Passing those checks does not prove a complete modding session works. In particular:
 
-- Game-specific Registry discovery, configuration/save paths outside the Bethesda
+- Game-specific Registry discovery, configuration/save paths outside the Bethesda and BG3
   routing above, script extenders and executable dependencies require per-game
   validation. Windows-only
   stores do not acquire Linux support from the Steam changes.

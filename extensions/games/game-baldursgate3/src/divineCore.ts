@@ -1,23 +1,21 @@
-import * as child_process from "child_process";
 import * as fs from "fs/promises";
-import * as nodeUtil from "util";
+import * as path from "node:path";
 
+import { executeDivine } from "./divineProcess";
 import type { DivineAction, IDivineOptions, IDivineOutput } from "./types";
-
-const exec = nodeUtil.promisify(child_process.exec);
 
 export const DEFAULT_TIMEOUT_MS = 10000;
 
 export class DivineExecMissing extends Error {
-  constructor() {
-    super("Divine executable is missing");
+  constructor(message = "Divine executable is missing") {
+    super(message);
     this.name = "DivineExecMissing";
   }
 }
 
 export class DivineMissingDotNet extends Error {
   constructor() {
-    super("LSLib requires .NET 8 Desktop Runtime to be installed.");
+    super("LSLib requires the Windows .NET 8 runtime in its execution environment.");
     this.name = "DivineMissingDotNet";
   }
 }
@@ -56,6 +54,24 @@ export interface IExecErrorShape {
 export interface IDivineRunOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
+  command?: { executable: string; args: string[]; env: Record<string, string> };
+}
+
+export async function resolveDivineExecutable(toolsDirectory: string): Promise<string> {
+  let names: string[];
+  try {
+    names = await fs.readdir(toolsDirectory);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") throw new DivineExecMissing();
+    throw err;
+  }
+  const matches = names.filter((name) => name.toLowerCase() === "divine.exe");
+  if (matches.length !== 1) {
+    throw new DivineExecMissing(
+      "Install one unambiguous copy of Divine.exe in the LSLib tools directory.",
+    );
+  }
+  return path.join(toolsDirectory, matches[0]);
 }
 
 export function buildDivineArgs(action: DivineAction, opts: IDivineOptions): string[] {
@@ -66,17 +82,17 @@ export function buildDivineArgs(action: DivineAction, opts: IDivineOptions): str
     "--action",
     action,
     "--source",
-    `"${opts.source}"`,
+    opts.source,
     "--game",
     "bg3",
     "--loglevel",
     opts.loglevel ?? "error",
   ];
   if (opts.destination !== undefined) {
-    args.push("--destination", `"${opts.destination}"`);
+    args.push("--destination", opts.destination);
   }
   if (opts.expression !== undefined) {
-    args.push("--expression", `"${opts.expression}"`);
+    args.push("--expression", opts.expression);
   }
   return args;
 }
@@ -107,10 +123,14 @@ export function translateDivineError(
   if (err.code === "ENOENT") {
     return new DivineExecMissing();
   }
-  if (err.message?.includes("You must install or update .NET")) {
+  if (
+    [err.message, err.stderr, err.stdout].some(
+      (text) => text !== undefined && /You must install(?: or update)? \.NET/.test(text),
+    )
+  ) {
     return new DivineMissingDotNet();
   }
-  if (err.signal === "SIGTERM") {
+  if (err.signal === "SIGTERM" && err.code !== "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
     return new DivineTimedOut();
   }
 
@@ -150,17 +170,34 @@ export function parsePackageListOutput(stdout: string): string[] {
     .filter((line) => line.length > 0);
 }
 
+function commandEnvironment(command: NonNullable<IDivineRunOptions["command"]>): NodeJS.ProcessEnv {
+  const inherited = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([name]) => process.platform !== "linux" || !/^DOTNET_ROOT(?:_|\(|$)/i.test(name),
+    ),
+  );
+  return { ...inherited, ...command.env };
+}
+
+function cliDiagnostics(stderr: string, throughProton: boolean): string {
+  if (!throughProton) return stderr.trim();
+  // Proton reports prefix setup on stderr; Wine also reports its active synchronization mode.
+  return stderr
+    .split(/\r?\n/)
+    .filter((line) => !/^Proton: /.test(line) && !/^(?:e|f)sync: up and running\.$/.test(line))
+    .join("\n")
+    .trim();
+}
+
 export async function runDivineCore(
   exePath: string,
   action: DivineAction,
   opts: IDivineOptions,
   runOpts: IDivineRunOptions = {},
 ): Promise<IDivineOutput> {
-  // exec runs via the shell, so a missing target surfaces as a generic
-  // non-zero exit code rather than ENOENT on the spawn itself. Pre-check
-  // so DivineExecMissing fires for its intended case (LSLib not installed).
+  if (runOpts.signal?.aborted) throw new DivineAborted();
   try {
-    await fs.stat(exePath);
+    if (!(await fs.stat(exePath)).isFile()) throw new DivineExecMissing();
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") {
       throw new DivineExecMissing();
@@ -168,33 +205,38 @@ export async function runDivineCore(
     throw e;
   }
 
-  const args = buildDivineArgs(action, opts);
-  const command = `"${exePath}" ${args.join(" ")}`;
-  const execOpts: child_process.ExecOptions = {
-    timeout: runOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    signal: runOpts.signal,
-  };
-
   let stdout: string;
   let stderr: string;
   try {
-    const result = await exec(command, execOpts);
-    stdout = typeof result.stdout === "string" ? result.stdout : (result.stdout?.toString() ?? "");
-    stderr = typeof result.stderr === "string" ? result.stderr : (result.stderr?.toString() ?? "");
+    const command = runOpts.command;
+    const result = await executeDivine(
+      command?.executable ?? exePath,
+      command?.args ?? buildDivineArgs(action, opts),
+      {
+        env: command ? commandEnvironment(command) : undefined,
+        timeoutMs: runOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        signal: runOpts.signal,
+      },
+    );
+    stdout = result.stdout;
+    stderr = result.stderr;
   } catch (e) {
     throw translateDivineError(e as IExecErrorShape, action, runOpts.signal?.aborted ?? false);
   }
 
-  // exec succeeded (exit 0) but divine may still have reported a problem:
+  // The CLI exited successfully but divine may still have reported a problem:
   // failures show up on stdout (or occasionally stderr) with a bracketed
   // [ERROR]/[FATAL] marker rather than via non-zero exit.
   const pakInvalid = classifyPakInvalid(stdout, stderr);
   if (pakInvalid !== undefined) {
     throw pakInvalid;
   }
-  if (stderr) {
-    // Non-bracketed stderr on exit 0 — unusual but surface it anyway.
-    throw new Error(`divine.exe failed: ${stderr.trim()}`);
+  const diagnostic = cliDiagnostics(
+    stderr,
+    process.platform === "linux" && runOpts.command !== undefined,
+  );
+  if (diagnostic) {
+    throw new Error(`divine.exe failed: ${diagnostic}`);
   }
   if (!stdout && action !== "list-package") {
     return { stdout: "", returnCode: 2 };

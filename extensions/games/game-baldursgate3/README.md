@@ -4,6 +4,12 @@ Before we get started, this guide assumes that you have installed Baldur's Gate 
 
 The [Steam](https://store.steampowered.com/agecheck/app/1086940/) and [GOG](https://www.gog.com/en/game/baldurs_gate_iii) versions of Baldur's Gate 3 are both supported.
 
+On native Linux Vortex, this extension currently supports the Steam/Proton
+installation. Launch BG3 once in Steam, then refresh game discovery. Mods,
+player profiles, `modsettings.lsx` and Script Extender configuration use this
+game's Local AppData folder, including Wine Registry redirections and secondary
+Steam libraries. The extension refreshes player profiles when reading them.
+
 # Getting Set Up
 
 Open up Vortex and navigate to the Games page. Use the 'Manage' button on the game tile to add it to your managed games. If you can’t see Baldur's Gate 3, you can scan for it or define it manually.
@@ -33,6 +39,19 @@ Since Patch 7, Baldur's Gate 3 contains official mod support with an in-game mod
 In the majority of cases, mods for Baldur's Gate 3 will require a 3rd party tool called [LSLib](https://github.com/Norbyte/lslib) to manipulate game files. When you first manage the game, Vortex should popup and give you the option to download and install this tool automatically. If that has already been dismissed, it can be accessed again via the 'Re-install LSLib/Divine' button on the toolbar in the Mods page of Vortex.
 
 LSLib (since 1.19) requires .NET 8 to be installed. This can be installed from [.NET 8.0 Desktop Runtime from Microsoft](https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/runtime-desktop-8.0.3-windows-x64-installer).
+
+On Linux, Divine runs through BG3's selected Proton build and existing prefix.
+Install the **Windows x64 .NET 8 runtime** into that prefix; a Linux .NET package
+does not supply the Windows tool's dependency. The Microsoft installer can be
+added temporarily as a BG3 dashboard tool and launched through Vortex, which
+selects the game's Proton environment. Restart Vortex after installation. No
+system root privileges are needed for the prefix.
+
+Vortex resolves the installed `Divine.exe` filename on case-sensitive filesystems,
+passes paths through that prefix's actual DOS drive mappings and invokes the CLI
+without a host shell. Missing Proton/runtime configuration stops the scan before
+replacing the existing load order. Wine installations outside Steam and Linux
+GOG prefixes still require separate support.
 
 Please ensure that the tool is always enabled and deployed on the mods page. Some Anti-Virus software may flag this tool as malicious due to the nature of what it does. We suggest you ensure that your security software is configured to allow this tool to install.
 

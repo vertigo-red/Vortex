@@ -7,7 +7,14 @@ import { Builder, parseStringPromise, RenderOptions } from "xml2js";
 
 import PakInfoCache, { ICacheEntry } from "./cache";
 import { GAME_ID, LO_FILE_NAME, NOTIF_IMPORT_ACTIVITY } from "./common";
-import { DivineAborted, DivineExecMissing, DivinePakInvalid } from "./divineCore";
+import {
+  DivineAborted,
+  DivineExecMissing,
+  DivineMissingDotNet,
+  DivinePakInvalid,
+  resolveDivineExecutable,
+} from "./divineCore";
+import { abortDivineOperations } from "./divineWrapper";
 import { IModNode, IModSettings, IProps, IRootNode } from "./types";
 import {
   fileExists,
@@ -15,7 +22,6 @@ import {
   forceRefresh,
   getActivePlayerProfile,
   getDefaultModSettingsFormat,
-  getPlayerProfiles,
   logDebug,
   modsPath,
   profilesPath,
@@ -238,7 +244,7 @@ export async function importModSettingsFile(api: types.IExtensionApi): Promise<b
 
 export async function importModSettingsGame(api: types.IExtensionApi): Promise<boolean | void> {
   const bg3ProfileId = await getActivePlayerProfile(api);
-  const gameSettingsPath: string = path.join(profilesPath(), bg3ProfileId, "modsettings.lsx");
+  const gameSettingsPath: string = path.join(profilesPath(api), bg3ProfileId, "modsettings.lsx");
 
   logDebug("importModSettingsGame gameSettingsPath=", gameSettingsPath);
 
@@ -634,7 +640,7 @@ export async function exportToGame(
   silent: boolean = false,
 ): Promise<void> {
   const bg3ProfileId = await getActivePlayerProfile(api);
-  const settingsPath: string = path.join(profilesPath(), bg3ProfileId, "modsettings.lsx");
+  const settingsPath: string = path.join(profilesPath(api), bg3ProfileId, "modsettings.lsx");
 
   logDebug(`exportToGame ${settingsPath}`);
 
@@ -657,7 +663,7 @@ export async function deepRefresh(api: types.IExtensionApi): Promise<boolean | v
 
 async function readModSettings(api: types.IExtensionApi): Promise<IModSettings> {
   const bg3ProfileId = await getActivePlayerProfile(api);
-  const settingsPath: string = path.join(profilesPath(), bg3ProfileId, "modsettings.lsx");
+  const settingsPath: string = path.join(profilesPath(api), bg3ProfileId, "modsettings.lsx");
   const dat = await fs.readFileAsync(settingsPath, { encoding: "utf8" });
   logDebug("readModSettings", dat);
   return parseStringPromise(dat);
@@ -703,15 +709,15 @@ async function readPAKs(api: types.IExtensionApi): Promise<Array<ICacheEntry>> {
     return [];
   }
 
-  // Pre-check: if divine.exe is missing on disk (corrupted install, AV
-  // quarantine), bail with a single notification rather than fanning out one
-  // failed call per pak through the retry-on-error concurrency limiter.
+  // Check the installed filename without assuming Windows case-insensitive lookup.
   const stagingFolder = selectors.installPathForGame(state, GAME_ID);
-  const divineExePath = path.join(stagingFolder, lsLib.installationPath, "tools", "divine.exe");
   try {
-    await fs.statAsync(divineExePath);
+    const divineExePath = await resolveDivineExecutable(
+      path.join(stagingFolder, lsLib.installationPath, "tools"),
+    );
+    if (!(await fs.statAsync(divineExePath)).isFile()) throw new DivineExecMissing();
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+    if (err instanceof DivineExecMissing || (err as NodeJS.ErrnoException).code === "ENOENT") {
       api.showErrorNotification(
         "Divine executable is missing",
         "The installed copy of LSLib/Divine is corrupted - please " +
@@ -720,7 +726,6 @@ async function readPAKs(api: types.IExtensionApi): Promise<Array<ICacheEntry>> {
           "ensure it does not interfere with Vortex/LSLib file operations.",
         { id: "bg3-divine-missing", allowReport: false },
       );
-      return [];
     }
     throw err;
   }
@@ -754,7 +759,7 @@ async function readPAKs(api: types.IExtensionApi): Promise<Array<ICacheEntry>> {
                 ? state.persistent.mods[GAME_ID]?.[manifestEntry.source]
                 : undefined;
 
-            const pakPath = path.join(modsPath(), fileName);
+            const pakPath = path.join(modsPath(api), fileName);
             // `return await` (not bare `return`) so this try/catch sees the
             // promise rejection — without await, the catch is dead code.
             return await cache.getCacheEntry(api, pakPath, mod);
@@ -771,6 +776,20 @@ async function readPAKs(api: types.IExtensionApi): Promise<Array<ICacheEntry>> {
               log("warn", "pak is invalid", { fileName, details: err.details });
               return undefined;
             }
+            if (
+              err instanceof DivineMissingDotNet ||
+              err instanceof util.ProcessCanceled ||
+              err instanceof util.MissingInterpreter
+            ) {
+              abortDivineOperations();
+              if (!(err instanceof DivineMissingDotNet)) {
+                api.showErrorNotification("Unable to run BG3 tools in Proton", err, {
+                  id: "bg3-proton-tool-error",
+                  allowReport: false,
+                });
+              }
+              throw err;
+            }
             if (err instanceof DivineExecMissing) {
               const message =
                 "The installed copy of LSLib/Divine is corrupted - please " +
@@ -782,7 +801,8 @@ async function readPAKs(api: types.IExtensionApi): Promise<Array<ICacheEntry>> {
                 id: "bg3-divine-missing",
                 allowReport: false,
               });
-              return undefined;
+              abortDivineOperations();
+              throw err;
             }
             api.showErrorNotification(
               'Failed to read pak. Please make sure you are using the latest version of LSLib by using the "Re-install LSLib/Divine" toolbar button on the Mods page.',
@@ -798,29 +818,29 @@ async function readPAKs(api: types.IExtensionApi): Promise<Array<ICacheEntry>> {
         return Bluebird.resolve(func());
       });
     }),
-  );
-  api.dismissNotification("bg3-reading-paks-activity");
+  ).finally(() => api.dismissNotification("bg3-reading-paks-activity"));
 
   return res.filter((iter): iter is ICacheEntry => iter !== undefined);
 }
 
 async function readPAKList(api: types.IExtensionApi) {
+  const directory = modsPath(api);
   let paks: string[];
   try {
-    paks = (await fs.readdirAsync(modsPath())).filter(
+    paks = (await fs.readdirAsync(directory)).filter(
       (fileName) => path.extname(fileName).toLowerCase() === ".pak",
     );
   } catch (err) {
     if (err.code === "ENOENT") {
       try {
-        await fs.ensureDirWritableAsync(modsPath(), () => Promise.resolve());
+        await fs.ensureDirWritableAsync(directory, () => Promise.resolve());
       } catch (err) {
         // nop
       }
     } else {
       api.showErrorNotification("Failed to read mods directory", err, {
         id: "bg3-failed-read-mods",
-        message: modsPath(),
+        message: directory,
       });
     }
     paks = [];

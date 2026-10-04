@@ -36,7 +36,7 @@ jobs:
       VORTEX_TEST_WINE_MAJOR: ${{ matrix.runtime.version }}
     steps:
       - name: Install Wine test runtime
-        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates wine64 gcc-mingw-w64-x86-64
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates wine64 gcc-mingw-w64-x86-64 unzip
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
@@ -45,6 +45,8 @@ jobs:
         run: node scripts/verify-linux-batch.mjs
       - name: Verify Wine user folder redirections
         run: node scripts/verify-linux-user-folders.mjs
+      - name: Verify real Divine PAK operations
+        run: node scripts/verify-linux-divine.mjs
   linux-x64:
     runs-on: ubuntu-24.04
     timeout-minutes: 45

@@ -125,6 +125,7 @@ import { getReduxLog } from "../store/reduxLogger";
 import { copyFileAtomic, writeFileAtomic } from "./fsAtomic";
 import { getGameUserPath } from "./getGameUserPath";
 import getNormalizeFunc, { makeNormalizingDict } from "./getNormalizeFunc";
+import { getProtonToolCommand } from "./getProtonToolCommand";
 import getVortexPath from "./getVortexPath";
 import github from "./github";
 import type { TFunction } from "./i18n";
@@ -238,6 +239,7 @@ export {
   getDriveList,
   getGame,
   getGameUserPath,
+  getProtonToolCommand,
   getGames,
   getManifest,
   getModSource,
