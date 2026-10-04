@@ -32,7 +32,7 @@ export class DivineUnsupportedToolPath extends Error {
 
 export class DivineLaunchFailed extends Error {
   constructor(details: string) {
-    super(`Divine could not start in its Proton environment: ${details.trim()}`);
+    super(`Divine could not start: ${details.trim()}`);
     this.name = "DivineLaunchFailed";
   }
 }
