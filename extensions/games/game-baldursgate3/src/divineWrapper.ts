@@ -7,6 +7,7 @@ import { GAME_ID } from "./common";
 import {
   DEFAULT_TIMEOUT_MS,
   DivineAborted,
+  DivineLaunchFailed,
   DivineMissingDotNet,
   DivinePakInvalid,
   DivineUnsupportedToolPath,
@@ -83,7 +84,7 @@ async function runDivine(
       return await runDivineCore(exePath, action, divineOpts, runOpts);
     } catch (error) {
       if (signal.aborted) throw new DivineAborted();
-      if (error instanceof DivineUnsupportedToolPath) {
+      if (error instanceof DivineUnsupportedToolPath || error instanceof DivineLaunchFailed) {
         throw new util.ProcessCanceled(error.message);
       }
       throw error;

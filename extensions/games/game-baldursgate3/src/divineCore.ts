@@ -30,6 +30,13 @@ export class DivineUnsupportedToolPath extends Error {
   }
 }
 
+export class DivineLaunchFailed extends Error {
+  constructor(details: string) {
+    super(`Divine could not start in its Proton environment: ${details.trim()}`);
+    this.name = "DivineLaunchFailed";
+  }
+}
+
 export class DivineTimedOut extends Error {
   constructor() {
     super("Divine process timed out");
@@ -142,6 +149,10 @@ export function translateDivineError(
     )
   ) {
     return new DivineMissingDotNet();
+  }
+  const startupDiagnostic = [err.stderr, err.stdout].filter(Boolean).join("\n");
+  if (/Failed to (?:create|initialize) CoreCLR|Vortex BG3 launcher:/.test(startupDiagnostic)) {
+    return new DivineLaunchFailed(startupDiagnostic);
   }
   if (err.signal === "SIGTERM" && err.code !== "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
     return new DivineTimedOut();

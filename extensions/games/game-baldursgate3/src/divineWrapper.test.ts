@@ -132,13 +132,14 @@ describe.skipIf(process.platform !== "linux")("BG3 Proton wrapper", () => {
     );
   });
 
-  it("stops scanning when the Windows runtime rejects the tool location", async () => {
+  it.each([
+    "VORTEX_BG3_UNSUPPORTED_TOOL_PATH",
+    "Failed to create CoreCLR, HRESULT: 0x80070057",
+    "Vortex BG3 launcher: Find output hook failed (Windows error 2)",
+  ])("stops scanning when the Windows tool cannot start: %s", async (diagnostic) => {
     vi.mocked(util.getProtonToolCommand).mockResolvedValue({
       executable: process.execPath,
-      args: [
-        "-e",
-        "process.stderr.write('VORTEX_BG3_UNSUPPORTED_TOOL_PATH');process.exit(87)",
-      ],
+      args: ["-e", "process.stderr.write(process.argv[1]);process.exit(87)", "--", diagnostic],
       env: {},
     });
     await expect(
