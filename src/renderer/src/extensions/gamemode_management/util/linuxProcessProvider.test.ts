@@ -8,6 +8,7 @@ import * as path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { buildProtonCommand } from "../../../util/linux/protonCommand";
 import { LinuxProcessProvider } from "./linuxProcessProvider";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -268,6 +269,24 @@ describe.skipIf(process.platform !== "linux")("Linux procfs process identities",
     );
   });
 
+  it.each([true, false])(
+    "identifies Vortex's quoted batch launch (loader argv: %s)",
+    async (loader) => {
+      const script = await file("Tools '日本語'!/Sort Mods.CMD");
+      const command = buildProtonCommand("/Proton", script, [
+        "hello world",
+        "",
+        '{"key":"value with space"}',
+        "bang!literal",
+      ]);
+      await processFixture({
+        runtime: "wine64-preloader",
+        args: [...(loader ? ["wine64"] : []), ...command.args.slice(1)],
+      });
+      expect(await new LinuxProcessProvider(procRoot).list()).toMatchObject([{ path: script }]);
+    },
+  );
+
   it("resolves a batch tool relative to cmd.exe's working directory", async () => {
     const script = await file("Steam Games/Tools/Sort.bat");
     await processFixture({
@@ -294,6 +313,11 @@ describe.skipIf(process.platform !== "linux")("Linux procfs process identities",
     ["other.exe", "/c", "<script>"],
     ["cmd.exe", "/unknown", "/c", "<script>"],
     ["cmd.exe", "/s", "/c", "<script>"],
+    ["cmd.exe", "/v:on", "/c", "@", "<script>"],
+    ["cmd.exe", "/d", "/v:off", "/c", "@", "echo", "<script>"],
+    ["cmd.exe", "/d", "/v:off", "/c", "@", "<script>", "&&", "other.exe"],
+    ["cmd.exe", "/d", "/v:off", "/c", "@", "<script>", "%NEXT_COMMAND%"],
+    ["cmd.exe", "/d", "/v:off", "/c", "@", "<script>", '{"key":"a & echo other"}'],
     ["cmd.exe", "/c", "<script>", "&&", "other.exe"],
     ["cmd.exe", "/c", "<script>", "%NEXT_COMMAND%"],
     ["cmd.exe", "/c", '"<script>" && echo ready'],

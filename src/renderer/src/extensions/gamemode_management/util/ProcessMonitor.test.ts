@@ -311,9 +311,9 @@ it.skipIf(process.platform !== "linux")(
   },
 );
 
-it.skipIf(process.platform !== "linux")(
-  "detects a batch tool through cmd.exe, retains its PID and clears it when the command changes",
-  async () => {
+it.skipIf(process.platform !== "linux").each([false, true])(
+  "detects a batch tool, retains its PID and clears a changed command (quoted launch: %s)",
+  async (quoted) => {
     const root = await mkdtemp(path.join(tmpdir(), "vortex-batch-monitor-"));
     try {
       const tools = path.join(root, "Tools '日本語'");
@@ -332,7 +332,10 @@ it.skipIf(process.platform !== "linux")(
       await writeFile(path.join(directory, "stat"), `9401 (cmd.exe) ${fields.join(" ")}`);
       await writeFile(path.join(directory, "environ"), `WINEPREFIX=${path.join(root, "pfx")}\0`);
       const commandLine = path.join(directory, "cmdline");
-      await writeFile(commandLine, "cmd.exe\0/c\0G:\\SORT MODS.CMD\0--mode\0sort\0");
+      const command = quoted
+        ? ["cmd.exe", "/d", "/v:off", "/c", "@", "G:\\SORT MODS.CMD", "hello world", ""]
+        : ["cmd.exe", "/c", "G:\\SORT MODS.CMD", "--mode", "sort"];
+      await writeFile(commandLine, `${command.join("\0")}\0`);
       const tool = buildTool({ path: script });
       const state = buildState({ tools: { [tool.id]: tool } });
       const { monitor, store } = createMonitor(state, new LinuxProcessProvider(procRoot));

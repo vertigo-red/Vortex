@@ -100,17 +100,23 @@ function jarArgument(args: string[]): string | undefined {
 function batchArgument(args: string[]): string | undefined {
   if (path.win32.basename(args[0] ?? "").toLowerCase() !== "cmd.exe") return undefined;
   let index = 1;
-  while (["/d", "/q", "/a", "/u"].includes(args[index]?.toLowerCase())) index++;
+  while (["/d", "/q", "/a", "/u", "/v:off"].includes(args[index]?.toLowerCase())) index++;
   if (args[index]?.toLowerCase() !== "/c") return undefined;
+  const echoPrefix = args[index + 1] === "@";
+  const quotedData =
+    echoPrefix && args.slice(1, index).some((arg) => arg.toLowerCase() === "/v:off");
+  if (echoPrefix) index++;
   const script = args[index + 1];
   if (script === undefined || !/\.(?:bat|cmd)$/i.test(script) || script.startsWith("@")) {
     return undefined;
   }
   // cmd treats these as command-name delimiters unless quoted; do not guess its quote mode.
   if (/[,=;]/.test(script)) return undefined;
-  // Only the direct argv form used by buildProtonCommand is identifiable here.
+  // Only a separate script argument is identifiable here, including Vortex's echo prefix.
   // cmd's /k, /s, command strings, expansions and compound commands need other semantics.
-  if (args.slice(index + 1).some((arg) => /["%^!&|<>()\r\n]/.test(arg))) return undefined;
+  if (/["%^&|<>()\r\n]/.test(script) || (!quotedData && script.includes("!"))) return undefined;
+  const controls = quotedData ? /[%^&|<>()\r\n]/ : /["%^!&|<>()\r\n]/;
+  if (args.slice(index + 2).some((arg) => controls.test(arg))) return undefined;
   return script;
 }
 

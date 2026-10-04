@@ -154,7 +154,15 @@ describe("Proton invocation", () => {
   it("runs Windows batch files with cmd.exe", () => {
     expect(buildProtonCommand("/Proton", "/Games/start.CMD", ["one"])).toEqual({
       executable: "/Proton/proton",
-      args: ["run", "cmd.exe", "/c", "/Games/start.CMD", "one"],
+      args: ["run", "cmd.exe", "/d", "/v:off", "/c", "@", "/Games/start.CMD", "one"],
+    });
+  });
+  it.each(["bat", "CMD"])("preserves ordinary data for a spaced .%s tool path", (extension) => {
+    const script = `/Games/Tools '日本語'/Capture Args.${extension}`;
+    const args = ["hello world", "", '{"key":"value with space"}', "tail\\", "bang!literal"];
+    expect(buildProtonCommand("/Proton", script, args)).toEqual({
+      executable: "/Proton/proton",
+      args: ["run", "cmd.exe", "/d", "/v:off", "/c", "@", script, ...args],
     });
   });
   it("sets the game's identity and prefix without injecting overlay libraries", () => {

@@ -16,17 +16,32 @@ concurrency:
 
 jobs:
   wine-tools:
-    name: Wine CLI tool launches
+    name: Wine CLI tool launches (${{ matrix.runtime.name }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime:
+          - name: Wine 9
+            image: ubuntu:24.04
+            version: "9"
+          - name: Wine 10
+            image: debian:trixie-slim
+            version: "10"
+    container: ${{ matrix.runtime.image }}
+    timeout-minutes: 15
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      VORTEX_TEST_WINE_MAJOR: ${{ matrix.runtime.version }}
     steps:
+      - name: Install Wine test runtime
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates wine64 gcc-mingw-w64-x86-64
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: "24.20.0"
-      - name: Install Wine test runtime
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends wine64 gcc-mingw-w64-x86-64
-      - name: Probe Wine batch launches
+      - name: Verify Wine batch launches
         run: node scripts/verify-linux-batch.mjs
   linux-x64:
     runs-on: ubuntu-24.04

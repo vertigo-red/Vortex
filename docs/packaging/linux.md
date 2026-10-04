@@ -57,8 +57,18 @@ The configured compatibility tool is resolved by its `compatibilitytool.vdf`,
 including custom tools and Proton installations in secondary libraries. If Steam
 has no explicit mapping, the build recorded by the prefix is used. A missing
 selected build produces an error; Vortex does not replace it with an arbitrary
-newer build. Arguments are passed as separate process arguments, with shell
-execution disabled. Batch scripts are routed through `cmd.exe` inside Proton.
+newer build. Arguments are passed as separate process arguments, with host shell
+execution disabled. Batch scripts use `cmd.exe /d /v:off /c @ <script>` inside
+Proton. The echo prefix keeps cmd from stripping the script's first quote and the
+last argument's closing quote when both need quoting. AutoRun is disabled, and
+delayed expansion is disabled so `!` remains literal. The configured working
+directory and the script's exit status are retained.
+
+Batch parameters still follow Windows cmd syntax: `%NAME%` expands environment
+variables, and unquoted command-control characters are interpreted by cmd. A Unix
+path containing such expansions can change before the script is opened. Data with
+both embedded quotes and command-control characters needs escaping appropriate to
+the batch file; separate Linux argv elements alone cannot make it literal.
 
 Game and tool matching uses path boundaries and resolves existing Linux directory
 symlinks while preserving case. The game's discovery path selects its prefix, so
@@ -105,13 +115,24 @@ instead of `cmd.exe`. The script uses the same per-process drive mappings and
 working-directory resolution, so identical commands in separate prefixes remain
 distinct. The monitor keeps that tool's running status while the identified command
 process exists and revalidates its command on each poll. Only a separate script
-argument is accepted, with optional `/d`, `/q`, `/a` or `/u` switches before `/c`.
+argument is accepted, with optional `/d`, `/q`, `/a`, `/u` or `/v:off` switches before
+`/c`. Vortex's separate `@` echo prefix is also supported. With that prefix and
+`/v:off`, ordinary JSON quotes and literal exclamation marks in data do not prevent
+the script from being identified.
 Interactive `/k`, `/s`, `call`, command strings, expansions and command-control
 characters do not identify a batch script; later data arguments are never scanned
 for a candidate. Script names containing comma, equals or semicolon are also
 excluded rather than guessing cmd's quoting mode. This follows the command lifetime in
 [Wine's cmd implementation](https://github.com/wine-mirror/wine/blob/wine-10.0/programs/cmd/wcmdmain.c),
 and does not infer the lifetime of detached programs started by a batch file.
+
+The Linux CI runs the production command builder against real Wine 9 and Wine 10
+with a compiled Windows Unicode console receiver. Each runtime checks 28 batch
+launches across `.cmd` and `.BAT`: spaces, empty values, JSON, Unicode, quotes,
+backslashes, tabs, literal `!`, quoted control characters and percent expansion,
+with both successful and nonzero exit status. It checks the receiver's actual
+arguments and working directory. These are CLI integration checks; they do not
+exercise Steam's Proton wrapper or an installed game.
 
 Each procfs snapshot reads at most 16 processes concurrently and checks process
 start times before and after collecting identity data. Exited, zombie, malformed

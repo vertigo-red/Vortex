@@ -214,14 +214,4 @@ export function buildProtonEnvironment(
   };
 }
 
-export function buildProtonCommand(
-  protonPath: string,
-  exePath: string,
-  args: string[],
-): { executable: string; args: string[] } {
-  const script = [".bat", ".cmd"].includes(path.extname(exePath).toLowerCase());
-  return {
-    executable: path.join(protonPath, "proton"),
-    args: script ? ["run", "cmd.exe", "/c", exePath, ...args] : ["run", exePath, ...args],
-  };
-}
+export { buildProtonCommand } from "./protonCommand";
