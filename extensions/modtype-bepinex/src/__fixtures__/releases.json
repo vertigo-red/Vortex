@@ -1,0 +1,134 @@
+[
+  {
+    "tag_name": "v5.4.22",
+    "assets": [
+      {
+        "name": "BepInEx_unix_5.4.22.0.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.22/BepInEx_unix_5.4.22.0.zip"
+      },
+      {
+        "name": "BepInEx_x64_5.4.22.0.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.22/BepInEx_x64_5.4.22.0.zip"
+      },
+      {
+        "name": "BepInEx_x86_5.4.22.0.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.22/BepInEx_x86_5.4.22.0.zip"
+      }
+    ]
+  },
+  {
+    "tag_name": "v5.4.23.3",
+    "assets": [
+      {
+        "name": "BepInEx_linux_x64_5.4.23.3.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.3/BepInEx_linux_x64_5.4.23.3.zip"
+      },
+      {
+        "name": "BepInEx_linux_x86_5.4.23.3.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.3/BepInEx_linux_x86_5.4.23.3.zip"
+      },
+      {
+        "name": "BepInEx_macos_x64_5.4.23.3.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.3/BepInEx_macos_x64_5.4.23.3.zip"
+      },
+      {
+        "name": "BepInEx_Patcher_5.4.23.3.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.3/BepInEx_Patcher_5.4.23.3.zip"
+      },
+      {
+        "name": "BepInEx_win_x64_5.4.23.3.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.3/BepInEx_win_x64_5.4.23.3.zip"
+      },
+      {
+        "name": "BepInEx_win_x86_5.4.23.3.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.3/BepInEx_win_x86_5.4.23.3.zip"
+      }
+    ]
+  },
+  {
+    "tag_name": "v6.0.0-pre.1",
+    "assets": [
+      {
+        "name": "BepInEx_NetLauncher_6.0.0-pre.1.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.1/BepInEx_NetLauncher_6.0.0-pre.1.zip"
+      },
+      {
+        "name": "BepInEx_UnityIL2CPP_x64_6.0.0-pre.1.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.1/BepInEx_UnityIL2CPP_x64_6.0.0-pre.1.zip"
+      },
+      {
+        "name": "BepInEx_UnityIL2CPP_x86_6.0.0-pre.1.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.1/BepInEx_UnityIL2CPP_x86_6.0.0-pre.1.zip"
+      },
+      {
+        "name": "BepInEx_UnityMono_unix_6.0.0-pre.1.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.1/BepInEx_UnityMono_unix_6.0.0-pre.1.zip"
+      },
+      {
+        "name": "BepInEx_UnityMono_x64_6.0.0-pre.1.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.1/BepInEx_UnityMono_x64_6.0.0-pre.1.zip"
+      },
+      {
+        "name": "BepInEx_UnityMono_x86_6.0.0-pre.1.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.1/BepInEx_UnityMono_x86_6.0.0-pre.1.zip"
+      }
+    ]
+  },
+  {
+    "tag_name": "v6.0.0-pre.2",
+    "assets": [
+      {
+        "name": "BepInEx-NET.CoreCLR-net6.0-win-x64-6.0.0-pre.2.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-NET.CoreCLR-net6.0-win-x64-6.0.0-pre.2.zip"
+      },
+      {
+        "name": "BepInEx-NET.CoreCLR-netcoreapp3.1-win-x64-6.0.0-pre.2.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-NET.CoreCLR-netcoreapp3.1-win-x64-6.0.0-pre.2.zip"
+      },
+      {
+        "name": "BepInEx-NET.Framework-net40-win-x86-6.0.0-pre.2.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-NET.Framework-net40-win-x86-6.0.0-pre.2.zip"
+      },
+      {
+        "name": "BepInEx-NET.Framework-net452-win-x86-6.0.0-pre.2.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-NET.Framework-net452-win-x86-6.0.0-pre.2.zip"
+      },
+      {
+        "name": "BepInEx-Unity.IL2CPP-linux-x64-6.0.0-pre.2.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-Unity.IL2CPP-linux-x64-6.0.0-pre.2.zip"
+      },
+      {
+        "name": "BepInEx-Unity.IL2CPP-macos-x64-6.0.0-pre.2.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-Unity.IL2CPP-macos-x64-6.0.0-pre.2.zip"
+      },
+      {
+        "name": "BepInEx-Unity.IL2CPP-win-x64-6.0.0-pre.2.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-Unity.IL2CPP-win-x64-6.0.0-pre.2.zip"
+      },
+      {
+        "name": "BepInEx-Unity.IL2CPP-win-x86-6.0.0-pre.2.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-Unity.IL2CPP-win-x86-6.0.0-pre.2.zip"
+      },
+      {
+        "name": "BepInEx-Unity.Mono-linux-x64-6.0.0-pre.2.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-Unity.Mono-linux-x64-6.0.0-pre.2.zip"
+      },
+      {
+        "name": "BepInEx-Unity.Mono-linux-x86-6.0.0-pre.2.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-Unity.Mono-linux-x86-6.0.0-pre.2.zip"
+      },
+      {
+        "name": "BepInEx-Unity.Mono-macos-x64-6.0.0-pre.2.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-Unity.Mono-macos-x64-6.0.0-pre.2.zip"
+      },
+      {
+        "name": "BepInEx-Unity.Mono-win-x64-6.0.0-pre.2.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-Unity.Mono-win-x64-6.0.0-pre.2.zip"
+      },
+      {
+        "name": "BepInEx-Unity.Mono-win-x86-6.0.0-pre.2.zip",
+        "browser_download_url": "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-Unity.Mono-win-x86-6.0.0-pre.2.zip"
+      }
+    ]
+  }
+]

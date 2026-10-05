@@ -8,7 +8,8 @@ import * as _ from "lodash";
 import * as semver from "semver";
 
 import { raiseConsentDialog } from "./bepInExDownloader";
-import { resolveBixPackage } from "./common";
+import { resolveGamePlatform } from "./gameRuntime";
+import { resolveDownloadLink } from "./packageSelection";
 import { IBepInExGameConfig, IGithubRelease } from "./types";
 
 const GITHUB_URL = "https://api.github.com/repos/BepInEx/BepInEx";
@@ -157,7 +158,7 @@ export async function getLatestReleases(
             return false;
           }
           return (
-            !currentVersion || (version !== currentVersion && semver.satisfies(version, constraint))
+            (!currentVersion || version !== currentVersion) && semver.satisfies(version, constraint)
           );
         })
         .sort((lhs, rhs) =>
@@ -223,48 +224,15 @@ async function startDownload(
   );
 }
 
-async function resolveDownloadLink(gameConf: IBepInExGameConfig, currentReleases: any[]) {
-  const { rgx, version } = resolveBixPackage(gameConf);
-  let assetLink: string | undefined;
-  const matchingRelease = currentReleases.find((release) => {
-    // The slice removes the 'v' prefix
-    const tagVer = util.semverCoerce(release.tag_name.slice(1)).raw.replace(/-.*/gim, "");
-    // Take out the pre-release stuff - while resolving the download link, it's safe
-    //  to assume that the releases are checked from newest to oldest, thus the constraint
-    //  will be satisfied at the first match of major.minor.patch - which is the latest version
-    //  of this release.
-    const constraint = `${gameConf.bepinexCoercedVersion.replace(/-.*/gim, "")}`;
-    if (semver.gt(tagVer, constraint)) {
-      // You'd think that semver.satisfies would work here. It doesn't.
-      //  So we're resorting to filtering out the higher versions first (6.0.0, etc)
-      // if (!semver.satisfies(tagVer, constraint, { includePrerelease: true })) {
-      return false;
-    } else if (semver.gte(tagVer, constraint)) {
-      const matches = release.assets.filter((asset) => rgx.test(asset.name));
-      if (matches.length > 0) {
-        assetLink = matches[0].browser_download_url;
-        return true;
-      }
-    }
-  });
-  if (matchingRelease === undefined) {
-    return Promise.reject(new util.DataInvalid("Failed to find matching BepInEx archive"));
-  }
-  const downloadLink = assetLink || matchingRelease.assets[0].browser_download_url;
-  return downloadLink === undefined
-    ? Promise.reject(new util.DataInvalid("Failed to resolve browser download url"))
-    : Promise.resolve({
-        version: matchingRelease.tag_name.slice(1),
-        downloadLink,
-      });
-}
-
 export async function checkForUpdates(
   api: types.IExtensionApi,
   gameConf: IBepInExGameConfig,
   currentVersion: string,
 ): Promise<string> {
-  return getLatestReleases(currentVersion, `^${gameConf.bepinexVersion}`)
+  return getLatestReleases(
+    currentVersion,
+    "^" + semver.coerce(gameConf.bepinexVersion ?? "5.4.22").version,
+  )
     .then(async (currentReleases) => {
       if (currentReleases?.[0] === undefined) {
         // We failed to check for updates - that's unfortunate but shouldn't
@@ -272,7 +240,11 @@ export async function checkForUpdates(
         log("error", "Unable to update BepInEx", "Failed to find any releases");
         return Promise.resolve(currentVersion);
       }
-      const { version, downloadLink } = await resolveDownloadLink(gameConf, currentReleases);
+      const { version, downloadLink } = resolveDownloadLink(
+        gameConf,
+        currentReleases,
+        await resolveGamePlatform(api, gameConf),
+      );
       if (semver.valid(version) === null) {
         return Promise.resolve(currentVersion);
       } else {
@@ -307,9 +279,16 @@ export async function downloadFromGithub(
   api: types.IExtensionApi,
   gameConf: IBepInExGameConfig,
 ): Promise<void> {
-  return getLatestReleases(undefined, `^${gameConf.bepinexVersion}`)
+  return getLatestReleases(
+    undefined,
+    "^" + semver.coerce(gameConf.bepinexVersion ?? "5.4.22").version,
+  )
     .then(async (currentReleases) => {
-      const { version, downloadLink } = await resolveDownloadLink(gameConf, currentReleases);
+      const { version, downloadLink } = resolveDownloadLink(
+        gameConf,
+        currentReleases,
+        await resolveGamePlatform(api, gameConf),
+      );
       return downloadConsent(api, gameConf).then(() => startDownload(api, gameConf, downloadLink));
     })
     .catch((err) => {

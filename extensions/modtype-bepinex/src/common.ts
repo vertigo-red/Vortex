@@ -4,7 +4,7 @@ import { util } from "@nexusmods/vortex-api";
 import semver from "semver";
 
 import {
-  IBIXPackageResolver,
+  BepInExPlatform,
   IAvailableDownloads,
   IBepInExGameConfig,
   INexusDownloadInfoExt,
@@ -42,41 +42,25 @@ export const INJECTOR_FILES: string[] = [
 export const MODTYPE_BIX_INJECTOR = "bepinex-injector";
 
 const DEFAULT_VERSION = "5.4.22";
-const NEW_FILE_FORMAT_VERSION = "6.0.0";
 const GAME_SUPPORT: { [gameId: string]: IBepInExGameConfig } = {};
 export const getSupportMap = () => GAME_SUPPORT;
-export const resolveBixPackage = (gameConf: IBepInExGameConfig): IBIXPackageResolver => {
-  // Depending on the game config's github parameters this will generate a regexp
-  //  that will match the download link for the BepInEx package.
-  const { architecture, bepinexVersion, bepinexCoercedVersion, unityBuild } = gameConf;
-  const arch = architecture !== undefined ? architecture : "x64";
-  const version = bepinexCoercedVersion !== undefined ? bepinexCoercedVersion : DEFAULT_VERSION;
-  const platform = semver.gte(version.replace(/-.*$/gim, ""), "5.4.23")
-    ? process.platform === "win32"
-      ? "win_"
-      : "linux_"
-    : "";
-  const unity =
-    unityBuild !== undefined
-      ? semver.gte(version, NEW_FILE_FORMAT_VERSION)
-        ? `${unityBuild}_`
-        : ""
-      : semver.gte(version, NEW_FILE_FORMAT_VERSION)
-        ? "unitymono_"
-        : "";
-  const regex = `BepInEx_${platform}${unity}${arch}_${bepinexVersion}.*[.zip|.7z]`;
-  return {
-    rgx: new RegExp(regex, "i"),
-    version,
-    architecture: arch,
-    unityBuild,
-  };
-};
+export function getBepInExPath(gameRoot: string, gameConf: IBepInExGameConfig): string {
+  const relative = gameConf.installRelPath ?? "";
+  return path.join(
+    gameRoot,
+    process.platform === "linux" ? relative.replace(/\\/g, "/") : relative,
+  );
+}
+export { resolveBixPackage } from "./packageSelection";
 
 export const addGameSupport = (gameConf: IBepInExGameConfig) => {
   const isIL2CPP = gameConf.unityBuild === "unityil2cpp";
 
-  if (isIL2CPP && gameConf.bepinexVersion != null && semver.lt(gameConf.bepinexVersion, "6.0.0")) {
+  if (
+    isIL2CPP &&
+    gameConf.bepinexVersion != null &&
+    semver.lt(util.semverCoerce(gameConf.bepinexVersion).version, "6.0.0")
+  ) {
     throw new Error("IL2CPP builds require BepInEx 6.0.0 or above");
   }
 
@@ -174,7 +158,11 @@ const getLatestVersion = (arch: string): string => {
   return `${latestVersion}${arch}`;
 };
 
-export const getDownload = (gameConf: IBepInExGameConfig): INexusDownloadInfoExt => {
+export const getDownload = (
+  gameConf: IBepInExGameConfig,
+  targetPlatform: BepInExPlatform = "win32",
+): INexusDownloadInfoExt | undefined => {
+  if (targetPlatform !== "win32" || gameConf.architecture === "unix") return undefined;
   const arch = gameConf.architecture ?? "x64";
   const versionKey = `${gameConf.bepinexVersion}${arch}`;
   const download: INexusDownloadInfoExt =

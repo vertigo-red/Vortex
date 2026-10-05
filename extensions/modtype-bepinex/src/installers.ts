@@ -12,33 +12,29 @@ import {
   INJECTOR_FILES,
   MODTYPE_BIX_INJECTOR,
 } from "./common";
-import { IBepInExGameConfig, IDoorstopConfig, UnityDoorstopType } from "./types";
+import { IDoorstopConfig, UnityDoorstopType } from "./types";
 import { resolveBepInExConfiguration } from "./util";
+
+function archiveSegments(file: string): string[] {
+  return file.split(/[\\/]/);
+}
+
+function archiveName(file: string): string {
+  return archiveSegments(file).at(-1) ?? "";
+}
 
 function makeCopy(
   source: string,
-  gameConfig: IBepInExGameConfig,
   alternativeFileName?: string,
-  idx: number = -1,
+  idx: number = 0,
 ): types.IInstruction {
-  let filePath =
-    alternativeFileName !== undefined
-      ? source.replace(path.basename(source), alternativeFileName)
-      : source;
-
-  let destination =
-    gameConfig.installRelPath !== undefined
-      ? path.join(gameConfig.installRelPath, filePath)
-      : filePath;
-
-  const segments = source.split(path.sep);
-  if (idx && idx !== -1 && idx < segments.length) {
-    destination = segments.slice(idx).join(path.sep);
-  }
+  const segments = archiveSegments(source).slice(Math.max(0, idx));
+  if (alternativeFileName !== undefined) segments[segments.length - 1] = alternativeFileName;
   return {
     type: "copy",
     source,
-    destination,
+    // The mod type's deployment root already includes installRelPath.
+    destination: path.join(...segments),
   };
 }
 
@@ -72,7 +68,7 @@ export async function testSupportedBepInExInjector(
   }
 
   const filesMatched = files.filter((file) =>
-    INJECTOR_FILES.map((f) => f.toLowerCase()).includes(path.basename(file).toLowerCase()),
+    INJECTOR_FILES.map((f) => f.toLowerCase()).includes(archiveName(file).toLowerCase()),
   );
   return Promise.resolve({
     supported: filesMatched.length > MINIMUM_INJECTOR_MATCHES,
@@ -88,14 +84,17 @@ export async function installInjector(
   const gameConfig = getSupportMap()[gameId];
   const idx = (() => {
     const bixFile = files.find((file) => {
-      const segments = file.split(path.sep);
+      const segments = archiveSegments(file);
       return segments.includes("BepInEx");
     });
     if (!bixFile) {
       return -1;
     }
-    return bixFile.split(path.sep).indexOf("BepInEx");
+    return archiveSegments(bixFile).indexOf("BepInEx");
   })();
+  const rootFile = files.find((file) => archiveSegments(file).includes("BepInEx"));
+  const wrapper =
+    rootFile === undefined ? [] : archiveSegments(rootFile).slice(0, Math.max(0, idx));
   const doorStopConfig = gameConfig.doorstopConfig;
   const doorstopType: UnityDoorstopType =
     doorStopConfig?.doorstopType !== undefined ? doorStopConfig.doorstopType : "default";
@@ -134,13 +133,16 @@ export async function installInjector(
 
   const instructions: types.IInstruction[] = files.reduce(
     (accum, file) => {
-      if (!path.extname(file) || file.endsWith(path.sep)) {
+      if (
+        /[\\/]$/.test(file) ||
+        wrapper.some((segment, index) => archiveSegments(file)[index] !== segment)
+      ) {
         return accum;
       }
-      if (doorstopType !== "default" && path.basename(file).toLowerCase() === DOORSTOPPER_HOOK) {
+      if (doorstopType !== "default" && archiveName(file).toLowerCase() === DOORSTOPPER_HOOK) {
         switch (doorstopType) {
           case "unity3": {
-            accum.push(makeCopy(file, gameConfig, "version.dll", idx));
+            accum.push(makeCopy(file, "version.dll", idx));
             break;
           }
           case "none": {
@@ -148,7 +150,7 @@ export async function installInjector(
           }
         }
       } else {
-        accum.push(makeCopy(file, gameConfig, undefined, idx));
+        accum.push(makeCopy(file, undefined, idx));
       }
       return accum;
     },
@@ -171,7 +173,7 @@ export async function testSupportedRootMod(
     // We expect the root mod to have the same directory structure as BepInEx's
     //  root directory, which means that the very first segments should have a
     //  patchers, plugins or config directory.
-    const segments = file.split(path.sep);
+    const segments = archiveSegments(file);
     return ROOT_DIRS.includes(segments[0]);
   });
 
@@ -181,16 +183,15 @@ export async function testSupportedRootMod(
 export async function installRootMod(
   files: string[],
   destinationPath: string,
-  gameId: string,
+  _gameId: string,
 ): Promise<types.IInstallResult> {
-  const gameConfig = getSupportMap()[gameId];
   const modTypeInstruction: types.IInstruction = {
     type: "setmodtype",
     value: "bepinex-root",
   };
   const instructions: types.IInstruction[] = files
-    .filter((file) => !file.endsWith(path.sep))
-    .map((file) => makeCopy(file, gameConfig));
+    .filter((file) => !/[\\/]$/.test(file))
+    .map((file) => makeCopy(file));
   instructions.push(modTypeInstruction);
   return Promise.resolve({ instructions });
 }

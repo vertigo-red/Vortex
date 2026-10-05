@@ -4,7 +4,14 @@ import * as path from "path";
 import { actions, log, selectors, types, util } from "@nexusmods/vortex-api";
 
 import { ensureBepInExPack } from "./bepInExDownloader";
-import { addGameSupport, getDownload, getSupportMap, MODTYPE_BIX_INJECTOR } from "./common";
+import {
+  addGameSupport,
+  getDownload,
+  getBepInExPath,
+  getSupportMap,
+  MODTYPE_BIX_INJECTOR,
+} from "./common";
+import { prepareBepInExLaunch, resolveGamePlatform } from "./gameRuntime";
 import {
   installInjector,
   installRootMod,
@@ -98,7 +105,10 @@ async function onCheckModVersion(
       }
     }
   } else if (gameConf.forceGithubDownload !== true) {
-    const download = getDownload(gameConf);
+    const download = getDownload(gameConf, await resolveGamePlatform(api, gameConf));
+    if (download === undefined) {
+      return ensureBepInExPack(api, gameConf.gameId, false, true);
+    }
     if (injectorMod.attributes?.fileId !== +download.fileId) {
       return forceUpdate(download);
     }
@@ -108,13 +118,16 @@ async function onCheckModVersion(
 }
 
 function init(context: types.IExtensionContext) {
+  context.registerStartHook(200, "bepinex-proton-doorstop", (input) =>
+    prepareBepInExLaunch(context.api, input),
+  );
   const getPath = (game: types.IGame): string => {
     const state: types.IState = context.api.getState();
     const gameConf: IBepInExGameConfig = getSupportMap()[game.id];
     const discovery = state.settings.gameMode.discovered[game.id];
     if (gameConf !== undefined && discovery?.path !== undefined) {
       return gameConf.installRelPath !== undefined
-        ? path.join(discovery.path, gameConf.installRelPath)
+        ? getBepInExPath(discovery.path, gameConf)
         : discovery.path;
     } else {
       return undefined;

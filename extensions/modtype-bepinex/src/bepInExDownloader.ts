@@ -40,7 +40,9 @@ import { actions, fs, log, selectors, types, util } from "@nexusmods/vortex-api"
 import semver from "semver";
 
 import { getDownload, getSupportMap, MODTYPE_BIX_INJECTOR } from "./common";
+import { resolveGamePlatform } from "./gameRuntime";
 import { checkForUpdates, downloadFromGithub } from "./githubDownloader";
+import { normalizeBepInExVersion } from "./packageSelection";
 import { IBepInExGameConfig, INexusDownloadInfo } from "./types";
 
 function genDownloadProps(api: types.IExtensionApi, archiveName: string) {
@@ -189,7 +191,13 @@ function hasPinnedVersionInstalled(
   pinnedVersion: string,
 ): boolean {
   const target = extractSemver(pinnedVersion);
-  return injectorModIds.some((id) => extractSemver(mods[id]?.attributes?.version) === target);
+  const exact = pinnedVersion.includes("-") || /^\d+\.\d+\.\d+\.\d+$/.test(pinnedVersion);
+  return injectorModIds.some((id) =>
+    exact
+      ? normalizeBepInExVersion(mods[id]?.attributes?.version ?? "") ===
+        normalizeBepInExVersion(pinnedVersion)
+      : extractSemver(mods[id]?.attributes?.version) === target,
+  );
 }
 
 function getLatestInstalledVersion(
@@ -233,7 +241,8 @@ async function downloadDefaultOrFallback(
   gameConf: IBepInExGameConfig,
   force?: boolean,
 ): Promise<void> {
-  const defaultDownload = getDownload(gameConf);
+  const defaultDownload = getDownload(gameConf, await resolveGamePlatform(api, gameConf));
+  if (defaultDownload === undefined) return downloadFromGithub(api, gameConf);
   try {
     if (gameConf.bepinexVersion != null && gameConf.bepinexVersion !== defaultDownload.version) {
       // Pinned to a version we don't bundle for Nexus - go to Github instead.
@@ -275,7 +284,12 @@ export async function ensureBepInExPack(
   }
 
   // Github-update mode: just look for a newer release and exit.
-  if (gameConf.forceGithubDownload === true && isUpdate) {
+  if (
+    gameConf.customPackDownloader == null &&
+    isUpdate &&
+    (gameConf.forceGithubDownload === true ||
+      (await resolveGamePlatform(api, gameConf)) !== "win32")
+  ) {
     const latest = getLatestInstalledVersion(mods, injectorModIds);
     try {
       await checkForUpdates(api, gameConf, latest);

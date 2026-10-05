@@ -41,6 +41,7 @@ export interface IGithubRelease {
 
 export type BepInExArchitecture = "x86" | "x64" | "unix";
 export type BepInExUnityBuild = "unitymono" | "unityil2cpp";
+export type BepInExPlatform = "win32" | "linux" | "darwin";
 export interface IBIXPackageResolver {
   rgx: RegExp;
   version: string; // Semver
@@ -65,6 +66,9 @@ export interface IBepInExGameConfig {
 
   // The architecture of the game we're modding.
   architecture?: BepInExArchitecture;
+
+  // Override executable detection for launch scripts that wrap a different platform.
+  targetPlatform?: BepInExPlatform;
 
   // The unity build of the BepInEx package (mono or il2cpp).
   //  Please note that using il2cpp will force this extension to resolve

@@ -260,6 +260,34 @@ Divine process runner.
 These tests use a receiver for the Proton command shape, rather than an installed
 Steam Proton distribution or actual Dragon's Dogma/game-specific BMS scripts.
 
+BepInEx package selection uses the requested game's executable on Linux: MZ
+selects Windows packages for Proton, while ELF and shebang scripts select native
+Linux packages. The game extension still supplies x86/x64 architecture and
+Mono/IL2CPP backend; a script wrapping a Windows game can explicitly set
+targetPlatform. Unknown or missing executables fail before selecting a default
+package. Native games use GitHub because the bundled Nexus catalog contains
+Windows archives. Release matching covers the legacy Unix/Windows packages,
+5.4.23 platform names and both Unity naming schemes in BepInEx 6 prereleases.
+Explicit prerelease/four-component pins remain exact, and an absent matching
+asset does not fall back to another platform or architecture.
+
+Injector installation preserves extensionless Unix Doorstop libraries and script
+files, accepts both archive separator styles, strips a package wrapper and applies
+the mod type's installRelPath only once. When Vortex launches the discovered game
+through Proton and its local Doorstop DLL is deployed, a start hook adds
+WINEDLLOVERRIDES=winhttp=n,b (version=n,b for unity3) to that launch. Existing DLL
+overrides are retained, including an explicit override for the same DLL. The hook
+does not modify a prefix registry or Steam launch settings and skips other tools,
+native launches and removed loaders. Starting the game outside Vortex still needs
+the [BepInEx Proton configuration](https://docs.bepinex.dev/articles/advanced/proton_wine.html).
+Native Unix packages retain run_bepinex.sh; its game-specific configuration and
+Steam launch settings still need the
+[native BepInEx setup](https://docs.bepinex.dev/articles/user_guide/installation/index.html).
+Tests cover real temporary executable headers, symlinked discoveries, download
+routing, installer instructions, launch environments and asset metadata from the
+official 5.4.22, 5.4.23.3 and 6.0.0-pre.1/pre.2 releases. They do not start Unity
+or prove that BepInEx injects into an installed game.
+
 FNIS automation uses the discovered Skyrim/Enderal game's selected Proton build
 and initialized prefix. Its generated-data staging directory is mapped through
 that prefix's actual DOS drive links and passed as one literal `RedirectFiles`
