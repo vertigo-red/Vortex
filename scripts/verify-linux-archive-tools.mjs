@@ -182,10 +182,19 @@ child.on('exit', (code) => { process.exitCode = code ?? 93; });
     checks++;
     const listed = await arc.list(archive);
     assert.equal(listed.length, 2, `ARC list lost a record: ${JSON.stringify(listed)}`);
-    assert.ok(listed.includes("folder/file with space=two.tex"), JSON.stringify(listed));
     checks++;
     const original = await readFile(archive);
     await arc.extract(archive, output);
+    const extractedFiles = (await readdir(output, { recursive: true })).filter((name) =>
+      Object.keys(entries).some((originalName) => name.startsWith(originalName.slice(0, -4))),
+    );
+    console.log("ARC list/extracted filenames:", JSON.stringify({ listed, extractedFiles }));
+    assert.deepEqual(
+      [...listed].sort(),
+      [...extractedFiles].sort(),
+      "ARC listing must match extracted filenames",
+    );
+    assert.ok(listed.includes("folder/file with space=two.tex"), JSON.stringify(listed));
     for (const [name, content] of Object.entries(entries))
       assert.equal(await readFile(path.join(output, name), "utf8"), content);
     assert.deepEqual(await readFile(archive), original);
@@ -359,7 +368,11 @@ int wmain(int count, wchar_t **args) {
       });
       await run(server, ["-w"]);
     }
-    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    if (process.env.VORTEX_KEEP_ARCHIVE_FIXTURE === "1") {
+      console.error(`Archive fixture files retained at ${root}`);
+    } else {
+      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
     delete globalThis.__archiveFixtureAPI;
     delete globalThis.__archiveFixtureTools;
   }

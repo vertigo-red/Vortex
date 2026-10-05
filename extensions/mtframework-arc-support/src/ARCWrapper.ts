@@ -140,13 +140,13 @@ class ARCWrapper {
     cwd: string,
   ): globalThis.Promise<void> {
     const args: Array<string | { path: string }> = [
-      "-" + command,
       "-" + (options.game ?? "DD"),
       "-pc",
       "-texRE6",
       "-alwayscomp",
       "-v",
       (options.version ?? 7).toFixed(),
+      "-" + command,
       ...parameters,
     ];
     const tool = path.join(__dirname, "ARCtool.exe");

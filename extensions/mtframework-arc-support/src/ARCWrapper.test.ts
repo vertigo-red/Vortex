@@ -76,6 +76,9 @@ describe("ARC operations on Linux", () => {
       "last.tex",
     ]);
     expect(helpers.getProtonToolCommand.mock.calls[0][2]).toBe(discovery);
+    const args = helpers.executeToolProcess.mock.calls[0][1];
+    expect(args.indexOf("-DD")).toBeLessThan(args.indexOf("-l"));
+    expect(args.indexOf("-pc")).toBeLessThan(args.indexOf("-l"));
     expect(helpers.executeToolProcess.mock.calls[0][2].env.SELECTED_PREFIX).toBe("yes");
     expect(helpers.getVortexPath).toHaveBeenCalledWith("temp");
     expect(await readFile(archive, "utf8")).toBe("original archive");
