@@ -12,8 +12,8 @@ const exec = promisify(execFile);
 const master = "Base.esm";
 const plugin = "Мод 日本語 🎮.esp";
 
-// Minimal Skyrim SE TES4 records, with a MAST/DATA pair declaring the dependency.
-function pluginBytes(masters = []) {
+// Minimal Skyrim TES4 records, with a MAST/DATA pair declaring the dependency.
+function pluginBytes(masters = [], gameId = "skyrimse") {
   const hedr = Buffer.alloc(18);
   hedr.write("HEDR");
   hedr.writeUInt16LE(12, 4);
@@ -35,7 +35,7 @@ function pluginBytes(masters = []) {
   const header = Buffer.alloc(24);
   header.write("TES4");
   header.writeUInt32LE(body.length, 4);
-  header.writeUInt16LE(44, 20);
+  header.writeUInt16LE(gameId === "skyrim" ? 43 : 44, 20);
   return Buffer.concat([header, body]);
 }
 
@@ -52,7 +52,7 @@ async function waitForRemoval(endpoint) {
   throw new Error(`LOOT left its Unix socket behind: ${endpoint}`);
 }
 
-async function probe(packageRoot, gamePath, localPath) {
+async function probe(packageRoot, gamePath, localPath, gameId) {
   assert.ok(process.versions.electron, "Run the probe with the packaged Electron executable");
   const require = createRequire(import.meta.url);
   const { LootAsync } = require(path.join(packageRoot, "index.js"));
@@ -74,7 +74,7 @@ async function probe(packageRoot, gamePath, localPath) {
   };
   let loot;
   try {
-    loot = await LootAsync.create("skyrimse", gamePath, localPath, "en", () => {}, launch);
+    loot = await LootAsync.create(gameId, gamePath, localPath, "en", () => {}, launch);
     await loot.loadCurrentLoadOrderState();
     await loot.loadPlugins([plugin, master], false);
     assert.deepEqual((await loot.getPlugin(plugin)).masters, [master]);
@@ -98,7 +98,7 @@ async function probe(packageRoot, gamePath, localPath) {
     await waitForRemoval(activeEndpoint);
 
     // Closing the parent connection must release the native callback's worker too.
-    loot = await LootAsync.create("skyrimse", gamePath, localPath, "en", () => {}, launch);
+    loot = await LootAsync.create(gameId, gamePath, localPath, "en", () => {}, launch);
     const disconnected = once(workers.at(-1), "exit");
     loot.socket.destroy();
     assert.deepEqual(await disconnected, [1, null]);
@@ -106,7 +106,7 @@ async function probe(packageRoot, gamePath, localPath) {
 
     await assert.rejects(
       LootAsync.create(
-        "skyrimse",
+        gameId,
         gamePath,
         localPath,
         "en",
@@ -122,7 +122,7 @@ async function probe(packageRoot, gamePath, localPath) {
     );
     await waitForRemoval(endpoint);
     console.log(
-      "Relocated LOOT sorted dependent Unicode plugins through Electron IPC; workers and sockets closed",
+      `Relocated LOOT sorted ${gameId} dependent Unicode plugins through Electron IPC; workers and sockets closed`,
     );
   } finally {
     loot?.close();
@@ -139,18 +139,7 @@ async function verify(binary, resources) {
     const relocated = path.join(temporary, "package");
     const release = path.join(relocated, "build/Release");
     const runtime = path.join(temporary, "ipc");
-    const game = path.join(temporary, "Игра 🎮 with spaces");
-    const data = path.join(game, "Data");
-    const local = path.join(
-      temporary,
-      "compatdata/489830/pfx/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition",
-    );
-    await Promise.all([
-      mkdir(release, { recursive: true }),
-      mkdir(data, { recursive: true }),
-      mkdir(local, { recursive: true }),
-      mkdir(runtime, { mode: 0o700 }),
-    ]);
+    await Promise.all([mkdir(release, { recursive: true }), mkdir(runtime, { mode: 0o700 })]);
     for (const name of [
       "index.js",
       "async.js",
@@ -159,19 +148,32 @@ async function verify(binary, resources) {
     ]) {
       await copyFile(path.join(source, name), path.join(relocated, name));
     }
-    await Promise.all([
-      writeFile(path.join(data, master), pluginBytes()),
-      writeFile(path.join(data, plugin), pluginBytes([master])),
-    ]);
     const env = { ...process.env, ELECTRON_RUN_AS_NODE: "1", XDG_RUNTIME_DIR: runtime };
     delete env.LD_LIBRARY_PATH;
     delete env.LD_PRELOAD;
-    const { stdout } = await exec(
-      path.resolve(binary),
-      [import.meta.filename, "--probe", relocated, game, local],
-      { cwd: temporary, env, timeout: 90_000 },
-    );
-    console.log(stdout.trim());
+    for (const [gameId, appId, folder] of [
+      ["skyrimse", "489830", "Skyrim Special Edition"],
+      ["skyrim", "72850", "Skyrim"],
+    ]) {
+      const game = path.join(temporary, `Игра 🎮 with spaces ${gameId}`);
+      const data = path.join(game, "Data");
+      const local = path.join(
+        temporary,
+        `compatdata/${appId}/pfx/drive_c/users/steamuser/AppData/Local`,
+        folder,
+      );
+      await Promise.all([mkdir(data, { recursive: true }), mkdir(local, { recursive: true })]);
+      await Promise.all([
+        writeFile(path.join(data, master), pluginBytes([], gameId)),
+        writeFile(path.join(data, plugin), pluginBytes([master], gameId)),
+      ]);
+      const { stdout } = await exec(
+        path.resolve(binary),
+        [import.meta.filename, "--probe", relocated, game, local, gameId],
+        { cwd: temporary, env, timeout: 90_000 },
+      );
+      console.log(stdout.trim());
+    }
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }

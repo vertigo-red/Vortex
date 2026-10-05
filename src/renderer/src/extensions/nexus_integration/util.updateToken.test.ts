@@ -2,12 +2,13 @@ import { NexusError } from "@nexusmods/nexus-api";
 import jwt from "jsonwebtoken";
 import { describe, expect, vi } from "vitest";
 
-import { makeUserInfo } from "@/test-utils/builders";
+import { makeApiUserInfo, makeUserInfo } from "@/test-utils/builders";
 import type { IHarnessFixtures } from "@/test-utils/harnessTest";
 import { test } from "@/test-utils/harnessTest";
-import { ProcessCanceled } from "@/util/CustomErrors";
+import { ProcessCanceled, UserCanceled } from "@/util/CustomErrors";
 
-import { MEMBERSHIP_ROLE, updateToken } from "./util";
+import { clearOAuthCredentials, setOAuthCredentials } from "./actions/account";
+import { ensureLoggedIn, MEMBERSHIP_ROLE, onCancelLoginImpl, updateToken } from "./util";
 
 /**
  * An access token as the site issues it. Only the payload matters here: nothing verifies the
@@ -78,6 +79,60 @@ const storedCredentials = (harness: ReturnType<IHarnessFixtures["makeApi"]>) =>
  * in to the header and signed out to the user: no account menu, and no login button either.
  */
 describe("updateToken", () => {
+  test("resumes all waiting installs after OAuth account validation", async ({ makeApi }) => {
+    const harness = makeApi({ userInfo: undefined });
+    harness.api.store.dispatch(clearOAuthCredentials(null));
+    const resumed = vi.fn();
+    const waiting = [ensureLoggedIn(harness.api), ensureLoggedIn(harness.api)].map((login) =>
+      login.then(() => resumed(harness.getState().persistent["nexus"].userInfo)),
+    );
+    const current = credentials();
+    harness.api.store.dispatch(
+      setOAuthCredentials(current.token, current.refreshToken, current.fingerprint),
+    );
+    const nexus = {
+      setTokenProvider: vi.fn().mockResolvedValue(undefined),
+      getUserInfo: vi.fn().mockResolvedValue(makeApiUserInfo()),
+    };
+
+    expect(await updateToken(harness.api, nexus as never, current)).toBe(true);
+    await vi.waitFor(() => expect(resumed).toHaveBeenCalledTimes(2));
+    await Promise.all(waiting);
+    expect(resumed).toHaveBeenCalledWith(makeUserInfo());
+    expect(harness.api.events.listenerCount("did-login")).toBe(0);
+  });
+
+  test("rejects a waiting install and removes its listener when login is refused", async ({
+    makeApi,
+  }) => {
+    const harness = makeApi({ userInfo: undefined });
+    harness.api.store.dispatch(clearOAuthCredentials(null));
+    const waiting = ensureLoggedIn(harness.api).catch((err) => err);
+    const current = credentials();
+    harness.api.store.dispatch(
+      setOAuthCredentials(current.token, current.refreshToken, current.fingerprint),
+    );
+    const error = refused(401);
+    const { nexus } = makeNexus(error);
+
+    expect(await updateToken(harness.api, nexus, current)).toBe(false);
+    expect(await waiting).toBe(error);
+    expect(harness.api.events.listenerCount("did-login")).toBe(0);
+  });
+
+  test("cancels a waiting install and removes its listener when login is dismissed", async ({
+    makeApi,
+  }) => {
+    const harness = makeApi({ userInfo: undefined });
+    harness.api.store.dispatch(clearOAuthCredentials(null));
+    const waiting = ensureLoggedIn(harness.api).catch((err) => err);
+
+    onCancelLoginImpl(harness.api);
+
+    expect(await waiting).toBeInstanceOf(UserCanceled);
+    expect(harness.api.events.listenerCount("did-login")).toBe(0);
+  });
+
   describe("when the site refuses the login", () => {
     test.for([401, 403])("clears the account on %i", async (statusCode, { makeApi }) => {
       const harness = makeApi({ userInfo: makeUserInfo({ name: "Ada" }) });

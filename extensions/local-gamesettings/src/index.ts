@@ -21,8 +21,8 @@ function copyGameSettings(
   copyType: string,
 ): PromiseBB<void> {
   return PromiseBB.map(files, (gameSetting) => {
-    let source = path.join(sourcePath, gameSetting.name);
-    let destination = path.join(destinationPath, path.basename(gameSetting.name));
+    let source = util.resolveWindowsGamePath(sourcePath, gameSetting.name);
+    let destination = util.resolveWindowsGamePath(destinationPath, path.basename(gameSetting.name));
     const destinationOrig = destination;
 
     if (copyType.startsWith("Glo")) {
@@ -30,6 +30,11 @@ function copyGameSettings(
     } else if (copyType.endsWith("Glo")) {
       destination += ".base";
     }
+    source = util.resolveWindowsGamePath(path.dirname(source), path.basename(source));
+    destination = util.resolveWindowsGamePath(
+      path.dirname(destination),
+      path.basename(destination),
+    );
 
     log("debug", "copying profile inis", { source, destination });
 

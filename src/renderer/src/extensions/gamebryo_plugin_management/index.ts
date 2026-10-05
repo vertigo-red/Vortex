@@ -83,6 +83,7 @@ import PluginHistory from "./util/PluginHistory";
 import { makeSetPluginLight } from "./util/pluginLight";
 import PluginPersistor from "./util/PluginPersistor";
 import { copyIgnoringMissing, swapUserlistForProfile, userlistPaths } from "./util/profileUserlist";
+import { applySettingsPrefix, registerSettingsPrefixActions } from "./util/settingsPrefix";
 import { pluginLink, showPluginCallbacks } from "./util/showPlugin";
 import { SpanAttribute } from "./util/spanAttributes";
 import { makeUpdatePluginList } from "./util/updatePluginList";
@@ -1168,6 +1169,24 @@ function init(context: IExtensionContextExt) {
   });
 
   register(context, setPluginLight);
+
+  registerSettingsPrefixActions(
+    context,
+    (gameId, prefix) =>
+      applySettingsPrefix(context.api, pluginSync, () => loot.wait(), gameId, prefix),
+    () =>
+      !deployWatcher.isDeploying() &&
+      ["mods", "installing_dependencies", "plugins"].every(
+        (activity) =>
+          (
+            getSafe(
+              context.api.getState(),
+              ["session", "base", "activity", activity],
+              [],
+            ) as string[]
+          ).length === 0,
+      ),
+  );
 
   context.registerHistoryStack("plugins", history);
 

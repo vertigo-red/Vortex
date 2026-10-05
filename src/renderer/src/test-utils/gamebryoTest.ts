@@ -10,6 +10,7 @@ import { REDUCER_BINDINGS } from "../extensions/gamebryo_plugin_management/reduc
 import type { IPluginsLoot } from "../extensions/gamebryo_plugin_management/types/IPlugins";
 import type { IStateWithGamebryo } from "../extensions/gamebryo_plugin_management/types/IStateWithGamebryo";
 import toPluginId from "../extensions/gamebryo_plugin_management/util/toPluginId";
+import { settingsReducer as gameModeSettings } from "../extensions/gamemode_management/reducers/settings/settings";
 import { transactionsReducer } from "../extensions/mod_management/reducers/transactions";
 import { sessionReducer } from "../reducers/session";
 import type { IExtensionApi } from "../types/IExtensionContext";
@@ -28,6 +29,7 @@ const asGamebryo = (state: IState): IStateWithGamebryo => state as IStateWithGam
 
 // core slices the extension's handlers read but does not own
 const CORE_BINDINGS: IHarnessReducerBinding[] = [
+  { path: ["settings", "gameMode"], reducer: gameModeSettings },
   { path: ["persistent", "transactions"], reducer: transactionsReducer },
   { path: ["session", "base"], reducer: sessionReducer },
 ];

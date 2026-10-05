@@ -33,14 +33,22 @@ describe.skipIf(process.platform !== "linux")("game folder actions", () => {
   it("opens Documents and Local AppData from the discovered game's prefix", () => {
     expect(settingsPath(game)).toBe("/prefix/redirected/documents/My Games/Skyrim Special Edition");
     expect(appDataPath(game)).toBe("/prefix/redirected/localAppData/Skyrim Special Edition");
-    expect(util.getGameUserPath).toHaveBeenCalledWith("documents", {
-      path: "/Secondary Steam/Game",
-      store: "steam",
-    });
-    expect(util.getGameUserPath).toHaveBeenCalledWith("localAppData", {
-      path: "/Secondary Steam/Game",
-      store: "steam",
-    });
+    expect(util.getGameUserPath).toHaveBeenCalledWith(
+      "documents",
+      {
+        path: "/Secondary Steam/Game",
+        store: "steam",
+      },
+      true,
+    );
+    expect(util.getGameUserPath).toHaveBeenCalledWith(
+      "localAppData",
+      {
+        path: "/Secondary Steam/Game",
+        store: "steam",
+      },
+      true,
+    );
     expect(util.getVortexPath).not.toHaveBeenCalled();
   });
 
@@ -49,19 +57,27 @@ describe.skipIf(process.platform !== "linux")("game folder actions", () => {
     state.settings.gameMode.discovered.skyrimse.path = "/Another library/Game";
     vi.mocked(util.getGameUserPath).mockReturnValue("/new/redirect");
     expect(settingsPath(game)).toBe("/new/redirect/My Games/Skyrim Special Edition");
-    expect(util.getGameUserPath).toHaveBeenLastCalledWith("documents", {
-      path: "/Another library/Game",
-      store: "steam",
-    });
+    expect(util.getGameUserPath).toHaveBeenLastCalledWith(
+      "documents",
+      {
+        path: "/Another library/Game",
+        store: "steam",
+      },
+      true,
+    );
   });
 
   it("requires a prefix even when a Windows store discovery would otherwise fall back to host folders", () => {
     state.settings.gameMode.discovered.skyrimse.store = "gog";
     settingsPath(game);
-    expect(util.getGameUserPath).toHaveBeenLastCalledWith("documents", {
-      path: "/Secondary Steam/Game",
-      store: "steam",
-    });
+    expect(util.getGameUserPath).toHaveBeenLastCalledWith(
+      "documents",
+      {
+        path: "/Secondary Steam/Game",
+        store: "gog",
+      },
+      true,
+    );
   });
 
   it("does not resolve user folders while rendering action visibility", () => {
@@ -75,10 +91,28 @@ describe.skipIf(process.platform !== "linux")("game folder actions", () => {
     expect(() => appDataPath(game)).toThrow("Invalid registry path");
   });
 
+  it("preserves an explicit non-Steam settings prefix", () => {
+    state.settings.gameMode.discovered.skyrimse = {
+      path: "/Games/Skyrim",
+      store: "gog",
+      modSettingsPrefix: "/Custom Wine Prefix",
+    };
+    settingsPath(game);
+    expect(util.getGameUserPath).toHaveBeenLastCalledWith(
+      "documents",
+      {
+        path: "/Games/Skyrim",
+        store: "gog",
+        modSettingsPrefix: "/Custom Wine Prefix",
+      },
+      true,
+    );
+  });
+
   it("rejects unavailable discovery without opening a host directory", () => {
     delete state.settings.gameMode.discovered.skyrimse;
-    expect(() => settingsPath(game)).toThrow("Discover the game's Steam installation");
-    expect(() => appDataPath(game)).toThrow("Discover the game's Steam installation");
+    expect(() => settingsPath(game)).toThrow("Discover the game's installation");
+    expect(() => appDataPath(game)).toThrow("Discover the game's installation");
     expect(util.getGameUserPath).not.toHaveBeenCalled();
     expect(util.getVortexPath).not.toHaveBeenCalled();
   });

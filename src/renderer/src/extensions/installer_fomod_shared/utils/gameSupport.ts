@@ -2,12 +2,16 @@ import * as path from "path";
 
 import type { IExtensionApi } from "../../../types/IExtensionContext";
 import type { IGame } from "../../../types/IGame";
-import type { IDiscoveryResult, IState } from "../../../types/IState";
-import getVortexPath from "../../../util/getVortexPath";
+import type { IDiscoveryResult } from "../../../types/IState";
+import { resolveWindowsGamePath } from "../../../util/gamePaths";
+import { getGameUserPath } from "../../../util/getGameUserPath";
 import { makeOverlayableDictionary } from "../../../util/util";
 
-function bethIni(gamePath: string, iniName: string) {
-  return path.join(getVortexPath("documents"), "My Games", gamePath, iniName + ".ini");
+function bethIni(gamePath: string, iniName: string, discovery: IDiscoveryResult) {
+  return resolveWindowsGamePath(
+    getGameUserPath("documents", discovery, true),
+    path.join("My Games", gamePath, iniName + ".ini"),
+  );
 }
 
 function toWordExp(input: string): string {
@@ -280,7 +284,7 @@ function stopPatterns(gameMode: string) {
 }
 
 interface IGameSupport {
-  iniPath?: () => string;
+  iniPath?: (discovery: IDiscoveryResult) => string;
   stopPatterns: string[];
   pluginPath?: string;
   nativePlugins?: string[];
@@ -292,7 +296,7 @@ const gameSupport = makeOverlayableDictionary<string, IGameSupport>(
       stopPatterns: stopPatterns("dragonsdogma"),
     },
     fallout4: {
-      iniPath: () => bethIni("Fallout4", "Fallout4"),
+      iniPath: (discovery) => bethIni("Fallout4", "Fallout4", discovery),
       stopPatterns: stopPatterns("fallout4"),
       pluginPath: "Data",
       nativePlugins: [
@@ -329,7 +333,7 @@ const gameSupport = makeOverlayableDictionary<string, IGameSupport>(
       ],
     },
     fallout4vr: {
-      iniPath: () => bethIni("Fallout4VR", "Fallout4Custom"),
+      iniPath: (discovery) => bethIni("Fallout4VR", "Fallout4Custom", discovery),
       stopPatterns: stopPatterns("fallout4"),
       pluginPath: "Data",
       nativePlugins: [
@@ -344,7 +348,7 @@ const gameSupport = makeOverlayableDictionary<string, IGameSupport>(
       ],
     },
     fallout3: {
-      iniPath: () => bethIni("Fallout3", "Fallout3"),
+      iniPath: (discovery) => bethIni("Fallout3", "Fallout3", discovery),
       stopPatterns: stopPatterns("fallout3"),
       pluginPath: "Data",
       nativePlugins: [
@@ -357,19 +361,20 @@ const gameSupport = makeOverlayableDictionary<string, IGameSupport>(
       ],
     },
     falloutnv: {
-      iniPath: () => bethIni("FalloutNV", "Fallout"),
+      iniPath: (discovery) => bethIni("FalloutNV", "Fallout", discovery),
       stopPatterns: stopPatterns("falloutnv"),
       pluginPath: "Data",
       nativePlugins: ["falloutnv.esm"],
     },
     morrowind: {
-      iniPath: () => bethIni("Morrowind", "Morrowind"),
+      iniPath: (discovery) =>
+        discovery?.path === undefined ? "" : path.join(discovery.path, "Morrowind.ini"),
       stopPatterns: stopPatterns("morrowind"),
       pluginPath: "Data",
       nativePlugins: ["morrowind.esm"],
     },
     oblivion: {
-      iniPath: () => bethIni("Oblivion", "Oblivion"),
+      iniPath: (discovery) => bethIni("Oblivion", "Oblivion", discovery),
       stopPatterns: stopPatterns("oblivion"),
       pluginPath: "Data",
       nativePlugins: ["oblivion.esm"],
@@ -380,25 +385,25 @@ const gameSupport = makeOverlayableDictionary<string, IGameSupport>(
       nativePlugins: ["nehrim.esm"],
     },
     skyrim: {
-      iniPath: () => bethIni("Skyrim", "Skyrim"),
+      iniPath: (discovery) => bethIni("Skyrim", "Skyrim", discovery),
       stopPatterns: stopPatterns("skyrim"),
       pluginPath: "Data",
       nativePlugins: ["skyrim.esm", "update.esm"],
     },
     enderal: {
-      iniPath: () => bethIni("Enderal", "Enderal"),
+      iniPath: (discovery) => bethIni("Enderal", "Enderal", discovery),
       stopPatterns: stopPatterns("skyrim"),
       pluginPath: "Data",
       nativePlugins: ["skyrim.esm", "update.esm"],
     },
     enderalspecialedition: {
-      iniPath: () => bethIni("Enderal Special Edition", "Enderal"),
+      iniPath: (discovery) => bethIni("Enderal Special Edition", "Enderal", discovery),
       stopPatterns: stopPatterns("skyrimse"),
       pluginPath: "Data",
       nativePlugins: [],
     },
     skyrimse: {
-      iniPath: () => bethIni("Skyrim Special Edition", "Skyrim"),
+      iniPath: (discovery) => bethIni("Skyrim Special Edition", "Skyrim", discovery),
       stopPatterns: stopPatterns("skyrimse"),
       pluginPath: "Data",
       nativePlugins: [
@@ -410,7 +415,7 @@ const gameSupport = makeOverlayableDictionary<string, IGameSupport>(
       ],
     },
     skyrimvr: {
-      iniPath: () => bethIni("Skyrim VR", "Skyrim"),
+      iniPath: (discovery) => bethIni("Skyrim VR", "Skyrim", discovery),
       stopPatterns: stopPatterns("skyrimse"),
       pluginPath: "Data",
       nativePlugins: [
@@ -472,25 +477,25 @@ const gameSupport = makeOverlayableDictionary<string, IGameSupport>(
   {
     gog: {
       skyrimse: {
-        iniPath: () => bethIni("Skyrim Special Edition GOG", "Skyrim"),
+        iniPath: (discovery) => bethIni("Skyrim Special Edition GOG", "Skyrim", discovery),
       },
     },
     epic: {
       skyrimse: {
-        iniPath: () => bethIni("Skyrim Special Edition EPIC", "Skyrim"),
+        iniPath: (discovery) => bethIni("Skyrim Special Edition EPIC", "Skyrim", discovery),
       },
     },
     xbox: {
       skyrimse: {
-        iniPath: () => bethIni("Skyrim Special Edition MS", "Skyrim"),
+        iniPath: (discovery) => bethIni("Skyrim Special Edition MS", "Skyrim", discovery),
       },
       fallout4: {
-        iniPath: () => bethIni("Fallout4 MS", "Fallout4"),
+        iniPath: (discovery) => bethIni("Fallout4 MS", "Fallout4", discovery),
       },
     },
     enderalseOverlay: {
       enderalspecialedition: {
-        iniPath: () => bethIni("Skyrim Special Edition", "Skyrim"),
+        iniPath: (discovery) => bethIni("Skyrim Special Edition", "Skyrim", discovery),
       },
     },
   },
@@ -510,17 +515,13 @@ const gameSupport = makeOverlayableDictionary<string, IGameSupport>(
 
 let discoveryForGame: (gameId: string) => IDiscoveryResult | undefined = () => undefined;
 
-type selectors = {
-  discoveryByGame: (state: IState, gameId: string) => IDiscoveryResult | undefined;
-};
 export function initGameSupport(api: IExtensionApi) {
-  // Lazy import to avoid circular dependency during module loading
-  const { discoveryByGame }: selectors = require("../../gamemode_management/selectors");
-  discoveryForGame = (gameId: string) => discoveryByGame(api.getState(), gameId);
+  // Read at call time without importing the game-management module back into installers.
+  discoveryForGame = (gameId: string) => api.getState().settings.gameMode.discovered[gameId];
 }
 
 export function getIniFilePath(gameMode: string): string {
-  return gameSupport.get(gameMode, "iniPath")?.() ?? "";
+  return gameSupport.get(gameMode, "iniPath")?.(discoveryForGame(gameMode)) ?? "";
 }
 
 export function getStopPatterns(gameMode: string, game: IGame): string[] {

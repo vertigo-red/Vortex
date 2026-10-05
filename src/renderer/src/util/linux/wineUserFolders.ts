@@ -58,13 +58,13 @@ function registryString(filename: string, name: string): string | undefined {
   return undefined;
 }
 
-function expandFolder(value: string): string {
+function expandFolder(value: string, userName: string): string {
   // SHGetFolderPath expands a leading variable even for REG_SZ. Wine's standard
   // USERPROFILE/SystemDrive handling leaves any percent text in the suffix literal.
   if (!value.startsWith("%")) return value;
   const variable = /^%([^%]+)%/.exec(value)?.[1];
   const variables: Readonly<Record<string, string>> = {
-    userprofile: "C:\\users\\steamuser",
+    userprofile: `C:\\users\\${userName}`,
     systemdrive: "C:",
   };
   const key = variable?.toLowerCase();
@@ -105,11 +105,12 @@ function folderPath(prefix: string, value: string): string {
 export function getWineUserFolder(
   prefix: string,
   id: "documents" | "localAppData",
+  userName: string = "steamuser",
 ): string | undefined {
   const name = id === "documents" ? "Personal" : "Local AppData";
   // Shell Folders is only Wine's expanded cache; User Shell Folders is authoritative.
   const entry =
     registryString(path.join(prefix, "user.reg"), name) ??
     registryString(path.join(prefix, "system.reg"), name);
-  return entry === undefined ? undefined : folderPath(prefix, expandFolder(entry));
+  return entry === undefined ? undefined : folderPath(prefix, expandFolder(entry, userName));
 }

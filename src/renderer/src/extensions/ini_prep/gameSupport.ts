@@ -2,6 +2,7 @@ import * as path from "path";
 
 import format from "string-template";
 
+import { resolveWindowsGamePath } from "../../util/gamePaths";
 import { getGameUserPath } from "../../util/getGameUserPath";
 import { makeOverlayableDictionary } from "../../util/util";
 import type { IDiscoveryResult } from "../gamemode_management/types/IDiscoveryResult";
@@ -187,11 +188,14 @@ export function iniFiles(gameMode: string, discovery: IDiscoveryResult) {
 
   const files = gameSupport.get(gameMode, "iniFiles", store) ?? [];
   if (files.length === 0) return [];
-  const mygames = files.some((filePath) => filePath.includes("{mygames}"))
-    ? path.join(getGameUserPath("documents", discovery), "My Games")
+  const documents = files.some((filePath) => filePath.includes("{mygames}"))
+    ? getGameUserPath("documents", discovery, true)
     : undefined;
-
-  return files.map((filePath) => format(filePath, { mygames, game: discovery.path }));
+  return files.map((filePath) =>
+    filePath.includes("{mygames}")
+      ? resolveWindowsGamePath(documents, format(filePath, { mygames: "My Games" }))
+      : format(filePath, { game: discovery.path }),
+  );
 }
 
 export function iniFormat(gameMode: string) {

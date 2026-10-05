@@ -124,6 +124,7 @@ import ReduxProp from "../ReduxProp";
 import { getReduxLog } from "../store/reduxLogger";
 import { executeToolProcess } from "./executeToolProcess";
 import { copyFileAtomic, writeFileAtomic } from "./fsAtomic";
+import { resolveWindowsGamePath } from "./gamePaths";
 import { getGameUserPath } from "./getGameUserPath";
 import getNormalizeFunc, { makeNormalizingDict } from "./getNormalizeFunc";
 import { getProtonToolCommand } from "./getProtonToolCommand";
@@ -240,6 +241,7 @@ export {
   getDriveList,
   getGame,
   getGameUserPath,
+  resolveWindowsGamePath,
   getProtonToolCommand,
   executeToolProcess,
   getGames,

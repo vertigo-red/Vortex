@@ -3,6 +3,7 @@ import * as path from "path";
 import type { IExtensionDownloadInfo } from "../../../types/extensions";
 import type { IGame } from "../../../types/IGame";
 import type { IGameStore } from "../../../types/IGameStore";
+import { resolveWindowsGamePath } from "../../../util/gamePaths";
 import local from "../../../util/local";
 import { log } from "../../../util/log";
 import type { IGameStub } from "../GameModeManager";
@@ -30,6 +31,15 @@ const gameExHandler = {
         }
         if (!path.isAbsolute(defaultPath)) {
           defaultPath = path.resolve(gamePath, defaultPath);
+        }
+        if (
+          process.platform === "linux" &&
+          target.executable(gamePath)?.toLowerCase().endsWith(".exe")
+        ) {
+          defaultPath = resolveWindowsGamePath(
+            path.dirname(defaultPath),
+            path.basename(defaultPath),
+          );
         }
         return {
           ...extTypes,

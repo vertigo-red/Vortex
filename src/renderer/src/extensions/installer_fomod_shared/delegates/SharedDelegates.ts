@@ -1,9 +1,24 @@
+import exeVersion from "exe-version";
+
 import type { IExtensionApi } from "../../../types/IExtensionContext";
 import type { IState } from "../../../types/IState";
 import { getApplication } from "../../../util/application";
+import { resolveWindowsGamePath } from "../../../util/gamePaths";
 import { discoveryByGame } from "../../gamemode_management/selectors";
 import { getGame } from "../../gamemode_management/util/getGame";
 import { hasLoadOrder, hasSessionPlugins } from "../utils/guards";
+
+const extenderExecutables: Record<string, Record<string, string>> = {
+  oblivion: { obse: "obse_loader.exe" },
+  skyrim: { skse: "skse_loader.exe" },
+  skyrimse: { skse: "skse64_loader.exe", skse64: "skse64_loader.exe" },
+  skyrimvr: { skse: "sksevr_loader.exe", sksevr: "sksevr_loader.exe" },
+  fallout3: { fose: "fose_loader.exe" },
+  falloutnv: { nvse: "nvse_loader.exe" },
+  fallout4: { f4se: "f4se_loader.exe" },
+  fallout4vr: { f4se: "f4sevr_loader.exe" },
+  starfield: { sfse: "sfse_loader.exe" },
+};
 
 /**
  * Core delegates for FOMOD installer IPC communication
@@ -18,6 +33,8 @@ export class SharedDelegates {
 
   private mApi: IExtensionApi;
   private mGameVersion: string | null = null;
+  private mGameId: string;
+  private mGamePath: string | undefined;
 
   private constructor(api: IExtensionApi) {
     this.mApi = api;
@@ -26,6 +43,8 @@ export class SharedDelegates {
   private initialize = async (gameId: string): Promise<void> => {
     const state = this.mApi.getState();
     const discovery = discoveryByGame(state, gameId);
+    this.mGameId = gameId;
+    this.mGamePath = discovery?.path;
     const gameInfo = getGame(gameId);
     this.mGameVersion = (await gameInfo?.getInstalledVersion?.(discovery)) ?? null;
   };
@@ -57,7 +76,13 @@ export class SharedDelegates {
    */
   public getExtenderVersion = (extender: string): string => {
     try {
-      return this.mGameVersion.split(/\-+/)[0];
+      const executable = extenderExecutables[this.mGameId]?.[extender?.toLowerCase()];
+      if (executable === undefined || this.mGamePath === undefined) return "";
+      const version = exeVersion(resolveWindowsGamePath(this.mGamePath, executable));
+      if (!/^\d+\.\d+\.\d+\.\d+$/.test(version)) return "";
+      // Script extender loaders encode 1.7.3 as the Windows file version 0.1.7.3.
+      const parts = version.split(".");
+      return (parts[0] === "0" ? parts.slice(1) : parts).join(".");
     } catch (error) {
       return "";
     }

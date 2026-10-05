@@ -55,12 +55,10 @@ function userFolder(id: "documents" | "localAppData", gameId: string): string {
   const discovery = discoveryForGame(gameId);
   if (!discovery?.path) {
     throw new util.ProcessCanceled(
-      "Discover the game's Steam installation before opening its user folders.",
+      "Discover the game's installation before opening its user folders.",
     );
   }
-  // These Bethesda integrations use Windows user folders. Require a matching
-  // Steam/Proton prefix rather than falling back to Linux host directories.
-  return util.getGameUserPath(id, { ...discovery, store: "steam" });
+  return util.getGameUserPath(id, discovery, true);
 }
 
 export function initGameSupport(api: types.IExtensionApi) {
@@ -85,7 +83,7 @@ export function settingsPath(game: types.IGame): string {
   if (!game) return undefined;
   const folder = gameSupport.get(game.id, "folder");
   return folder !== undefined
-    ? path.join(userFolder("documents", game.id), "My Games", folder)
+    ? util.resolveWindowsGamePath(userFolder("documents", game.id), path.join("My Games", folder))
     : game.details?.settingsPath?.();
 }
 
@@ -93,6 +91,6 @@ export function appDataPath(game: types.IGame): string {
   if (!game) return undefined;
   const folder = gameSupport.get(game.id, "folder");
   return folder !== undefined
-    ? path.join(userFolder("localAppData", game.id), folder)
+    ? util.resolveWindowsGamePath(userFolder("localAppData", game.id), folder)
     : game.details?.appDataPath?.();
 }

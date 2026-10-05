@@ -350,7 +350,7 @@ export function oauthCallback(api: IExtensionApi, code: string, state?: string) 
 export function ensureLoggedIn(api: IExtensionApi): BluebirdPromise<void> {
   if (!isLoggedIn(api.getState())) {
     return new BluebirdPromise((resolve, reject) => {
-      api.events.on("did-login", (err: Error) => {
+      api.events.once("did-login", (err: Error) => {
         if (err !== null) {
           reject(err);
         } else {
@@ -2013,6 +2013,7 @@ export function updateToken(
       }
       return BluebirdPromise.resolve(nexus.getUserInfo()).then((apiUserInfo) => {
         api.store.dispatch(setUserInfo(transformUserInfoFromApi(apiUserInfo)));
+        api.events.emit("did-login", null);
         return true;
       });
     })

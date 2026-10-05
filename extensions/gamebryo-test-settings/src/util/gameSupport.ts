@@ -111,13 +111,12 @@ export function gameSupported(gameMode: string): boolean {
 }
 
 export function mygamesPath(gameMode: string): string {
-  return path.join(
-    util.getVortexPath("documents"),
-    "My Games",
-    gameSupport.get(gameMode, "mygamesPath"),
+  return util.resolveWindowsGamePath(
+    util.getGameUserPath("documents", discoveryForGame(gameMode), true),
+    path.join("My Games", gameSupport.get(gameMode, "mygamesPath")),
   );
 }
 
 export function iniPath(gameMode: string): string {
-  return path.join(mygamesPath(gameMode), gameSupport.get(gameMode, "iniName"));
+  return util.resolveWindowsGamePath(mygamesPath(gameMode), gameSupport.get(gameMode, "iniName"));
 }

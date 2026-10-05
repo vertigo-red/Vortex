@@ -141,10 +141,9 @@ export function gameSupported(gameMode: string): boolean {
 }
 
 export function mygamesPath(gameMode: string): string {
-  return path.join(
-    util.getGameUserPath("documents", discoveryForGame(gameMode)),
-    "My Games",
-    gameSupport.get(gameMode, "mygamesPath"),
+  return util.resolveWindowsGamePath(
+    util.getGameUserPath("documents", discoveryForGame(gameMode), true),
+    path.join("My Games", gameSupport.get(gameMode, "mygamesPath")),
   );
 }
 

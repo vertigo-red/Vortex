@@ -1,3 +1,5 @@
+import * as path from "node:path";
+
 import { vi } from "vitest";
 
 export const fs = { statAsync: vi.fn() };
@@ -10,6 +12,7 @@ export const util = {
   ProcessCanceled,
   getGame: vi.fn(),
   getGameUserPath: vi.fn(),
+  resolveWindowsGamePath: (directory: string, relative: string) => path.join(directory, relative),
   getVortexPath: vi.fn((id: string) => `/host/${id}`),
   opn: vi.fn(),
   makeOverlayableDictionary: (

@@ -17,6 +17,8 @@ export interface IDiscoveryResult {
   path?: string;
   pathSetManually?: boolean;
   store?: string;
+  /** Linux Wine prefix used only for mod settings, INIs and plugin lists. */
+  modSettingsPrefix?: string;
   tools?: {
     [id: string]: IDiscoveredTool;
   };

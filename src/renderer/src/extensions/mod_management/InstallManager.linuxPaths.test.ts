@@ -1,15 +1,20 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
 import type * as fomodT from "@nexusmods/fomod-installer-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { makeDeploymentHarness } from "../../test-utils/deploymentTest";
 import type { IInstallManagerHarness } from "../../test-utils/harnessTypes";
 import { test } from "../../test-utils/installManagerTest";
 import type { IExtensionApi } from "../../types/IExtensionContext";
 import { ProcessCanceled } from "../../util/CustomErrors";
 import * as fs from "../../util/fs";
+import { initGameSupport } from "../gamebryo_plugin_management/util/gameSupport";
+import PluginPersistor from "../gamebryo_plugin_management/util/PluginPersistor";
+import { getGame } from "../gamemode_management/util/getGame";
+import { install as installNativeFomod } from "../installer_fomod_native/installer";
 import InstallContext from "./InstallContext";
 import type { IInstruction } from "./types/IInstallResult";
 import type { IChoiceType } from "./types/IMod";
@@ -57,15 +62,16 @@ describe.skipIf(process.platform !== "linux")("Linux installer paths", () => {
     h: IInstallManagerHarness,
     instructions: IInstruction[],
     overrideInstructions?: IInstruction[],
+    gameId = "skyrimse",
   ) => {
     const processor = h.manager as unknown as IInstructionProcessor;
     return processor.processInstructions(
       h.api,
-      new InstallContext("skyrimse", h.api, true),
+      new InstallContext(gameId, h.api, true),
       path.join(root, "fixture.zip"),
       extracted,
       staging,
-      "skyrimse",
+      gameId,
       "fixture",
       { instructions, overrideInstructions },
       undefined,
@@ -73,6 +79,112 @@ describe.skipIf(process.platform !== "linux")("Linux installer paths", () => {
       {},
     );
   };
+
+  test("installs and deploys a wrapped Skyrim LE mod, persists original-format plugins and removes its links", async ({
+    makeInstallManager,
+  }) => {
+    const h = makeInstallManager();
+    const deployment = makeDeploymentHarness({ gameId: "skyrim", files: {} });
+    const errors = vi.fn();
+    const persistor = new PluginPersistor(errors, () => true, vi.fn());
+    try {
+      const prefix = path.join(root, "Wine Prefix");
+      const user = path.join(prefix, "drive_c", "users", "Player");
+      const pluginDir = path.join(user, "AppData", "Local", "Skyrim");
+      await mkdir(pluginDir, { recursive: true });
+      await mkdir(path.join(user, "Documents"));
+      await writeFile(path.join(prefix, "user.reg"), "WINE REGISTRY Version 2\n");
+      deployment.setState((state) => {
+        Object.assign(state.session, {
+          fomod: { installer: { dialog: { instances: {}, activeInstanceId: null } } },
+        });
+        state.settings.gameMode.discovered.skyrim = {
+          path: path.dirname(deployment.gameDir),
+          modSettingsPrefix: prefix,
+        };
+      });
+      getGame("skyrim").queryModPath = () => "Data";
+      getGame("skyrim").executable = () => "TESV.exe";
+      await initGameSupport(deployment.api);
+      const wrapped = path.join(extracted, "LE Mod", "Data");
+      await mkdir(path.join(wrapped, "Textures"), { recursive: true });
+      const corpus = path.resolve(
+        __dirname,
+        "../gamebryo_plugin_management/esp/__tests__/corpus/skyrim/skyrim_mod23890_1000127601.esp",
+      );
+      await copyFile(corpus, path.join(wrapped, "LEFixture.esp"));
+      await writeFile(path.join(wrapped, "Textures", "Fixture.dds"), "LE texture");
+      const files = ["LE Mod/Data/LEFixture.esp", "LE Mod/Data/Textures/Fixture.dds"];
+      const { NativeLogger } = require("@nexusmods/fomod-installer-native") as typeof fomodT;
+      new NativeLogger(() => undefined).setCallbacks();
+      const result = await installNativeFomod(
+        deployment.api,
+        files,
+        extracted,
+        "skyrim",
+        undefined,
+        true,
+        {},
+      );
+      await install(h, result.instructions, undefined, "skyrim");
+      expect(await readFile(path.join(staging, "LEFixture.esp"))).toEqual(await readFile(corpus));
+      expect((await readdir(staging)).sort()).toEqual(["LEFixture.esp", "Textures"]);
+      const mod = path.join(deployment.stagingDir, "SomeMod");
+      await copyFile(path.join(staging, "LEFixture.esp"), path.join(mod, "LEFixture.esp"));
+      await mkdir(path.join(mod, "Textures"));
+      await copyFile(
+        path.join(staging, "Textures", "Fixture.dds"),
+        path.join(mod, "Textures", "Fixture.dds"),
+      );
+      const manifest = await deployment.deploy();
+      expect(manifest.map((file) => file.relPath).sort()).toEqual([
+        "LEFixture.esp",
+        "Textures/Fixture.dds",
+      ]);
+      const [source, target] = await Promise.all([
+        stat(path.join(mod, "LEFixture.esp")),
+        stat(deployment.inGame("LEFixture.esp")),
+      ]);
+      expect([target.dev, target.ino]).toEqual([source.dev, source.ino]);
+      await writeFile(deployment.inGame("Disabled.esp"), "TES4");
+      await writeFile(deployment.inGame("Skyrim.esm"), "TES4");
+      await writeFile(deployment.inGame("Update.esm"), "TES4");
+      await writeFile(
+        path.join(pluginDir, "plugins.txt"),
+        "# Existing profile\r\nDisabled.esp\r\n",
+      );
+      persistor.setResetCallback(() => Promise.resolve());
+      persistor.setKnownPlugins({
+        "lefixture.esp": "LEFixture.esp",
+        "disabled.esp": "Disabled.esp",
+        "skyrim.esm": "Skyrim.esm",
+        "update.esm": "Update.esm",
+      });
+      await persistor.loadFiles("skyrim");
+      await persistor.syncFromState("skyrim", {
+        "lefixture.esp": { enabled: true, loadOrder: 2 },
+        "disabled.esp": { enabled: false, loadOrder: 3 },
+      });
+      const enabled = (await readFile(path.join(pluginDir, "plugins.txt"), "latin1"))
+        .split(/\r?\n/)
+        .filter((line) => line !== "" && !line.startsWith("#"));
+      expect(enabled).toEqual(["Skyrim.esm", "Update.esm", "LEFixture.esp"]);
+      expect(await readFile(path.join(pluginDir, "loadorder.txt"), "utf8")).toContain(
+        "LEFixture.esp\r\nDisabled.esp",
+      );
+      expect(errors).not.toHaveBeenCalled();
+      expect(h.errorNotifications).toEqual([]);
+      await deployment.method.prepare(deployment.gameDir, true, manifest, deployment.normalize);
+      await deployment.method.finalize("skyrim", deployment.gameDir, deployment.stagingDir);
+      await expect(stat(deployment.inGame("LEFixture.esp"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      expect(await readFile(deployment.inGame("Disabled.esp"), "utf8")).toBe("TES4");
+    } finally {
+      await persistor.disable();
+      deployment.cleanup();
+    }
+  });
 
   test("copies Windows-style paths and preserves the requested destination case", async ({
     makeInstallManager,

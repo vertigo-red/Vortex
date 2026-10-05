@@ -184,13 +184,46 @@ Existing Wine directory symlinks and the older `My Documents` name are respected
 when no Registry value applies. Skyrim, Enderal, Fallout New Vegas
 and Oblivion folder names retain their Windows spelling on case-sensitive disks.
 
-Launch the game once in Steam and refresh discovery before managing these files.
-An unavailable Steam prefix produces an error rather than writing into the host's
-Documents/AppData directories. This routing applies to the standard Steam user;
-custom Wine profile layouts, other environment-variable expansions and non-Steam
-prefixes still require separate support. Changes not yet saved by wineserver are
-not visible to this filesystem resolver. Bundled extensions can use
-`util.getGameUserPath` for these paths.
+Initialize the game's prefix using the chosen external launcher before managing
+these files. Steam discovery selects the standard `steamuser` profile. A manually
+selected installation inside an initialized prefix's `drive_c` also identifies
+its enclosing prefix, including a game directory symlink pointing into it.
+For games stored elsewhere, or a Steam game managed through another prefix, use
+**Games → Set Game Settings Prefix** and select the folder containing `drive_c`
+and `user.reg`. This selection takes precedence over Steam discovery and is
+persisted per game as `modSettingsPrefix`. **Use Automatic Settings Prefix**
+restores discovery-based routing when the automatic location is available.
+
+Custom prefixes must contain one non-shared user directory under `drive_c/users`;
+ambiguous profiles are rejected instead of using the host's username or another
+prefix. `%USERPROFILE%` uses that selected user's directory. The selection is
+validated for both Documents and Local AppData before changing the game setting.
+For an active game, the plugin persistor finishes its old writes before the path
+changes, and plugin synchronization and LOOT then reload for the new location.
+The selection is unavailable during deployment, mod installation or plugin sorting.
+It does not start Wine, select a launcher or change how the game is launched.
+
+An unavailable discovery or prefix stops Bethesda INI/plugin operations instead
+of writing into the host's Documents/AppData directories. Changes not yet saved
+by wineserver are not visible to this filesystem resolver. Bundled extensions use
+`util.getGameUserPath(id, discovery, true)` to require an identified prefix, and
+`util.resolveWindowsGamePath` to reuse existing directory and INI filename spelling.
+Other environment-variable expansions and custom layouts with multiple user
+profiles still require separate support.
+
+Skyrim Legendary Edition uses game ID `skyrim`, Steam app ID `72850`, `TESV.exe`,
+`Data`, `AppData/Local/Skyrim`, and `Documents/My Games/Skyrim`. It keeps the original
+plugin list format with enabled filenames without the Special Edition `*` prefix.
+Game and script extender versions are read from PE resources on Linux without
+executing the files. FOMOD script extender dependencies read the installed loader
+(for LE, `skse_loader.exe`) rather than substituting the game's version, and report
+no installed version if the loader is missing or unreadable.
+The Linux installation test uses the native Basic FOMOD handler on a wrapped LE
+archive with a real ESP from the corpus, then checks hardlink deployment, enabled
+and disabled plugin lists, and removal of its links without deleting unrelated
+game files. The packaged LOOT probe also sorts dependent form-version-43 plugins
+for `skyrim`, in addition to the existing Special Edition scenario. These checks
+do not replace testing a complete mod list in an actual Skyrim LE installation.
 
 The Open menu's Bethesda settings and application-data actions use this same
 resolver, including Registry redirections and secondary Steam libraries. They

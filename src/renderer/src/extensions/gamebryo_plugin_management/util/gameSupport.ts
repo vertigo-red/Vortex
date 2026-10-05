@@ -7,6 +7,7 @@ import { log } from "../../../logging";
 import type { IExtensionApi } from "../../../types/IExtensionContext";
 import type { IState } from "../../../types/IState";
 import * as fs from "../../../util/fs";
+import { resolveWindowsGamePath } from "../../../util/gamePaths";
 import { getGameUserPath } from "../../../util/getGameUserPath";
 import getVortexPath from "../../../util/getVortexPath";
 import { makeOverlayableDictionary } from "../../../util/util";
@@ -378,7 +379,10 @@ export function appDataPath(gameMode: string): string {
   const dataPath = gameSupport.get(gameMode, "appDataPath");
 
   if (process.platform === "linux") {
-    return path.join(getGameUserPath("localAppData", discoveryForGame(gameMode)), dataPath);
+    return resolveWindowsGamePath(
+      getGameUserPath("localAppData", discoveryForGame(gameMode), true),
+      dataPath,
+    );
   }
 
   return process.env.LOCALAPPDATA !== undefined
@@ -392,7 +396,7 @@ export function gameDataPath(gameMode: string): string {
     return customDataPath;
   }
   const discovery = discoveryForGame(gameMode);
-  return path.join(discovery.path, "Data");
+  return resolveWindowsGamePath(discovery.path, "Data");
 }
 
 export function pluginPath(gameMode: string): string {
