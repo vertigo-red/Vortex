@@ -12,6 +12,7 @@ import { fs, log, util } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
 import { _SMAPI_BUNDLED_MODS, getBundledMods } from "../../common";
+import { resolveGamePlatform } from "../../game/runtime";
 import type { IInstallerTestResult } from "../../types";
 import { classifyArchive, makeInstallerTestResult } from "../archiveClassifier";
 import { linuxSMAPIPlatform } from "./linux";
@@ -78,15 +79,14 @@ export function testSMAPI(files: string[], gameId: string): PromiseLike<IInstall
 /**
  * Extracts platform-specific SMAPI files and returns installation instructions.
  *
- * @param platform Optional override; defaults to `resolveSMAPIPlatform()`.
- * This is mainly intended for tests, where platform-specific install behaviour
- * should be exercised without changing host platform state.
+ * @param platform Optional explicit variant. By default, use the selected
+ * game's runtime, including Windows installations managed from Linux.
  */
 export async function installSMAPI(
   getGameInstallPath: () => string,
   files: string[],
   destinationPath: string,
-  platform: ISMAPIPlatformVariant = resolveSMAPIPlatform(),
+  platform: ISMAPIPlatformVariant = resolveSMAPIPlatform(resolveGamePlatform(getGameInstallPath())),
 ): Promise<types.IInstallResult> {
   if (!platform.implemented) {
     throw new util.DataInvalid(
@@ -168,6 +168,12 @@ export async function installSMAPI(
     type: "attribute",
     key: "smapiBundledMods",
     value: getBundledMods(),
+  });
+
+  instructions.push({
+    type: "attribute",
+    key: "smapiPlatform",
+    value: platform.id,
   });
 
   instructions.push({

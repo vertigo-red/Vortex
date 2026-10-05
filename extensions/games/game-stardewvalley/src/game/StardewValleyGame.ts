@@ -7,10 +7,17 @@ import { fs, util } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
 import { GAME_ID, MODS_REL_PATH } from "../common";
-import { SMAPI_EXE } from "../installers/smapi";
+import { resolveSMAPIPlatform, SMAPI_EXE } from "../installers/smapi";
+import type { SMAPIPlatformId } from "../installers/smapi/types";
 import { deploySMAPI } from "../smapi/lifecycle";
 import { findSMAPIMod } from "../smapi/selectors";
 import { downloadAndInstallSMAPI } from "../smapi/workflow";
+import {
+  GAME_ASSEMBLY,
+  isLauncherFile,
+  resolveGameExecutable,
+  resolveGamePlatform,
+} from "./runtime";
 
 type QueryPath = NonNullable<types.IGame["queryPath"]>;
 type Setup = NonNullable<types.IGame["setup"]>;
@@ -44,8 +51,14 @@ export default class StardewValleyGame implements types.IGame {
       id: "smapi",
       name: "SMAPI",
       logo: "assets/smapi.png",
-      executable: () => SMAPI_EXE,
-      requiredFiles: [SMAPI_EXE],
+      executable: (gamePath?: string) => {
+        const executable = resolveSMAPIPlatform(resolveGamePlatform(gamePath)).executableName;
+        if (gamePath !== undefined && !isLauncherFile(path.join(gamePath, executable))) {
+          throw new Error(`SMAPI launcher not found: ${path.join(gamePath, executable)}`);
+        }
+        return executable;
+      },
+      requiredFiles: process.platform === "linux" ? ["StardewModdingAPI.dll"] : [SMAPI_EXE],
       shell: true,
       exclusive: true,
       relative: true,
@@ -66,7 +79,9 @@ export default class StardewValleyGame implements types.IGame {
    */
   constructor(context: types.IExtensionContext) {
     this.context = context;
-    this.requiredFiles = process.platform == "win32" ? ["Stardew Valley.exe"] : ["StardewValley"];
+    // Search the shared game assembly on Linux, so both native and Windows
+    // installations pass scanning and the manual folder picker.
+    this.requiredFiles = process.platform === "linux" ? [GAME_ASSEMBLY] : [resolveGameExecutable()];
 
     this.defaultPaths = [
       // Linux
@@ -112,8 +127,8 @@ export default class StardewValleyGame implements types.IGame {
     throw new Error("Stardew Valley install path not found");
   }) as unknown as QueryPath;
 
-  public executable() {
-    return process.platform == "win32" ? "Stardew Valley.exe" : "StardewValley";
+  public executable(gamePath?: string) {
+    return resolveGameExecutable(gamePath);
   }
 
   public queryModPath() {
@@ -132,18 +147,22 @@ export default class StardewValleyGame implements types.IGame {
 
     await fs.ensureDirWritableAsync(path.join(discovery.path, MODS_REL_PATH));
 
-    const smapiPath = path.join(discovery.path, SMAPI_EXE);
+    const smapiPlatform = resolveSMAPIPlatform(resolveGamePlatform(discovery.path));
+    const smapiPath = path.join(discovery.path, smapiPlatform.executableName);
     const smapiFound = await this.getPathExistsAsync(smapiPath);
     if (!smapiFound) {
-      this.recommendSmapi();
+      this.recommendSmapi(smapiPlatform.id);
     }
   }) as unknown as Setup;
 
   /**
    * Shows a SMAPI warning with a one-click Deploy/Get action.
    */
-  private recommendSmapi() {
-    const smapiMod = findSMAPIMod(this.context.api);
+  private recommendSmapi(platform: SMAPIPlatformId) {
+    const smapiMod = findSMAPIMod(
+      this.context.api,
+      process.platform === "linux" ? platform : undefined,
+    );
     const title = smapiMod ? "SMAPI is not deployed" : "SMAPI is not installed";
     const actionTitle = smapiMod ? "Deploy" : "Get SMAPI";
     const action = () =>

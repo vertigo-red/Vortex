@@ -15,7 +15,8 @@ import {
   MODS_REL_PATH,
   MOD_TYPE_SMAPI,
 } from "../common";
-import { isSMAPIModType } from "../installers/smapi";
+import { resolveGamePlatform } from "../game/runtime";
+import { isSMAPIModType, resolveSMAPIPlatform } from "../installers/smapi";
 import { isSdvRootFolderModType } from "../modtypes/sdvRootFolderMatcher";
 
 type ModTypeTest = Parameters<types.IExtensionContext["registerModType"]>[4];
@@ -33,7 +34,11 @@ export function registerModTypes(
   getGameInstallPath: () => string,
   getSMAPIPath: (game: types.IGame) => string,
 ): void {
-  const isSMAPIModTypeBoundary = isSMAPIModType as unknown as ModTypeTest;
+  const isSMAPIModTypeBoundary = ((instructions: types.IInstruction[]) =>
+    isSMAPIModType(
+      instructions,
+      resolveSMAPIPlatform(resolveGamePlatform(getGameInstallPath())),
+    )) as unknown as ModTypeTest;
   const isConfigModTypeBoundary = (() => Promise.resolve(false)) as unknown as ModTypeTest;
   const isSdvRootFolderModTypeBoundary = isSdvRootFolderModType as unknown as ModTypeTest;
 

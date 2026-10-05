@@ -30,6 +30,7 @@ then start in [`index.ts`](index.ts).
 - Game executables:
     - Windows: `Stardew Valley.exe`
     - Linux/macOS: `StardewValley`
+- Modern desktop game assembly: `Stardew Valley.dll` on every platform.
 - Standard mod deployment root: `<GameDir>/Mods`
 - Saves:
     - Windows: `%AppData%/StardewValley/Saves`
@@ -40,6 +41,26 @@ then start in [`index.ts`](index.ts).
     - macOS: `~/Library/Application Support/StardewValley/ErrorLogs`
 
 On Linux and macOS, `StardewValley` is a wrapper script around the `Stardew Valley` binary.
+
+On Linux, Vortex scans for the shared `Stardew Valley.dll` assembly and accepts it
+in the manual folder picker too. This covers both native installations and
+Windows installations inside Wine/Proton prefixes, including GOG games installed
+with Faugus. It resolves the launcher from the selected folder: `StardewValley`
+when present, otherwise `Stardew Valley.exe`. Missing launchers are rejected;
+case and spaces in Linux paths are preserved. Legacy installations without the
+modern game assembly are outside this Linux detection path.
+
+SMAPI payload installation, tool discovery, and mod type classification follow
+the selected game's runtime. A Windows installation managed from Linux receives
+the Windows payload and `StardewModdingAPI.exe`; a native installation receives
+the Linux payload and `StardewModdingAPI`. A leftover loader from the other
+platform does not satisfy the setup check. Packages carry their runtime as
+installation metadata. Older untagged packages are not reused for runtime-specific
+redeployment on Linux; install SMAPI again when Vortex cannot identify the
+package's platform. Vortex's automatic Windows-tool launch currently uses Steam's
+selected Proton runtime. For a Faugus/GOG installation,
+launch `StardewModdingAPI.exe` through the same Faugus game entry and prefix;
+discovering that game in Vortex does not configure a Faugus launch integration.
 
 ### What a Stardew mod usually looks like
 

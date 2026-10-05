@@ -6,6 +6,7 @@ import { selectors, util } from "@nexusmods/vortex-api";
 import { gte } from "semver";
 
 import { GAME_ID, MOD_TYPE_SMAPI, SMAPI_MOD_ID } from "../common";
+import type { SMAPIPlatformId } from "../installers/smapi/types";
 import { selectSdvMods } from "../state/selectors";
 
 /**
@@ -47,11 +48,19 @@ export function getSMAPIMods(api: types.IExtensionApi): types.IMod[] {
  *
  * @param api Vortex extension API (`types.IExtensionApi`) used to resolve
  * active SMAPI mods.
+ * @param platform Optional target runtime for redeployment. Only packages
+ * explicitly installed for this runtime qualify; older untagged packages must
+ * be reinstalled before their runtime can be determined safely.
  * @returns Highest-version SMAPI mod (`types.IMod`) when any are enabled;
  * otherwise `undefined`.
  */
-export function findSMAPIMod(api: types.IExtensionApi): types.IMod | undefined {
-  const smapiMods = getSMAPIMods(api);
+export function findSMAPIMod(
+  api: types.IExtensionApi,
+  platform?: SMAPIPlatformId,
+): types.IMod | undefined {
+  const smapiMods = getSMAPIMods(api).filter(
+    (mod) => platform === undefined || mod.attributes?.smapiPlatform === platform,
+  );
   return smapiMods.length === 0
     ? undefined
     : smapiMods.length > 1

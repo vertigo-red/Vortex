@@ -89,6 +89,15 @@ the necessary parents when the declaration uses Windows separators. Previously
 discovered games use this conversion when their required files are checked again.
 Absolute tool paths selected by users remain Linux paths.
 
+Stardew Valley uses its shared `Stardew Valley.dll` assembly for Linux scanning
+and manual folder selection, accepting native installations and Windows GOG
+installations inside Faugus prefixes. Its launcher and SMAPI payload follow the
+selected installation, rather than the Vortex host platform. For Faugus/GOG,
+start `StardewModdingAPI.exe` through the existing Faugus game entry and prefix;
+automatic dashboard routing to Faugus is not implemented. See the
+[game extension notes](../../extensions/games/game-stardewvalley/README.md) for
+runtime selection and legacy-version limits.
+
 Process monitoring reads Linux procfs directly, preserving argument boundaries and
 using the full launch path instead of the truncated process name. Native binaries,
 Python scripts, shell scripts and Java archives launched with `-jar` are identified
