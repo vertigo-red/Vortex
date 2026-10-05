@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { copyFile, cp, mkdir, mkdtemp, open, readFile, rename, rm, stat } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, open, readdir, rename, rm, stat } from "node:fs/promises";
 import * as path from "node:path";
 
 import { fs, log, selectors, types, util } from "@nexusmods/vortex-api";
@@ -12,32 +12,6 @@ export interface IARCOptions {
   forceCompression?: boolean;
   game?: ArcGame;
   version?: number;
-}
-
-/** ARCtool writes Windows paths and does not terminate the final record with another Path key. */
-export function parseARCList(input: string): string[] {
-  const files: string[] = [];
-  let file: string | undefined;
-  let extension = "";
-  const finish = () => {
-    if (file) {
-      const name = file + (extension ? "." + extension.replace(/^\./, "") : "");
-      files.push(process.platform === "linux" ? name.replace(/\\/g, "/") : name);
-    }
-  };
-  for (const line of input.split(/\r?\n/)) {
-    const separator = line.indexOf("=");
-    if (separator < 0) continue;
-    const key = line.slice(0, separator).trim();
-    const value = line.slice(separator + 1).trim();
-    if (key === "Path") {
-      finish();
-      file = value;
-      extension = "";
-    } else if (key === "correctExt") extension = value;
-  }
-  finish();
-  return files;
 }
 
 class ARCWrapper {
@@ -54,8 +28,14 @@ class ARCWrapper {
       this.withWorkspace(async (workspace) => {
         const input = path.join(workspace, "source.arc");
         await copyFile(archivePath, input);
-        await this.run("l", [{ path: input }], options, workspace);
-        return parseARCList(await readFile(input + ".verbose.txt", "utf8"));
+        // ARCtool -l reports raw type hashes instead of the game's corrected filename extension.
+        // Enumerate the real extraction in a private directory so readDir agrees with extractAll.
+        await this.run("x", [{ path: input }], options, workspace);
+        const output = path.join(workspace, "source");
+        return (await readdir(output, { recursive: true, withFileTypes: true }))
+          .filter((entry) => entry.isFile())
+          .map((entry) => path.relative(output, path.join(entry.parentPath, entry.name)))
+          .sort();
       }),
     );
   }

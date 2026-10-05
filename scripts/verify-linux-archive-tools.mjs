@@ -329,6 +329,14 @@ int wmain(int count, wchar_t **args) {
     );
     checks++;
     const heartbeat = path.join(root, "heartbeat");
+    const otherHeartbeat = path.join(root, "unrelated-heartbeat");
+    const otherController = new AbortController();
+    const otherPlan = command(receiver, ["wait", toWinePath(prefix, otherHeartbeat)]);
+    const unrelated = executeToolProcess(otherPlan.executable, otherPlan.args, {
+      env: otherPlan.env,
+      signal: otherController.signal,
+      timeoutMs: 30000,
+    }).catch((error) => error);
     const controller = new AbortController();
     plan = command(receiver, ["wait", toWinePath(prefix, heartbeat)]);
     const active = executeToolProcess(plan.executable, plan.args, {
@@ -338,8 +346,8 @@ int wmain(int count, wchar_t **args) {
     }).catch((error) => error);
     let started = false;
     for (let attempt = 0; attempt < 200 && !started; attempt++) {
-      started = await stat(heartbeat)
-        .then((info) => info.size > 0)
+      started = await Promise.all([stat(heartbeat), stat(otherHeartbeat)])
+        .then((files) => files.every((info) => info.size > 0))
         .catch(() => false);
       if (!started) await delay(25);
     }
@@ -348,8 +356,16 @@ int wmain(int count, wchar_t **args) {
     assert.ok(started, `Windows process did not start: ${cancelled.message}`);
     assert.equal(cancelled.code, "ABORT_ERR");
     const before = await readFile(heartbeat);
+    const otherBefore = await readFile(otherHeartbeat);
     await delay(150);
     assert.deepEqual(await readFile(heartbeat), before, "Cancelled Windows tool kept writing");
+    checks++;
+    assert.ok(
+      (await stat(otherHeartbeat)).size > otherBefore.length,
+      "Cancelling one Windows job stopped an unrelated job in the same prefix",
+    );
+    otherController.abort();
+    assert.equal((await unrelated).code, "ABORT_ERR");
     checks++;
     plan = command(receiver, ["capture", toWinePath(prefix, captured), "prefix still usable"]);
     await executeToolProcess(plan.executable, plan.args, { env: plan.env, timeoutMs: 30000 });

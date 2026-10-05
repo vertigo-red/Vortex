@@ -5,7 +5,7 @@ import path from "node:path";
 import { util } from "@nexusmods/vortex-api";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import ARCWrapper, { parseARCList } from "./ARCWrapper";
+import ARCWrapper from "./ARCWrapper";
 import { arcGameId, arcVersion } from "./gameSupport";
 
 const helpers = util as any;
@@ -50,38 +50,45 @@ async function expectWorkspaceClean() {
 }
 
 describe("ARC operations on Linux", () => {
-  it("keeps the last record, equals signs and host separators", () => {
-    expect(parseARCList("Path=folder\\one=two.tex\r\nRealSize=9\r\nPath=last.tex")).toEqual([
-      "folder/one=two.tex",
-      "last.tex",
-    ]);
-  });
-  it("restores the file-type extension from each verbose record", () => {
-    expect(
-      parseARCList("Path=one\n  correctExt=tex\nPath=folder\\two=three\n  correctExt=.tex\n"),
-    ).toEqual(["one.tex", "folder/two=three.tex"]);
-    expect(parseARCList("Path=name.tex\n  correctExt=tex\n")).toEqual(["name.tex.tex"]);
-  });
   it("accepts unknown game IDs without throwing during archive registration", () => {
     expect(arcGameId("unknown")).toBeUndefined();
     expect(arcVersion("unknown")).toBeUndefined();
   });
   it("lists a private copy using the requested game's discovery", async () => {
     helpers.executeToolProcess.mockImplementation(async (_exe, args) => {
-      await writeFile(args.at(-1) + ".verbose.txt", "Path=first.tex\nPath=last.tex");
+      const extracted = args.at(-1).slice(0, -4);
+      await mkdir(path.join(extracted, "folder"), { recursive: true });
+      await writeFile(path.join(extracted, "first.tex"), "first");
+      await writeFile(path.join(extracted, "folder", "last with space=two.tex"), "last");
+      await writeFile(args.at(-1) + ".verbose.txt", "Path=first\ncorrectExt=EB5D1F24");
       return { stdout: "", stderr: "Proton: harmless" };
     });
     expect(await new ARCWrapper(api, "dragonsdogma").list(archive)).toEqual([
       "first.tex",
-      "last.tex",
+      "folder/last with space=two.tex",
     ]);
     expect(helpers.getProtonToolCommand.mock.calls[0][2]).toBe(discovery);
-    const args = helpers.executeToolProcess.mock.calls[0][1];
-    expect(args.indexOf("-DD")).toBeLessThan(args.indexOf("-l"));
-    expect(args.indexOf("-pc")).toBeLessThan(args.indexOf("-l"));
     expect(helpers.executeToolProcess.mock.calls[0][2].env.SELECTED_PREFIX).toBe("yes");
     expect(helpers.getVortexPath).toHaveBeenCalledWith("temp");
     expect(await readFile(archive, "utf8")).toBe("original archive");
+    await expectWorkspaceClean();
+  });
+  it("does not exchange files between simultaneous listings", async () => {
+    const second = path.join(root, "second.arc");
+    await writeFile(second, "second archive");
+    helpers.executeToolProcess.mockImplementation(async (_exe, args) => {
+      const input = args.at(-1);
+      const content = await readFile(input, "utf8");
+      const extracted = input.slice(0, -4);
+      await mkdir(extracted);
+      await writeFile(path.join(extracted, content + ".tex"), content);
+      return { stdout: "", stderr: "" };
+    });
+    const wrapper = new ARCWrapper(api, "dragonsdogma");
+    expect(await Promise.all([wrapper.list(archive), wrapper.list(second)])).toEqual([
+      ["original archive.tex"],
+      ["second archive.tex"],
+    ]);
     await expectWorkspaceClean();
   });
   it("preserves the original archive and old extraction on a tool failure", async () => {

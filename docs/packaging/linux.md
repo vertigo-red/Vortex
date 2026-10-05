@@ -229,9 +229,12 @@ ARC operations use private copies instead of temporarily renaming the original
 archive in the system temporary directory. Extraction retains the file-order sidecar used by Dragon's Dogma. Creation
 copies the source and publishes a completed, header-checked archive by renaming a
 sibling temporary file. A failed tool cannot replace the original archive. This
-requires additional temporary disk space. ARC list parsing keeps the last entry,
-reconstructs the file extension from `correctExt`, and preserves equals signs in
-names and Linux directory separators. ARCtool's legacy internal
+requires additional temporary disk space. ARC listings enumerate a private extraction: the tool's `-l` report
+uses raw type hashes even when actual extraction applies the game's filename
+extensions. Directory listings therefore keep the actual extensions, all entries,
+equals signs and Linux separators. Listing also needs temporary decompression
+space and time.
+ARCtool's legacy internal
 filename encoding still needs validation with non-ASCII names stored inside game
 archives; copying does support non-ASCII host archive and output paths.
 
