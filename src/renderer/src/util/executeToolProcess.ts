@@ -47,7 +47,14 @@ export function executeToolProcess(
       failure ??= error;
       if (hardStop !== undefined) return;
       kill("SIGTERM");
-      hardStop = setTimeout(() => kill("SIGKILL"), 1000);
+      hardStop = setTimeout(() => {
+        kill("SIGKILL");
+        // Wine services or another process can retain inherited pipe handles. After
+        // stopping our group, do not wait for those unrelated holders to exit.
+        child.stdin?.destroy();
+        child.stdout.destroy();
+        child.stderr.destroy();
+      }, 1000);
     };
     const abort = () =>
       stop(Object.assign(new Error("Tool operation was aborted"), { code: "ABORT_ERR" }));

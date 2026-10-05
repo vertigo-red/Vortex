@@ -332,11 +332,22 @@ int wmain(int count, wchar_t **args) {
     const otherHeartbeat = path.join(root, "unrelated-heartbeat");
     const otherController = new AbortController();
     const otherPlan = command(receiver, ["wait", toWinePath(prefix, otherHeartbeat)]);
+    let unrelatedResult;
+    const cancellationStart = Date.now();
     const unrelated = executeToolProcess(otherPlan.executable, otherPlan.args, {
       env: otherPlan.env,
       signal: otherController.signal,
-      timeoutMs: 30000,
-    }).catch((error) => error);
+      timeoutMs: 60000,
+    }).then(
+      (value) => {
+        unrelatedResult = value;
+        return value;
+      },
+      (error) => {
+        unrelatedResult = error;
+        return error;
+      },
+    );
     const controller = new AbortController();
     plan = command(receiver, ["wait", toWinePath(prefix, heartbeat)]);
     const active = executeToolProcess(plan.executable, plan.args, {
@@ -362,7 +373,7 @@ int wmain(int count, wchar_t **args) {
     checks++;
     assert.ok(
       (await stat(otherHeartbeat)).size > otherBefore.length,
-      "Cancelling one Windows job stopped an unrelated job in the same prefix",
+      `Cancelling one Windows job stopped an unrelated job in the same prefix: ${JSON.stringify({ elapsed: Date.now() - cancellationStart, code: unrelatedResult?.code, signal: unrelatedResult?.signal })}`,
     );
     otherController.abort();
     assert.equal((await unrelated).code, "ABORT_ERR");

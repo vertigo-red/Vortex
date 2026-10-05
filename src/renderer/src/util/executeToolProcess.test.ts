@@ -1,6 +1,7 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { describe, expect, it } from "vitest";
 
@@ -73,6 +74,52 @@ describe("CLI process lifecycle", () => {
         timeoutMs: 200,
       }),
     ).rejects.toMatchObject({ code: "ETIMEDOUT", stdout: "ready\n" });
+  });
+  it("finishes cancellation when an independent process retains its output pipes", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "vortex-cli-pipes-"));
+    const ready = path.join(directory, "ready");
+    const heartbeat = path.join(directory, "heartbeat");
+    const controller = new AbortController();
+    let pid: number;
+    let deadline: NodeJS.Timeout;
+    const writer = `const fs=require('node:fs'); setInterval(()=>fs.appendFileSync(${JSON.stringify(heartbeat)},'x'),20); setTimeout(()=>process.exit(),10000);`;
+    const parent = `const {spawn}=require('node:child_process'); const child=spawn(process.execPath,['-e',${JSON.stringify(writer)}],{detached:true,stdio:['ignore',1,2]}); require('node:fs').writeFileSync(${JSON.stringify(ready)},String(child.pid)); setInterval(()=>{},1000);`;
+    const result = run(parent, { signal: controller.signal }).catch((error: unknown) => error);
+    try {
+      for (let attempt = 0; attempt < 200 && !pid; attempt++) {
+        pid = await readFile(ready, "utf8")
+          .then((contents) => Number(contents))
+          .catch(() => 0);
+        if (!pid) await delay(10);
+      }
+      expect(pid).toBeGreaterThan(0);
+      controller.abort();
+      const cancelled: unknown = await Promise.race([
+        result,
+        new Promise((_, reject) => {
+          deadline = setTimeout(
+            () => reject(new Error("Cancellation waited for an unrelated pipe holder")),
+            2500,
+          );
+        }),
+      ]);
+      expect(cancelled).toMatchObject({ code: "ABORT_ERR" });
+      const before = (await stat(heartbeat)).size;
+      await delay(100);
+      expect((await stat(heartbeat)).size).toBeGreaterThan(before);
+    } finally {
+      controller.abort();
+      if (deadline) clearTimeout(deadline);
+      if (pid) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // The writer may have reached its own deadline during a failing test.
+        }
+      }
+      await result;
+      await rm(directory, { recursive: true, force: true });
+    }
   });
   it("handles pre-start and running cancellation", async () => {
     const before = new AbortController();

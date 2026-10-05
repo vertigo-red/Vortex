@@ -222,7 +222,9 @@ for each source as well as the base and final archive. Tool, script, archive, ou
 and filter paths are mapped through the prefix's DOS drive links; flags and paths
 are separate literal arguments. The bundled Windows job launcher terminates only
 its own tool and descendants on timeout or cancellation. It does not stop the
-shared game wineserver. QuickBMS retains the tool directory as its working folder
+shared game wineserver. After the one-second kill escalation, cancellation closes
+only the caller's pipes so inherited handles held by another Wine process cannot
+delay completion. QuickBMS retains the tool directory as its working folder
 for scripts using Windows DLLs.
 
 ARC operations use private copies instead of temporarily renaming the original
@@ -252,7 +254,8 @@ SHA-256 hashes and await extraction. Changed or incomplete downloads fail the
 build. Both tools, their author documentation and the x64 job launchers are checked
 in the unpacked package and installed DEB. Wine 9/10 CI runs real create/list/extract,
 file-order preservation, corrupt-ARC handling, concurrent filters, reimport1,
-reimport2 and write operations, plus literal argv and Windows process cancellation.
+reimport2 and write operations, plus literal argv and Windows process cancellation while an unrelated Windows
+process continues in the same prefix.
 These tests use a receiver for the Proton command shape, rather than an installed
 Steam Proton distribution or actual Dragon's Dogma/game-specific BMS scripts.
 
