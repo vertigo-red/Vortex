@@ -29,14 +29,14 @@ jobs:
             image: debian:trixie-slim
             version: "10"
     container: ${{ matrix.runtime.image }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       LANG: C.UTF-8
       LC_ALL: C.UTF-8
       VORTEX_TEST_WINE_MAJOR: ${{ matrix.runtime.version }}
     steps:
       - name: Install Wine test runtime
-        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl wine64 gcc-mingw-w64-x86-64 unzip libicu-dev
+        run: dpkg --add-architecture i386 && apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl wine64 wine32:i386 gcc-mingw-w64-x86-64 unzip libicu-dev
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
@@ -48,6 +48,8 @@ jobs:
         run: node scripts/verify-linux-batch.mjs
       - name: Verify Wine user folder redirections
         run: node scripts/verify-linux-user-folders.mjs
+      - name: Verify real ARCtool and QuickBMS archive operations
+        run: node scripts/verify-linux-archive-tools.mjs
       - name: Verify real Divine PAK operations
         run: node scripts/verify-linux-divine.mjs
   linux-x64:
@@ -77,6 +79,8 @@ jobs:
         run: pnpm run package:linux
       - name: Verify packaged dependency versions
         run: node scripts/verify-packaged-asar.mjs --asar dist/linux-unpacked/resources/app.asar
+      - name: Verify packaged archive tools
+        run: node scripts/verify-packaged-archive-tools.mjs dist/linux-unpacked/resources
       - name: Verify relocated native FOMOD
         run: node scripts/verify-linux-fomod.mjs dist/linux-unpacked/resources
       - name: Verify packaged LOOT sorting and worker lifecycle
@@ -89,6 +93,7 @@ jobs:
           node scripts/verify-linux-installation.mjs installed
       - name: Verify installed Linux startup with sandbox
         run: |
+          node scripts/verify-packaged-archive-tools.mjs /opt/Vortex/resources
           node scripts/verify-linux-fomod.mjs /opt/Vortex/resources
           node scripts/verify-linux-loot.mjs /usr/bin/vortex /opt/Vortex/resources
           xvfb-run -a node scripts/smoke-linux-package.mjs /usr/bin/vortex

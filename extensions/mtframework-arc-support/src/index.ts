@@ -18,7 +18,7 @@ class ARCHandler implements types.IArchiveHandler {
     this.mArchivePath = fileName;
     this.mGame = arcGameId(options.gameId);
     this.mVersion = arcVersion(options.gameId);
-    this.mArc = new ARCWrapper(api);
+    this.mArc = new ARCWrapper(api, options.gameId);
   }
 
   public readDir(dirPath: string): Promise<string[]> {
@@ -61,8 +61,8 @@ function init(context: types.IExtensionContext) {
   } catch (err) {
     log(
       "warn",
-      "To use MT Framework games (Dragon's Dogma) you need to download ARCtool.rar " +
-        `from http://www.fluffyquack.com/tools/ and unpack it to ${__dirname}`,
+      "To use MT Framework games (Dragon's Dogma) you need to download ARCtool.zip " +
+        `from https://www.fluffyquack.com/tools/ and unpack it to ${__dirname}`,
     );
     return false;
   }

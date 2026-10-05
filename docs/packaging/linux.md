@@ -216,6 +216,42 @@ existing choice to keep or revert a foreign load order still applies.
 
 ## External tools and arguments
 
+ARCtool and QuickBMS use the archive operation's requested game discovery to select
+its Steam Proton build and initialized prefix. Archive merging passes that game ID
+for each source as well as the base and final archive. Tool, script, archive, output
+and filter paths are mapped through the prefix's DOS drive links; flags and paths
+are separate literal arguments. The bundled Windows job launcher terminates only
+its own tool and descendants on timeout or cancellation. It does not stop the
+shared game wineserver. QuickBMS retains the tool directory as its working folder
+for scripts using Windows DLLs.
+
+ARC operations use private copies instead of temporarily renaming the original
+archive. Extraction retains the file-order sidecar used by Dragon's Dogma. Creation
+copies the source and publishes a completed, header-checked archive by renaming a
+sibling temporary file. A failed tool cannot replace the original archive. This
+requires additional temporary disk space. ARC list parsing keeps the last entry,
+equals signs in names, and Linux directory separators. ARCtool's legacy internal
+filename encoding still needs validation with non-ASCII names stored inside game
+archives; copying does support non-ASCII host archive and output paths.
+
+QuickBMS operations have independent filter files and parse their own captured
+stdout, so concurrent lists do not exchange data through a shared log. Filenames
+with spaces and repeated wildcard matches remain in the list. Output is bounded
+to 16 MiB per stream. The existing 15-second idle deadline and 5-second stdin
+keepalive remain, with a 30-minute overall deadline and timer cleanup. Failed
+operations reject promise callers or deliver the error to callback callers.
+QuickBMS write and reimport still modify the selected archive in place; use a
+backup as required by the calling game extension.
+
+Builds pin official ARCtool 0.9.713 and QuickBMS 0.12.0 archive and executable
+SHA-256 hashes and await extraction. Changed or incomplete downloads fail the
+build. Both tools, their author documentation and the x64 job launchers are checked
+in the unpacked package and installed DEB. Wine 9/10 CI runs real create/list/extract,
+file-order preservation, corrupt-ARC handling, concurrent filters, reimport1,
+reimport2 and write operations, plus literal argv and Windows process cancellation.
+These tests use a receiver for the Proton command shape, rather than an installed
+Steam Proton distribution or actual Dragon's Dogma/game-specific BMS scripts.
+
 FNIS automation uses the discovered Skyrim/Enderal game's selected Proton build
 and initialized prefix. Its generated-data staging directory is mapped through
 that prefix's actual DOS drive links and passed as one literal `RedirectFiles`

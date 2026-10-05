@@ -2,6 +2,7 @@ import path from "path";
 
 import { fs, log, selectors, types, util } from "@nexusmods/vortex-api";
 
+import * as qbms from "./quickbms";
 import {
   IAttachmentData,
   IListEntry,
@@ -14,8 +15,6 @@ import {
 
 const GAME_SUPPORT: string[] = [];
 const DEPRECATED_NOTIF_ID = "deprecated-qbms-call";
-
-let _GAMEMODE_SUPPORTED = false;
 
 function queryAttachment(data: IAttachmentData) {
   return fs
@@ -61,11 +60,6 @@ async function errorHandler(
     },
   ];
 
-  const qbmsLog: IAttachmentData = {
-    filePath: path.join(util.getVortexPath("userData"), "quickbms.log"),
-    description: "QuickBMS log file",
-  };
-
   const vortexLog: IAttachmentData = {
     filePath: path.join(util.getVortexPath("userData"), "vortex.log"),
     description: "Vortex log file",
@@ -82,7 +76,7 @@ async function errorHandler(
     err["message"] += "\n\n" + (err as QuickBMSError).errorLines;
   }
 
-  return Promise.all([qbmsLog, vortexLog, ...addedAttachments].map((file) => queryAttachment(file)))
+  return Promise.all([vortexLog, ...addedAttachments].map((file) => queryAttachment(file)))
     .then((files) => {
       const validAttachments = files.filter((file) => !!file);
       validAttachments.forEach((att) => {
@@ -95,7 +89,7 @@ async function errorHandler(
       });
     })
     .then(() => {
-      if (_GAMEMODE_SUPPORTED) {
+      if (!(err instanceof UnregisteredGameError)) {
         if (props.quiet !== true) {
           api.showErrorNotification("failed to execute qbms operation", err, {
             allowReport: contributed !== undefined,
@@ -112,6 +106,7 @@ async function errorHandler(
           callback(new util.ProcessCanceled("[QBMS] " + err.message), undefined);
         }
       }
+      if (!callback) throw err;
     });
 }
 
@@ -122,6 +117,7 @@ function testGameRegistered(props: IQBMSOpProps): Promise<void> {
 }
 
 function sanitizeProps(props: IQBMSOpProps, opType: QBMSOperationType): IQBMSOpProps {
+  props = { ...props, qbmsOptions: props.qbmsOptions ? { ...props.qbmsOptions } : undefined };
   if (props.qbmsOptions === undefined) {
     props.qbmsOptions = {
       wildCards: ["{}"],
@@ -146,34 +142,38 @@ function sanitizeProps(props: IQBMSOpProps, opType: QBMSOperationType): IQBMSOpP
 
 function list(context: types.IExtensionContext, props: IQBMSOpProps) {
   props = sanitizeProps(props, "list");
-  return require("./quickbms")
-    .list(props)
-    .then((listEntries) =>
-      props.callback !== undefined ? successfulOp(context, props, listEntries) : Promise.resolve(),
-    )
+  return qbms
+    .list(context.api, props)
+    .then(async (listEntries) => {
+      if (props.callback !== undefined) {
+        await successfulOp(context, props, listEntries);
+        return;
+      }
+      return listEntries;
+    })
     .catch((err) => errorHandler(context.api, props, err));
 }
 
 function extract(context: types.IExtensionContext, props: IQBMSOpProps) {
   props = sanitizeProps(props, "extract");
-  return require("./quickbms")
-    .extract(props)
+  return qbms
+    .extract(context.api, props)
     .then(() => (props.callback !== undefined ? successfulOp(context, props) : Promise.resolve()))
     .catch((err) => errorHandler(context.api, props, err));
 }
 
 function write(context: types.IExtensionContext, props: IQBMSOpProps) {
   props = sanitizeProps(props, "write");
-  return require("./quickbms")
-    .write(props)
+  return qbms
+    .write(context.api, props)
     .then(() => (props.callback !== undefined ? successfulOp(context, props) : Promise.resolve()))
     .catch((err) => errorHandler(context.api, props, err));
 }
 
 function reImport(context: types.IExtensionContext, props: IQBMSOpProps) {
   props = sanitizeProps(props, "reimport");
-  return require("./quickbms")
-    .reImport(props)
+  return qbms
+    .reImport(context.api, props)
     .then(() => (props.callback !== undefined ? successfulOp(context, props) : Promise.resolve()))
     .catch((err) => errorHandler(context.api, props, err));
 }
@@ -232,7 +232,6 @@ function init(context: types.IExtensionContext) {
   context.once(() => {
     context.api.events.on("gamemode-activated", (gameMode: string) => {
       context.api.dismissNotification(DEPRECATED_NOTIF_ID);
-      _GAMEMODE_SUPPORTED = GAME_SUPPORT.includes(gameMode);
     });
     context.api.events.on(
       "quickbms-operation",

@@ -12,9 +12,9 @@ export function gameSupported(gameMode: string): boolean {
 }
 
 export function arcGameId(gameMode: string): ArcGame {
-  return gameMode !== undefined ? gameSupport[gameMode].arcId : undefined;
+  return gameSupport[gameMode]?.arcId;
 }
 
 export function arcVersion(gameMode: string): number {
-  return gameMode !== undefined ? gameSupport[gameMode].arcVersion : undefined;
+  return gameSupport[gameMode]?.arcVersion;
 }

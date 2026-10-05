@@ -94,7 +94,7 @@ async function mergeArchive(
   for (const modPath of sources) {
     const outputPath = path.join(mergePath, path.basename(modPath));
     await fs.ensureDirAsync(outputPath);
-    const archive = await api.openArchive(path.join(modPath, relArcPath));
+    const archive = await api.openArchive(path.join(modPath, relArcPath), { gameId: game.id });
     await archive.extractAll(outputPath);
     await walk(outputPath, (iterPath, stats) => {
       if (stats.isDirectory()) {

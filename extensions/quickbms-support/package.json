@@ -3,8 +3,9 @@
   "version": "0.2.6",
   "description": "QuickBMS extractor support",
   "scripts": {
-    "build": "node build.mjs && node download_dependencies.js && pnpm extractInfo",
-    "typecheck": "pnpm tsc"
+    "build": "node build.mjs && pnpm extractInfo",
+    "typecheck": "pnpm tsc",
+    "test": "pnpm exec vitest run"
   },
   "author": "Black Tree Gaming Ltd.",
   "license": "GPL-3.0",
@@ -35,7 +36,9 @@
         "inputs": [
           "default",
           "typescript",
-          "vortex-api"
+          "vortex-api",
+          "{workspaceRoot}/scripts/build-archive-tools.mjs",
+          "{workspaceRoot}/extensions/archiveToolLauncher.c"
         ]
       },
       "typecheck": {
