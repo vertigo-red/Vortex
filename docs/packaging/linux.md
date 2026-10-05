@@ -226,7 +226,7 @@ shared game wineserver. QuickBMS retains the tool directory as its working folde
 for scripts using Windows DLLs.
 
 ARC operations use private copies instead of temporarily renaming the original
-archive. Extraction retains the file-order sidecar used by Dragon's Dogma. Creation
+archive in the system temporary directory. Extraction retains the file-order sidecar used by Dragon's Dogma. Creation
 copies the source and publishes a completed, header-checked archive by renaming a
 sibling temporary file. A failed tool cannot replace the original archive. This
 requires additional temporary disk space. ARC list parsing keeps the last entry,

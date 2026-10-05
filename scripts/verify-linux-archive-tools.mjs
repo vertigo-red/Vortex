@@ -40,7 +40,7 @@ const execute = promisify(execFile);
 const root = await mkdtemp(path.join(tmpdir(), "vortex-archives-wine-"));
 const prefix = path.join(root, "Secondary Library", "compatdata", "367500", "pfx");
 const tools = path.join(root, "Tools 日本語 'quote' & ; !");
-const userData = path.join(root, "userData");
+const userData = path.join(root, "userData 日本語");
 const proton = path.join(root, "Selected Proton");
 const runtime = path.join(root, "runtime");
 const wine = process.env.VORTEX_TEST_WINE ?? "/usr/lib/wine/wine64";
@@ -128,7 +128,7 @@ child.on('exit', (code) => { process.exitCode = code ?? 93; });
     selectors: { discoveryByGame: (state, id) => state.settings.gameMode.discovered[id] },
     util: {
       ArgumentInvalid: class extends Error {},
-      getVortexPath: () => userData,
+      getVortexPath: (kind) => (kind === "temp" ? root : userData),
       executeToolProcess,
       getProtonToolCommand: async (executable, args, selected) => {
         assert.equal(selected, discovery, "The requested game must control the prefix");
@@ -260,6 +260,9 @@ child.on('exit', (code) => { process.exitCode = code ?? 93; });
   await assert.rejects(qbms.list(api, { ...props, bmsScriptPath: badScript }));
   checks++;
   assert.deepEqual(await readdir(path.join(userData, "temp", "archive-tools")), []);
+  checks++;
+
+  assert.deepEqual(await readdir(path.join(root, "vortex-archive-tools")), []);
   checks++;
 
   const receiverSource = path.join(root, "receiver.c");

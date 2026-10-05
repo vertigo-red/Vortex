@@ -25,10 +25,13 @@ export function parseARCList(input: string): string[] {
 }
 
 class ARCWrapper {
-  constructor(
-    private mApi: types.IExtensionApi,
-    private mGameId?: string,
-  ) {}
+  private mApi: types.IExtensionApi;
+  private mGameId?: string;
+
+  constructor(api: types.IExtensionApi, gameId?: string) {
+    this.mApi = api;
+    this.mGameId = gameId;
+  }
 
   public list(archivePath: string, options: IARCOptions = {}): PromiseBB<string[]> {
     return PromiseBB.resolve(
@@ -102,7 +105,9 @@ class ARCWrapper {
   private async withWorkspace<T>(
     operation: (workspace: string) => globalThis.Promise<T>,
   ): globalThis.Promise<T> {
-    const parent = path.join(util.getVortexPath("userData"), "temp", "archive-tools");
+    // The legacy ARC executable uses narrow paths. Linux's system temp directory avoids
+    // embedding a non-ASCII home/user-data name in its copied input arguments.
+    const parent = path.join(util.getVortexPath("temp"), "vortex-archive-tools");
     await mkdir(parent, { recursive: true });
     const workspace = await mkdtemp(path.join(parent, "arc-"));
     try {

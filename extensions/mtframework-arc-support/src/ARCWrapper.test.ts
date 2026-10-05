@@ -46,7 +46,7 @@ afterEach(async () => {
 });
 
 async function expectWorkspaceClean() {
-  expect(await readdir(path.join(root, "temp", "archive-tools"))).toEqual([]);
+  expect(await readdir(path.join(root, "vortex-archive-tools"))).toEqual([]);
 }
 
 describe("ARC operations on Linux", () => {
@@ -71,6 +71,7 @@ describe("ARC operations on Linux", () => {
     ]);
     expect(helpers.getProtonToolCommand.mock.calls[0][2]).toBe(discovery);
     expect(helpers.executeToolProcess.mock.calls[0][2].env.SELECTED_PREFIX).toBe("yes");
+    expect(helpers.getVortexPath).toHaveBeenCalledWith("temp");
     expect(await readFile(archive, "utf8")).toBe("original archive");
     await expectWorkspaceClean();
   });
