@@ -31,6 +31,9 @@ const {
   module: { executeToolProcess },
 } = await load("../src/renderer/src/util/executeToolProcess.ts");
 const {
+  module: { executeDivine },
+} = await load("../extensions/games/game-baldursgate3/src/divineProcess.ts");
+const {
   module: { buildProtonCommand },
 } = await load("../src/renderer/src/util/linux/protonCommand.ts");
 const {
@@ -328,56 +331,64 @@ int wmain(int count, wchar_t **args) {
       literals,
     );
     checks++;
-    const heartbeat = path.join(root, "heartbeat");
-    const otherHeartbeat = path.join(root, "unrelated-heartbeat");
-    const otherController = new AbortController();
-    const otherPlan = command(receiver, ["wait", toWinePath(prefix, otherHeartbeat)]);
-    let unrelatedResult;
-    const cancellationStart = Date.now();
-    const unrelated = executeToolProcess(otherPlan.executable, otherPlan.args, {
-      env: otherPlan.env,
-      signal: otherController.signal,
-      timeoutMs: 60000,
-    }).then(
-      (value) => {
-        unrelatedResult = value;
-        return value;
-      },
-      (error) => {
-        unrelatedResult = error;
-        return error;
-      },
-    );
-    const controller = new AbortController();
-    plan = command(receiver, ["wait", toWinePath(prefix, heartbeat)]);
-    const active = executeToolProcess(plan.executable, plan.args, {
-      env: plan.env,
-      signal: controller.signal,
-      timeoutMs: 30000,
-    }).catch((error) => error);
-    let started = false;
-    for (let attempt = 0; attempt < 200 && !started; attempt++) {
-      started = await Promise.all([stat(heartbeat), stat(otherHeartbeat)])
-        .then((files) => files.every((info) => info.size > 0))
-        .catch(() => false);
-      if (!started) await delay(25);
+    for (const [label, invokeProcess] of [
+      ["archive", executeToolProcess],
+      ["divine", executeDivine],
+    ]) {
+      const heartbeat = path.join(root, label + "-heartbeat");
+      const otherHeartbeat = path.join(root, label + "-unrelated-heartbeat");
+      const otherController = new AbortController();
+      const otherPlan = command(receiver, ["wait", toWinePath(prefix, otherHeartbeat)]);
+      let unrelatedResult;
+      const cancellationStart = Date.now();
+      const unrelated = invokeProcess(otherPlan.executable, otherPlan.args, {
+        env: otherPlan.env,
+        signal: otherController.signal,
+        timeoutMs: 60000,
+      }).then(
+        (value) => {
+          unrelatedResult = value;
+          return value;
+        },
+        (error) => {
+          unrelatedResult = error;
+          return error;
+        },
+      );
+      const controller = new AbortController();
+      plan = command(receiver, ["wait", toWinePath(prefix, heartbeat)]);
+      const active = invokeProcess(plan.executable, plan.args, {
+        env: plan.env,
+        signal: controller.signal,
+        timeoutMs: 30000,
+      }).catch((error) => error);
+      let started = false;
+      for (let attempt = 0; attempt < 200 && !started; attempt++) {
+        started = await Promise.all([stat(heartbeat), stat(otherHeartbeat)])
+          .then((files) => files.every((info) => info.size > 0))
+          .catch(() => false);
+        if (!started) await delay(25);
+      }
+      controller.abort();
+      const cancelled = await active;
+      assert.ok(started, `Windows process did not start: ${cancelled.message}`);
+      if (label === "archive") assert.equal(cancelled.code, "ABORT_ERR");
+      else assert.equal(cancelled.signal, "SIGTERM");
+      const before = await readFile(heartbeat);
+      const otherBefore = await readFile(otherHeartbeat);
+      await delay(150);
+      assert.deepEqual(await readFile(heartbeat), before, "Cancelled Windows tool kept writing");
+      checks++;
+      assert.ok(
+        (await stat(otherHeartbeat)).size > otherBefore.length,
+        `Cancelling one Windows job stopped an unrelated job in the same prefix: ${JSON.stringify({ elapsed: Date.now() - cancellationStart, code: unrelatedResult?.code, signal: unrelatedResult?.signal })}`,
+      );
+      otherController.abort();
+      const otherExit = await unrelated;
+      if (label === "archive") assert.equal(otherExit.code, "ABORT_ERR");
+      else assert.equal(otherExit.signal, "SIGTERM");
+      checks++;
     }
-    controller.abort();
-    const cancelled = await active;
-    assert.ok(started, `Windows process did not start: ${cancelled.message}`);
-    assert.equal(cancelled.code, "ABORT_ERR");
-    const before = await readFile(heartbeat);
-    const otherBefore = await readFile(otherHeartbeat);
-    await delay(150);
-    assert.deepEqual(await readFile(heartbeat), before, "Cancelled Windows tool kept writing");
-    checks++;
-    assert.ok(
-      (await stat(otherHeartbeat)).size > otherBefore.length,
-      `Cancelling one Windows job stopped an unrelated job in the same prefix: ${JSON.stringify({ elapsed: Date.now() - cancellationStart, code: unrelatedResult?.code, signal: unrelatedResult?.signal })}`,
-    );
-    otherController.abort();
-    assert.equal((await unrelated).code, "ABORT_ERR");
-    checks++;
     plan = command(receiver, ["capture", toWinePath(prefix, captured), "prefix still usable"]);
     await executeToolProcess(plan.executable, plan.args, { env: plan.env, timeoutMs: 30000 });
     checks++;

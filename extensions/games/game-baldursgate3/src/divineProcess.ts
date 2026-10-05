@@ -48,7 +48,12 @@ export function executeDivine(
       stopped = true;
       kill("SIGTERM");
       // A Proton launcher or its children may ignore SIGTERM; never leave them writing PAKs.
-      hardStop = setTimeout(() => kill("SIGKILL"), 1000);
+      hardStop = setTimeout(() => {
+        kill("SIGKILL");
+        // Other Wine processes may retain these pipe handles after our tool exits.
+        child.stdout.destroy();
+        child.stderr.destroy();
+      }, 1000);
     };
     const timeout = options.timeoutMs > 0 ? setTimeout(stop, options.timeoutMs) : undefined;
     const capture = (stream: "stdout" | "stderr", chunk: string) => {

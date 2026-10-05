@@ -255,7 +255,8 @@ build. Both tools, their author documentation and the x64 job launchers are chec
 in the unpacked package and installed DEB. Wine 9/10 CI runs real create/list/extract,
 file-order preservation, corrupt-ARC handling, concurrent filters, reimport1,
 reimport2 and write operations, plus literal argv and Windows process cancellation while an unrelated Windows
-process continues in the same prefix.
+process continues in the same prefix. The same cancellation check covers the
+Divine process runner.
 These tests use a receiver for the Proton command shape, rather than an installed
 Steam Proton distribution or actual Dragon's Dogma/game-specific BMS scripts.
 

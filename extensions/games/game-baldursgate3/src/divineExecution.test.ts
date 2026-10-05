@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -223,6 +223,53 @@ describe("Divine shell-free execution", () => {
     },
   );
 
+  it("cancels without waiting for an independent process holding inherited pipes", async () => {
+    const ready = path.join(root, "ready");
+    const heartbeat = path.join(root, "heartbeat");
+    const controller = new AbortController();
+    let pid: number;
+    let deadline: NodeJS.Timeout;
+    const writer = `const fs=require('node:fs'); setInterval(()=>fs.appendFileSync(${JSON.stringify(heartbeat)},'x'),20); setTimeout(()=>process.exit(),10000);`;
+    const parent = `const {spawn}=require('node:child_process'); const child=spawn(process.execPath,['-e',${JSON.stringify(writer)}],{detached:true,stdio:['ignore',1,2]}); require('node:fs').writeFileSync(${JSON.stringify(ready)},String(child.pid)); setInterval(()=>{},1000);`;
+    const operation = executeDivine(process.execPath, ["-e", parent], {
+      signal: controller.signal,
+      timeoutMs: 5000,
+    }).catch((error: unknown) => error);
+    try {
+      for (let attempt = 0; attempt < 200 && !pid; attempt++) {
+        pid = await readFile(ready, "utf8")
+          .then((text) => Number(text))
+          .catch(() => 0);
+        if (!pid) await delay(10);
+      }
+      expect(pid).toBeGreaterThan(0);
+      controller.abort();
+      const cancelled: unknown = await Promise.race([
+        operation,
+        new Promise((_, reject) => {
+          deadline = setTimeout(
+            () => reject(new Error("Divine cancellation waited for another pipe holder")),
+            2500,
+          );
+        }),
+      ]);
+      expect(cancelled).toMatchObject({ signal: "SIGTERM" });
+      const before = (await stat(heartbeat)).size;
+      await delay(100);
+      expect((await stat(heartbeat)).size).toBeGreaterThan(before);
+    } finally {
+      controller.abort();
+      if (deadline) clearTimeout(deadline);
+      if (pid) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          /* The writer may already have reached its own deadline. */
+        }
+      }
+      await operation;
+    }
+  });
   it("bounds captured output", async () => {
     await expect(
       executeDivine(process.execPath, ["-e", "process.stdout.write('x'.repeat(2*1024*1024))"], {
