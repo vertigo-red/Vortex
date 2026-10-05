@@ -56,6 +56,12 @@ describe("ARC operations on Linux", () => {
       "last.tex",
     ]);
   });
+  it("restores the file-type extension from each verbose record", () => {
+    expect(
+      parseARCList("Path=one\n  correctExt=tex\nPath=folder\\two=three\n  correctExt=.tex\n"),
+    ).toEqual(["one.tex", "folder/two=three.tex"]);
+    expect(parseARCList("Path=name.tex\n  correctExt=tex\n")).toEqual(["name.tex.tex"]);
+  });
   it("accepts unknown game IDs without throwing during archive registration", () => {
     expect(arcGameId("unknown")).toBeUndefined();
     expect(arcVersion("unknown")).toBeUndefined();

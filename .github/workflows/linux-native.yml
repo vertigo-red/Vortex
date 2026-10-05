@@ -44,12 +44,12 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "9.0.x"
+      - name: Verify real ARCtool and QuickBMS archive operations
+        run: node scripts/verify-linux-archive-tools.mjs
       - name: Verify Wine batch launches
         run: node scripts/verify-linux-batch.mjs
       - name: Verify Wine user folder redirections
         run: node scripts/verify-linux-user-folders.mjs
-      - name: Verify real ARCtool and QuickBMS archive operations
-        run: node scripts/verify-linux-archive-tools.mjs
       - name: Verify real Divine PAK operations
         run: node scripts/verify-linux-divine.mjs
   linux-x64:

@@ -230,7 +230,8 @@ archive in the system temporary directory. Extraction retains the file-order sid
 copies the source and publishes a completed, header-checked archive by renaming a
 sibling temporary file. A failed tool cannot replace the original archive. This
 requires additional temporary disk space. ARC list parsing keeps the last entry,
-equals signs in names, and Linux directory separators. ARCtool's legacy internal
+reconstructs the file extension from `correctExt`, and preserves equals signs in
+names and Linux directory separators. ARCtool's legacy internal
 filename encoding still needs validation with non-ASCII names stored inside game
 archives; copying does support non-ASCII host archive and output paths.
 

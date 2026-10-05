@@ -16,12 +16,28 @@ export interface IARCOptions {
 
 /** ARCtool writes Windows paths and does not terminate the final record with another Path key. */
 export function parseARCList(input: string): string[] {
-  return input.split(/\r?\n/).flatMap((line) => {
+  const files: string[] = [];
+  let file: string | undefined;
+  let extension = "";
+  const finish = () => {
+    if (file) {
+      const name = file + (extension ? "." + extension.replace(/^\./, "") : "");
+      files.push(process.platform === "linux" ? name.replace(/\\/g, "/") : name);
+    }
+  };
+  for (const line of input.split(/\r?\n/)) {
     const separator = line.indexOf("=");
-    if (separator < 0 || line.slice(0, separator).trim() !== "Path") return [];
-    const file = line.slice(separator + 1).trim();
-    return file ? [process.platform === "linux" ? file.replace(/\\/g, "/") : file] : [];
-  });
+    if (separator < 0) continue;
+    const key = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1).trim();
+    if (key === "Path") {
+      finish();
+      file = value;
+      extension = "";
+    } else if (key === "correctExt") extension = value;
+  }
+  finish();
+  return files;
 }
 
 class ARCWrapper {
