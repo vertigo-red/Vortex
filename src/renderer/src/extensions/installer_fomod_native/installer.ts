@@ -21,7 +21,7 @@ export const install = async (
   choicesIn?: unknown,
   unattended?: boolean,
   details?: IInstallationDetails,
-) => {
+): Promise<IInstallResult> => {
   const instanceId = shortid();
 
   const isFomodChoicesIn = (value: unknown): value is { type: string; options: IChoices } =>
@@ -32,13 +32,13 @@ export const install = async (
 
   const fomodChoices: IChoices = isFomodChoicesIn(choicesIn) ? choicesIn.options : undefined;
 
-  const invokeInstall = async (validate: boolean) => {
+  const invokeInstall = async (validate: boolean): Promise<IInstallResult> => {
     // When override instructions file is present, use only the universal stop patterns and null pluginPath
     // to prevent any automatic path manipulation (both FindPathPrefix and pluginPath stripping)
-    const stopPatterns = details.hasInstructionsOverrideFile
+    const stopPatterns = details?.hasInstructionsOverrideFile
       ? uniPatterns
       : getStopPatterns(gameId, getGame(gameId));
-    const pluginPath = details.hasInstructionsOverrideFile ? null : getPluginPath(gameId);
+    const pluginPath = details?.hasInstructionsOverrideFile ? null : getPluginPath(gameId);
 
     // Skip Redux dialog-state dispatches when we have a preset and are running
     // unattended (collection install). The C# fomod still calls uiUpdateState
@@ -54,46 +54,55 @@ export const install = async (
 
     const modInstaller = await VortexModInstaller.create(api, instanceId, gameId, isUnattended);
 
-    const result = await modInstaller.installAsync(
-      files,
-      stopPatterns,
-      pluginPath,
-      scriptPath,
-      fomodChoices,
-      preselect,
-      validate,
-    );
+    try {
+      const result = await modInstaller.installAsync(
+        files,
+        stopPatterns,
+        pluginPath,
+        scriptPath,
+        fomodChoices,
+        preselect,
+        validate,
+      );
 
-    if (!result) {
-      throw new UserCanceled();
+      if (!result) {
+        throw new UserCanceled();
+      }
+
+      const choices = getChoicesFromState(api, instanceId);
+
+      const transformedResult: IInstallResult = {
+        instructions: result.instructions.reduce<IInstruction[]>((map, current) => {
+          const currentWithoutType = (({ type, data, ...props }) => props)(current);
+          const type = current.type as InstructionType;
+          const data = current.data ? Buffer.from(current.data) : undefined;
+          map.push({
+            type: type,
+            data: data,
+            ...currentWithoutType,
+          });
+          return map;
+        }, []),
+      };
+
+      transformedResult.instructions.push({
+        type: "attribute",
+        key: "installerChoices",
+        value: {
+          type: "fomod",
+          options: choices ?? fomodChoices,
+        },
+      });
+      return transformedResult;
+    } catch (error) {
+      const message = modInstaller.getMissingExtenderMessage(error);
+      if (message === undefined) throw error;
+      // Use the same fatal instruction as an ordinary unmet FOMOD prerequisite.
+      // InstallManager reports it and stops before processing any file copies.
+      return { instructions: [{ type: "error", value: "fatal", source: message }] };
+    } finally {
+      modInstaller.dispose();
     }
-
-    const choices = getChoicesFromState(api, instanceId);
-
-    const transformedResult: IInstallResult = {
-      instructions: result.instructions.reduce<IInstruction[]>((map, current) => {
-        const currentWithoutType = (({ type, data, ...props }) => props)(current);
-        const type = current.type as InstructionType;
-        const data = current.data ? Buffer.from(current.data) : undefined;
-        map.push({
-          type: type,
-          data: data,
-          ...currentWithoutType,
-        });
-        return map;
-      }, []),
-    };
-
-    transformedResult.instructions.push({
-      type: "attribute",
-      key: "installerChoices",
-      value: {
-        type: "fomod",
-        options: choices ?? fomodChoices,
-      },
-    });
-    modInstaller.dispose();
-    return transformedResult;
   };
 
   try {

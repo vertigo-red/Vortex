@@ -17,6 +17,7 @@ import type {
 } from "../../installer_fomod_shared/types/interface";
 import type { IDialogManager } from "../../installer_fomod_shared/utils/DialogQueue";
 import { DialogQueue } from "../../installer_fomod_shared/utils/DialogQueue";
+import { hasSessionFOMOD } from "../../installer_fomod_shared/utils/guards";
 
 /**
  * UI Delegate for native FOMOD installer
@@ -57,6 +58,8 @@ export class DialogManager implements IDialogManager {
   }
 
   public dispose = () => {
+    // A native error or cancellation may finish without the uiEndDialog callback.
+    if (this.mCancelCB !== undefined) this.endDialog();
     this.mApi.store?.dispatch(clearDialog(this.mInstanceId));
   };
 
@@ -139,10 +142,17 @@ export class DialogManager implements IDialogManager {
    * This is the callback passed to the native ModInstaller
    */
   public endDialog = (): void => {
+    if (this.mCancelCB === undefined) return;
     log("debug", "Ending FOMOD dialog", { instanceId: this.mInstanceId });
 
     try {
-      this.mApi.store.dispatch(endDialog(this.mInstanceId));
+      const state = this.mApi.getState();
+      if (
+        hasSessionFOMOD(state.session) &&
+        state.session.fomod.installer.dialog.activeInstanceId === this.mInstanceId
+      ) {
+        this.mApi.store.dispatch(endDialog(this.mInstanceId));
+      }
 
       this.mApi.events
         .removeListener(`fomod-installer-select-${this.mInstanceId}`, this.onDialogSelect)
@@ -270,11 +280,7 @@ export class DialogManager implements IDialogManager {
 
     try {
       this.mCancelCB?.();
-
-      this.mApi.store.dispatch(endDialog(this.mInstanceId));
-
-      const dialogQueue = DialogQueue.getInstance(this.mApi);
-      dialogQueue.onDialogEnd(this.mInstanceId);
+      this.endDialog();
     } catch (err) {
       log("error", "Failed to process FOMOD dialog cancellation", {
         instanceId: this.mInstanceId,

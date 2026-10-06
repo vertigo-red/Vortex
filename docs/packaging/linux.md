@@ -236,6 +236,24 @@ package into the game root, then remove its links and restore an overwritten
 script. Native XML FOMOD checks cover an absent loader, installed SKSE 1.7.3, and
 a higher required version using the production version delegate and PE reader.
 
+The native FOMOD library at version 0.13.4 correctly rejects a missing script
+extender during condition evaluation, but `SEVersionCondition.GetMessage` then
+parses the empty version and throws a .NET argument exception. The Vortex adapter
+recognizes that specific failure only when its version callback recorded an
+unavailable extender, and returns a fatal installer instruction explaining that
+the required extender must be installed and deployed. It does not substitute a
+zero version, disable XML validation or ignore an unmet dependency. The same
+guard stops an affected installer when the library cannot describe an unusable
+option. Other native errors propagate unchanged. An older installed loader keeps
+the library's normal message with the required and installed versions.
+
+Installation failures and cancellations dispose the native dialog in `finally`,
+remove its event listeners and queued request, and keep another installer's active
+dialog intact. Native fixtures cover these cleanup paths, manual cancellation and
+retry, mandatory dependencies with missing and unreadable loaders, a zero minimum,
+saved unattended choices, and a satisfied `Or` alternative. Required files are not
+copied on failure; a retry with a readable SKSE 1.7.3 loader can install them.
+
 The Open menu's Bethesda settings and application-data actions use this same
 resolver, including Registry redirections and secondary Steam libraries. They
 reread discovery when clicked. An unavailable discovery or prefix is reported

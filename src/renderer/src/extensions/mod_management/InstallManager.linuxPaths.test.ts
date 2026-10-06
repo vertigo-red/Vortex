@@ -217,7 +217,7 @@ describe.skipIf(process.platform !== "linux")("Linux installer paths", () => {
           });
           state.settings.gameMode.discovered.skyrim = { path: gameRoot };
         });
-        getGame("skyrim").getInstalledVersion = () => Bluebird.resolve("1.9.32.0");
+        getGame("skyrim").getGameVersion = () => Bluebird.resolve("1.9.32.0");
         if (scenario.installed) {
           const fixture = JSON.parse(
             await readFile(
@@ -265,6 +265,146 @@ describe.skipIf(process.platform !== "linux")("Linux installer paths", () => {
           });
         }
         expect(h.errorNotifications).toEqual([]);
+      } finally {
+        deployment.cleanup();
+      }
+    });
+  }
+
+  for (const scenario of [
+    { name: "missing SKSE", installed: "absent", minimum: "1.7.3", error: /could not read.*SKSE/ },
+    {
+      name: "an unreadable SKSE loader",
+      installed: "unreadable",
+      minimum: "1.7.3",
+      error: /could not read.*SKSE/,
+    },
+    { name: "SKSE 1.7.3", installed: "valid", minimum: "1.7.3" },
+    {
+      name: "an older installed SKSE",
+      installed: "valid",
+      minimum: "2.0.0",
+      error: /requires skse v2\.0\.0.*You have 1\.7\.3/i,
+    },
+    {
+      name: "missing SKSE with a zero minimum",
+      installed: "absent",
+      minimum: "0.0.0",
+      error: /could not read.*SKSE/,
+    },
+    {
+      name: "a satisfied alternative to SKSE",
+      installed: "absent",
+      minimum: "1.7.3",
+      alternative: true,
+    },
+    {
+      name: "missing SKSE with saved unattended choices",
+      installed: "absent",
+      minimum: "1.7.3",
+      preset: true,
+      error: /could not read.*SKSE/,
+    },
+  ]) {
+    test(`handles a mandatory native FOMOD dependency with ${scenario.name}`, async ({
+      makeInstallManager,
+    }) => {
+      const h = makeInstallManager();
+      const deployment = makeDeploymentHarness({ gameId: "skyrim", files: {} });
+      try {
+        const gameRoot = path.dirname(deployment.gameDir);
+        deployment.setState((state) => {
+          Object.assign(state.session, {
+            fomod: { installer: { dialog: { instances: {}, activeInstanceId: null } } },
+          });
+          state.settings.gameMode.discovered.skyrim = { path: gameRoot };
+        });
+        getGame("skyrim").getGameVersion = () => Bluebird.resolve("1.9.32.0");
+        const fixture = JSON.parse(
+          await readFile(
+            path.resolve(
+              __dirname,
+              "../../../../../packages/exe-version/test-fixtures/skse-loader.json",
+            ),
+            "utf8",
+          ),
+        );
+        const loader = path.join(gameRoot, "SKSE_LOADER.EXE");
+        if (scenario.installed !== "absent") {
+          await writeFile(
+            loader,
+            scenario.installed === "valid"
+              ? Buffer.from(fixture.data, "base64")
+              : "unreadable loader",
+          );
+        }
+        await mkdir(path.join(extracted, "fomod"));
+        await writeFile(
+          path.join(extracted, "fomod", "ModuleConfig.xml"),
+          '<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' +
+            'xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">' +
+            "<moduleName>SKSE requirement fixture</moduleName>" +
+            `<moduleDependencies operator="${scenario.alternative ? "Or" : "And"}">` +
+            `<skseDependency version="${scenario.minimum}" />` +
+            (scenario.alternative ? '<gameDependency version="1.9.32.0" />' : "") +
+            "</moduleDependencies>" +
+            '<requiredInstallFiles><file source="Textures\\Example.dds" destination="Textures\\SKSE.dds" /></requiredInstallFiles>' +
+            "</config>",
+        );
+        const { NativeLogger } = require("@nexusmods/fomod-installer-native") as typeof fomodT;
+        new NativeLogger(() => undefined).setCallbacks();
+        const invoke = () =>
+          installNativeFomod(
+            deployment.api,
+            ["fomod/ModuleConfig.xml", "Textures/Example.dds"],
+            extracted,
+            "skyrim",
+            scenario.preset ? { type: "fomod", options: [] } : undefined,
+            true,
+            { hasXmlConfigXML: true },
+          );
+        const result = await invoke();
+        if (scenario.error) {
+          expect(result.instructions).toContainEqual(
+            expect.objectContaining({
+              type: "error",
+              value: "fatal",
+              source: expect.stringMatching(scenario.error),
+            }),
+          );
+          expect(result.instructions.some((instruction) => instruction.type === "copy")).toBe(
+            false,
+          );
+          await expect(install(h, result.instructions, undefined, "skyrim")).rejects.toThrow(
+            scenario.error,
+          );
+          expect(h.errorNotifications).toEqual([
+            expect.objectContaining({
+              title: "Installer reported errors",
+              allowReport: false,
+            }),
+          ]);
+          expect(await readdir(staging)).toEqual([]);
+          expect(await readdir(deployment.gameDir)).toEqual([]);
+          expect(deployment.dialogCalls).toEqual([]);
+          if (scenario.name === "missing SKSE") {
+            await writeFile(loader, Buffer.from(fixture.data, "base64"));
+            const retry = await invoke();
+            expect(retry.instructions.some((instruction) => instruction.type === "error")).toBe(
+              false,
+            );
+            await install(h, retry.instructions, undefined, "skyrim");
+            expect(await readFile(path.join(staging, "Textures", "SKSE.dds"), "utf8")).toBe(
+              "texture",
+            );
+          }
+        } else {
+          await install(h, result.instructions, undefined, "skyrim");
+          expect(await readFile(path.join(staging, "Textures", "SKSE.dds"), "utf8")).toBe(
+            "texture",
+          );
+          expect(h.errorNotifications).toEqual([]);
+        }
       } finally {
         deployment.cleanup();
       }

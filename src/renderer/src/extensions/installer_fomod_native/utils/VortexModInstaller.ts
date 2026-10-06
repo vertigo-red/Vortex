@@ -26,6 +26,7 @@ export class VortexModInstaller {
   private mScriptPath: string;
   private mDialogManager: DialogManager | undefined;
   private mSharedDelegates: SharedDelegates;
+  private mMissingExtenders = new Set<string>();
   // When true (collection install with preset choices), skip all dialog Redux
   // dispatches. The C# fomod still calls uiStartDialog/uiUpdateState/uiEndDialog
   // for each step, but in unattended mode we don't need to update the store —
@@ -68,6 +69,30 @@ export class VortexModInstaller {
     this.mDialogManager = undefined;
   }
 
+  public getMissingExtenderMessage(error: unknown): string | undefined {
+    if (!(error instanceof Error) || this.mMissingExtenders.size === 0) return undefined;
+    const trace = `${error.message}\n${error.stack ?? ""}`;
+    // fomod-installer 0.13.4 evaluates a missing extender correctly, but its
+    // SEVersionCondition.GetMessage then tries to parse the empty version.
+    // Explain only that failure; never invent a version or bypass a condition.
+    if (
+      !trace.includes("SEVersionCondition.GetMessage") ||
+      !trace.includes("System.ArgumentException") ||
+      !trace.includes("System.Version.")
+    ) {
+      return undefined;
+    }
+    return this.mApi.translate(
+      "The installer could not read the installed version of {{extenders}}. " +
+        "Install and deploy the required script extender, then try installing this mod again.",
+      {
+        replace: {
+          extenders: [...this.mMissingExtenders].map((name) => name.toUpperCase()).join(", "),
+        },
+      },
+    );
+  }
+
   /**
    * Calls FOMOD's install and converts the result to Vortex data
    */
@@ -81,6 +106,7 @@ export class VortexModInstaller {
     validate: boolean,
   ): Promise<fomodT.types.InstallResult | null> => {
     this.mScriptPath = scriptPath;
+    this.mMissingExtenders.clear();
     return await this.mModInstaller.install(
       files,
       stopPatterns,
@@ -117,7 +143,11 @@ export class VortexModInstaller {
    * Callback
    */
   private contextGetExtenderVersionAsync = (extender: string): string => {
-    return this.mSharedDelegates.getExtenderVersion(extender);
+    const version = this.mSharedDelegates.getExtenderVersion(extender);
+    const name = extender.toLowerCase();
+    if (version === "") this.mMissingExtenders.add(name);
+    else this.mMissingExtenders.delete(name);
+    return version;
   };
 
   /**
