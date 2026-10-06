@@ -129,7 +129,11 @@
             "target": "build",
             "projects": "@tools/dotnetprobe"
           },
-          "sbom"
+          "sbom",
+          {
+            "target": "build",
+            "projects": "@tools/fomod-native"
+          }
         ],
         "cache": true,
         "inputs": [

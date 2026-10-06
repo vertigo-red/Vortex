@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createWriteStream, existsSync } from "node:fs";
 import { access, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -78,7 +79,23 @@ async function prepareLinux() {
 
   const fomodRoot = resolve(MAIN_DIR, "node_modules", "@nexusmods", "fomod-installer-native");
   const binding = resolve(fomodRoot, "build", "Release", "modinstaller.node");
-  await access(resolve(fomodRoot, "ModInstaller.Native.so"));
+  const rebuiltRoot = resolve(DIST_DIR, "assets", "fomod-native");
+  const rebuiltLibrary = resolve(rebuiltRoot, "ModInstaller.Native.so");
+  const info = JSON.parse(await readFile(resolve(rebuiltRoot, "build-info.json"), "utf8"));
+  const installed = JSON.parse(await readFile(resolve(fomodRoot, "package.json"), "utf8"));
+  const hash = createHash("sha256")
+    .update(await readFile(rebuiltLibrary))
+    .digest("hex");
+  if (installed.version !== info.version || hash !== info.librarySha256) {
+    throw new Error("Patched native FOMOD build is missing or does not match the package");
+  }
+  const library = resolve(fomodRoot, "ModInstaller.Native.so");
+  try {
+    await copyFile(rebuiltLibrary, library + ".rebuilt");
+    await rename(library + ".rebuilt", library);
+  } finally {
+    await rm(library + ".rebuilt", { force: true });
+  }
   const temporary = binding + ".relocatable";
   try {
     // pnpm deploy can use hardlinks. Patch a fresh copy so the source/store binary is untouched.

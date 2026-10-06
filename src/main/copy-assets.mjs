@@ -30,6 +30,20 @@ for (const file of dotnetprobeFiles) {
   await copy(join(WORKSPACE, file), join(BUILD, "assets", rel));
 }
 
+if (process.platform === "linux") {
+  for (const file of [
+    "ModInstaller.Native.so",
+    "build-info.json",
+    "missing-extender.patch",
+    "LICENSE.md",
+  ]) {
+    await copy(
+      join(WORKSPACE, "tools/fomod-native/dist", file),
+      join(ASSETS, "fomod-native", file),
+    );
+  }
+}
+
 // SCSS sources for runtime stylesheet compiler load paths
 const scssFiles = await glob("src/stylesheets/**/*.scss", {
   cwd: WORKSPACE,

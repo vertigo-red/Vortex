@@ -272,12 +272,17 @@ describe.skipIf(process.platform !== "linux")("Linux installer paths", () => {
   }
 
   for (const scenario of [
-    { name: "missing SKSE", installed: "absent", minimum: "1.7.3", error: /could not read.*SKSE/ },
+    {
+      name: "missing SKSE",
+      installed: "absent",
+      minimum: "1.7.3",
+      error: /requires skse v1\.7\.3.*Please download/i,
+    },
     {
       name: "an unreadable SKSE loader",
       installed: "unreadable",
       minimum: "1.7.3",
-      error: /could not read.*SKSE/,
+      error: /requires skse v1\.7\.3.*Please download/i,
     },
     { name: "SKSE 1.7.3", installed: "valid", minimum: "1.7.3" },
     {
@@ -290,7 +295,7 @@ describe.skipIf(process.platform !== "linux")("Linux installer paths", () => {
       name: "missing SKSE with a zero minimum",
       installed: "absent",
       minimum: "0.0.0",
-      error: /could not read.*SKSE/,
+      error: /requires skse v0\.0\.0.*Please download/i,
     },
     {
       name: "a satisfied alternative to SKSE",
@@ -303,7 +308,7 @@ describe.skipIf(process.platform !== "linux")("Linux installer paths", () => {
       installed: "absent",
       minimum: "1.7.3",
       preset: true,
-      error: /could not read.*SKSE/,
+      error: /requires skse v1\.7\.3.*Please download/i,
     },
   ]) {
     test(`handles a mandatory native FOMOD dependency with ${scenario.name}`, async ({

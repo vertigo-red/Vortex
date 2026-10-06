@@ -20,6 +20,13 @@
           "{workspaceRoot}/src/main/build/renderer.js.map",
           "{workspaceRoot}/src/main/build/splash.js",
           "{workspaceRoot}/src/main/build/splash.js.map"
+        ],
+        "dependsOn": [
+          "^build",
+          {
+            "target": "build",
+            "projects": "@tools/fomod-native"
+          }
         ]
       },
       "watch": {

@@ -1,0 +1,50 @@
+diff --git a/src/InstallScripting/XmlScript/SEVersionCondition.cs b/src/InstallScripting/XmlScript/SEVersionCondition.cs
+index f7d62cc..b41c8da 100644
+--- a/src/InstallScripting/XmlScript/SEVersionCondition.cs
++++ b/src/InstallScripting/XmlScript/SEVersionCondition.cs
+@@ -65,11 +65,14 @@ namespace FomodInstaller.Scripting.XmlScript
+     /// <seealso cref="ICondition.GetMessage(ConditionStateManager)"/>
+     public override string GetMessage(ConditionStateManager p_csmStateManager, CoreDelegates coreDelegates, bool invert)
+     {
++      if (invert)
++        return String.Format("{0} v{1} or higher is installed.", m_strExtender, MinimumVersion);
++
+       Version verInstalledVersion = null;
+ 
+-    verInstalledVersion = new Version(coreDelegates.context.GetExtenderVersion(m_strExtender));
++      Version.TryParse(coreDelegates.context.GetExtenderVersion(m_strExtender), out verInstalledVersion);
+ 
+-      if ((verInstalledVersion == null) && !invert)
++      if (verInstalledVersion == null)
+         return String.Format("This mod requires {0} v{1} or higher. Please download from http://{0}.silverlock.org", m_strExtender, MinimumVersion);
+       else if (verInstalledVersion < MinimumVersion)
+         return String.Format("This mod requires {0} v{1} or higher. You have {2}. Please update from http://{0}.silverlock.org", m_strExtender, MinimumVersion, verInstalledVersion);
+diff --git a/src/InstallScripting/XmlScript/XmlScriptExecutor.cs b/src/InstallScripting/XmlScript/XmlScriptExecutor.cs
+index bc840d3..2869171 100644
+--- a/src/InstallScripting/XmlScript/XmlScriptExecutor.cs
++++ b/src/InstallScripting/XmlScript/XmlScriptExecutor.cs
+@@ -215,6 +215,7 @@ namespace FomodInstaller.Scripting.XmlScript
+             else
+             {
+                 preselectOptions(lstSteps[stepIdx]);
++                fixSelected(lstSteps[stepIdx]);
+                 sendState(lstSteps, ModArchive.Prefix, stepIdx);
+             }
+         }
+@@ -306,12 +307,11 @@ namespace FomodInstaller.Scripting.XmlScript
+                                 isPreset = true;
+                             }
+                         }
+-                        if (isPreset && type == OptionType.NotUsable)
++                        if (type == OptionType.NotUsable)
+                         {
+-                            // force preset options to be selectable, otherwise the user might not be able to deselect it
+-                            // even if it is actually invalid
+-                            option.OptionTypeResolver = new StaticOptionTypeResolver(OptionType.CouldBeUsable);
+-                            type = OptionType.CouldBeUsable;
++                            // Saved choices cannot bypass the installer's current requirements.
++                            disableOption(option);
++                            continue;
+                         }
+                         if ((type == OptionType.Required)
+                             || (!m_Preset.HasValue && (type == OptionType.Recommended))

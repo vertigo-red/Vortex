@@ -7,7 +7,7 @@ establish compatibility with every bundled or third-party game extension.
 ## Build and package
 
 Install the distribution prerequisites and follow [shared setup](../install-instructions/shared.md).
-Builds need the .NET 9 SDK, fontconfig development headers and the MinGW x64 C
+Builds need the .NET 9 SDK, Git, GCC/binutils, zlib and fontconfig development headers, and the MinGW x64 C
 compiler (`gcc-mingw-w64-x86-64` on Debian/Ubuntu). MinGW builds BG3's small Windows
 CLI launcher; the SDK builds its dependency-free UTF-8 startup hook targeting
 netstandard2.1 for Divine's .NET 8 runtime. FOMOD, font-scanner and dotnetprobe need
@@ -236,22 +236,43 @@ package into the game root, then remove its links and restore an overwritten
 script. Native XML FOMOD checks cover an absent loader, installed SKSE 1.7.3, and
 a higher required version using the production version delegate and PE reader.
 
-The native FOMOD library at version 0.13.4 correctly rejects a missing script
-extender during condition evaluation, but `SEVersionCondition.GetMessage` then
-parses the empty version and throws a .NET argument exception. The Vortex adapter
-recognizes that specific failure only when its version callback recorded an
-unavailable extender, and returns a fatal installer instruction explaining that
-the required extender must be installed and deployed. It does not substitute a
-zero version, disable XML validation or ignore an unmet dependency. The same
-guard stops an affected installer when the library cannot describe an unusable
-option. Other native errors propagate unchanged. An older installed loader keeps
-the library's normal message with the required and installed versions.
+Linux builds compile the native FOMOD companion library from version 0.13.4 at
+upstream commit `af3c8355b2e22f1c7c4272c8eb3cb928ccb5f8c1`, with
+`tools/fomod-native/missing-extender.patch`. Its version-message parser handles
+empty and invalid extender versions. A mandatory missing extender produces the
+normal fatal prerequisite message, while an optional dependency displays its
+option as `NotUsable` and allows installation of other files. Condition evaluation
+still returns false for an absent loader, including a zero minimum; XML validation
+and required versions remain in effect. An older installed loader keeps the
+message with the required and installed versions.
+
+Unavailable options are deselected before the initial dialog, including
+`SelectAll` groups. Saved choices cannot convert them to `CouldBeUsable` or bypass
+their current requirements during manual or unattended reinstalls. Available
+options and the user's selections keep their normal behavior.
+
+The Nx `@tools/fomod-native:build` target prepares the library before renderer
+builds and tests that depend on those builds. Direct scoped Vitest runs require
+`pnpm nx run @tools/fomod-native:build` first. Compilation needs Git, the .NET 9
+SDK, GCC/binutils and zlib development files, plus initial access to GitHub and
+NuGet. A fingerprint of the pinned source, patch, build script and SDK version
+reuses a previously built library only when its SHA-256 also matches. The generated
+C header must match the npm binding's header. Dependency files are replaced
+atomically without modifying pnpm's shared inodes. Windows keeps its existing
+installer library.
+
+The package receives the rebuilt library from the copied build assets and checks
+its hash and dependency version before packaging. Those assets retain the source
+commit, SDK version, hashes, patch and upstream license for reproduction. Relocated
+package probes verify missing, invalid and installed SKSE versions, disabled
+options in `SelectAny` and `SelectAll`, and a fatal mandatory requirement.
+They also check saved choices with missing and installed SKSE.
 
 Installation failures and cancellations dispose the native dialog in `finally`,
 remove its event listeners and queued request, and keep another installer's active
 dialog intact. Native fixtures cover these cleanup paths, manual cancellation and
 retry, mandatory dependencies with missing and unreadable loaders, a zero minimum,
-saved unattended choices, and a satisfied `Or` alternative. Required files are not
+saved choices, unavailable options and a satisfied `Or` alternative. Required files are not
 copied on failure; a retry with a readable SKSE 1.7.3 loader can install them.
 
 The Open menu's Bethesda settings and application-data actions use this same
@@ -617,6 +638,8 @@ Passing those checks does not prove a complete modding session works. In particu
 - `src/main/prepare-dist-package.mjs` - Deployed package metadata and LOOT checks.
 - `scripts/verify-linux-installation.mjs` - DEB integration, sandbox helper and removal checks.
 - `scripts/verify-linux-fomod.mjs` - Relocated native FOMOD loading without build-machine paths.
+- `tools/fomod-native/build.mjs` - Pinned native FOMOD source build, ABI check and dependency preparation.
+- `tools/fomod-native/missing-extender.patch` - Extender condition messages and enforcement of unavailable options.
 - `scripts/verify-linux-loot.mjs` - Native plugin sorting and worker/socket lifecycle through packaged Electron.
 - `patches/loot@7.0.0.patch` - LOOT worker startup observation, deadline and cleanup.
 - `scripts/smoke-linux-package.mjs` - Packaged and installed renderer startup checks.

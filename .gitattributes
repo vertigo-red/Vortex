@@ -19,8 +19,8 @@
 *.vcxitems  text eol=crlf
 
 # Text files where line endings should be preserved
-*.patch     -text
+# Blank context lines in a unified diff contain a single space.
+*.patch     -text whitespace=-blank-at-eol
 
 # Committed action bundles
 .github/actions/*/dist/** linguist-generated
-
