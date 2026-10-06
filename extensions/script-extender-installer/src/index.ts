@@ -321,7 +321,9 @@ function main(context: types.IExtensionContext) {
     "script-extender-installer",
     10,
     toBlue(testSupported),
-    toBlue(installScriptExtender),
+    toBlue((files, destinationPath, gameId) =>
+      installScriptExtender(context.api, files, destinationPath, gameId),
+    ),
   );
 
   context.registerTest("script-extender-missing", "gamemode-activated", () =>

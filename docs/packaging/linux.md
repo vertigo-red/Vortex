@@ -218,12 +218,23 @@ Game and script extender versions are read from PE resources on Linux without
 executing the files. FOMOD script extender dependencies read the installed loader
 (for LE, `skse_loader.exe`) rather than substituting the game's version, and report
 no installed version if the loader is missing or unreadable.
+The script extender installer accepts Windows archive separators and loader
+filename casing, removes only the loader's enclosing archive directory, and
+keeps root-level loader/DLL files and `Data/Scripts` in one `dinput` mod. On Linux,
+destinations reuse existing Windows directory and filename spelling, including
+`data/scripts`; archives with multiple matching loaders or an unreadable loader
+version fail before producing installation instructions. The PE test fixture is
+synthetic and contains version resources without executable code.
 The Linux installation test uses the native Basic FOMOD handler on a wrapped LE
 archive with a real ESP from the corpus, then checks hardlink deployment, enabled
 and disabled plugin lists, and removal of its links without deleting unrelated
 game files. The packaged LOOT probe also sorts dependent form-version-43 plugins
 for `skyrim`, in addition to the existing Special Edition scenario. These checks
 do not replace testing a complete mod list in an actual Skyrim LE installation.
+Additional filesystem tests install and hardlink a complete synthetic SKSE LE
+package into the game root, then remove its links and restore an overwritten
+script. Native XML FOMOD checks cover an absent loader, installed SKSE 1.7.3, and
+a higher required version using the production version delegate and PE reader.
 
 The Open menu's Bethesda settings and application-data actions use this same
 resolver, including Registry redirections and secondary Steam libraries. They

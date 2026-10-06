@@ -9,24 +9,18 @@ import { IGameSupport } from "./types";
 const getGameStore = (gameId: string, api: types.IExtensionApi): string | undefined =>
   selectors.discoveryByGame(api.getState(), gameId)["store"];
 
-const getScriptExtenderVersion = (extenderPath: string): Promise<string> => {
-  // Check the file we're looking for actually exists.
-  return new Promise((resolve, reject) => {
-    fs.statAsync(extenderPath)
-      .then(() => {
-        // The exe versions appear to have a leading zero. So we need to cut it off.
-        let exeVersion = getVersion(extenderPath);
-        exeVersion = exeVersion.startsWith("0")
-          ? exeVersion.substr(exeVersion.indexOf("."), exeVersion.length)
-          : exeVersion;
-        return resolve(semver.coerce(exeVersion).version);
-      })
-      .catch(() => {
-        // Return a blank string if the file doesn't exist.
-        log("debug", "Script extender not found:", extenderPath);
-        return resolve(undefined);
-      });
-  });
+const getScriptExtenderVersion = async (extenderPath: string): Promise<string | undefined> => {
+  try {
+    await fs.statAsync(extenderPath);
+    const exeVersion = getVersion(extenderPath);
+    if (!/^\d+\.\d+\.\d+\.\d+$/.test(exeVersion)) return undefined;
+    // SKSE 1.7.3 is encoded as the Windows file version 0.1.7.3.
+    const parts = exeVersion.split(".");
+    return semver.coerce((parts[0] === "0" ? parts.slice(1) : parts).join("."))?.version;
+  } catch (err) {
+    log("debug", "Script extender version unavailable:", { extenderPath, error: err });
+    return undefined;
+  }
 };
 
 const getGamePath = (gameId: string, api): string => {

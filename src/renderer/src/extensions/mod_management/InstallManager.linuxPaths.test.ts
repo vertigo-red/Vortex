@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import type * as fomodT from "@nexusmods/fomod-installer-native";
+import Bluebird from "bluebird";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeDeploymentHarness } from "../../test-utils/deploymentTest";
@@ -19,6 +20,7 @@ import InstallContext from "./InstallContext";
 import type { IInstruction } from "./types/IInstallResult";
 import type { IChoiceType } from "./types/IMod";
 import type { IInstallationDetails } from "./types/InstallFunc";
+import BlacklistSet from "./util/BlacklistSet";
 import { normalizeInstallerInstruction } from "./util/installerPaths";
 
 vi.mock("../../util/log", () => ({ log: vi.fn() }));
@@ -79,6 +81,189 @@ describe.skipIf(process.platform !== "linux")("Linux installer paths", () => {
       {},
     );
   };
+
+  for (const scriptDirectory of ["Data/Scripts", "data/scripts"]) {
+    test(`installs and removes a complete SKSE LE package through the game root using existing ${scriptDirectory}`, async ({
+      makeInstallManager,
+    }) => {
+      const h = makeInstallManager();
+      const deployment = makeDeploymentHarness({ gameId: "skyrim", files: {} });
+      try {
+        const gameRoot = path.dirname(deployment.gameDir);
+        if (scriptDirectory.startsWith("data/")) await rm(deployment.gameDir, { recursive: true });
+        const scripts = path.join(gameRoot, scriptDirectory);
+        await mkdir(scripts, { recursive: true });
+        await writeFile(path.join(scripts, "SKSEFixture.pex"), "original script");
+        await writeFile(path.join(gameRoot, "TESV.exe"), "game fixture");
+        deployment.setState((state) => {
+          state.settings.gameMode.discovered.skyrim = { path: gameRoot };
+        });
+
+        const fixture = JSON.parse(
+          await readFile(
+            path.resolve(
+              __dirname,
+              "../../../../../packages/exe-version/test-fixtures/skse-loader.json",
+            ),
+            "utf8",
+          ),
+        );
+        const wrapper = path.join(extracted, "skse_1_7_3");
+        await mkdir(path.join(wrapper, "Data", "Scripts"), { recursive: true });
+        await writeFile(path.join(wrapper, "SKSE_LOADER.EXE"), Buffer.from(fixture.data, "base64"));
+        await writeFile(path.join(wrapper, "skse_1_9_32.dll"), "SKSE DLL");
+        await writeFile(path.join(wrapper, "Data", "Scripts", "sksefixture.pex"), "SKSE script");
+        await writeFile(path.join(wrapper, "LICENSE"), "fixture license");
+
+        // Load the bundled extension's source without expanding the renderer's TS project boundary.
+        const { installScriptExtender } = await vi.importActual<{
+          installScriptExtender: (
+            api: IExtensionApi,
+            files: string[],
+            extracted: string,
+            gameId: string,
+          ) => Promise<{ instructions: IInstruction[] }>;
+        }>("../../../../../extensions/script-extender-installer/src/installer");
+        const result = await installScriptExtender(
+          deployment.api,
+          [
+            "skse_1_7_3\\SKSE_LOADER.EXE",
+            "skse_1_7_3\\skse_1_9_32.dll",
+            "skse_1_7_3\\Data\\Scripts\\sksefixture.pex",
+            "skse_1_7_3\\LICENSE",
+            "skse_1_7_3\\Data\\",
+            "skse_1_7_30\\unrelated.dll",
+          ],
+          extracted,
+          "skyrim",
+        );
+        await install(h, result.instructions, undefined, "skyrim");
+
+        const mod = path.join(deployment.stagingDir, "SomeMod");
+        const copies = result.instructions.filter((item) => item.type === "copy");
+        for (const { destination } of copies) {
+          await mkdir(path.dirname(path.join(mod, destination)), { recursive: true });
+          await copyFile(path.join(staging, destination), path.join(mod, destination));
+        }
+        expect(result.instructions).toContainEqual({ type: "setmodtype", value: "dinput" });
+        const blacklist = new BlacklistSet([], getGame("skyrim"), deployment.normalize);
+        await deployment.method.prepare(gameRoot, false, [], deployment.normalize);
+        await deployment.method.activate(mod, "SomeMod", "", blacklist);
+        const manifest = await deployment.method.finalize(
+          "skyrim",
+          gameRoot,
+          deployment.stagingDir,
+        );
+        expect(manifest.map((file) => file.relPath).sort()).toEqual(
+          [
+            path.join(scriptDirectory, "SKSEFixture.pex"),
+            "LICENSE",
+            "SKSE_LOADER.EXE",
+            "skse_1_9_32.dll",
+          ].sort(),
+        );
+        for (const { destination } of copies) {
+          const [source, target] = await Promise.all([
+            stat(path.join(mod, destination)),
+            stat(path.join(gameRoot, destination)),
+          ]);
+          expect([target.dev, target.ino]).toEqual([source.dev, source.ino]);
+        }
+        expect(await readFile(path.join(scripts, "SKSEFixture.pex"), "utf8")).toBe("SKSE script");
+        expect((await readdir(gameRoot)).filter((name) => name.toLowerCase() === "data")).toEqual([
+          scriptDirectory.split("/")[0],
+        ]);
+        expect(h.errorNotifications).toEqual([]);
+
+        await deployment.method.prepare(gameRoot, true, manifest, deployment.normalize);
+        await deployment.method.finalize("skyrim", gameRoot, deployment.stagingDir);
+        expect(await readFile(path.join(scripts, "SKSEFixture.pex"), "utf8")).toBe(
+          "original script",
+        );
+        expect(await readFile(path.join(gameRoot, "TESV.exe"), "utf8")).toBe("game fixture");
+        await expect(stat(path.join(gameRoot, "SKSE_LOADER.EXE"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        await expect(stat(path.join(gameRoot, "skse_1_9_32.dll"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+      } finally {
+        deployment.cleanup();
+      }
+    });
+  }
+
+  for (const scenario of [
+    { name: "missing SKSE", installed: false, minimum: "1.7.3", installedFile: false },
+    { name: "SKSE 1.7.3", installed: true, minimum: "1.7.3", installedFile: true },
+    { name: "a newer required SKSE", installed: true, minimum: "2.0.0", installedFile: false },
+  ]) {
+    test(`evaluates a real native FOMOD SKSE condition with ${scenario.name}`, async ({
+      makeInstallManager,
+    }) => {
+      const h = makeInstallManager();
+      const deployment = makeDeploymentHarness({ gameId: "skyrim", files: {} });
+      try {
+        const gameRoot = path.dirname(deployment.gameDir);
+        deployment.setState((state) => {
+          Object.assign(state.session, {
+            fomod: { installer: { dialog: { instances: {}, activeInstanceId: null } } },
+          });
+          state.settings.gameMode.discovered.skyrim = { path: gameRoot };
+        });
+        getGame("skyrim").getInstalledVersion = () => Bluebird.resolve("1.9.32.0");
+        if (scenario.installed) {
+          const fixture = JSON.parse(
+            await readFile(
+              path.resolve(
+                __dirname,
+                "../../../../../packages/exe-version/test-fixtures/skse-loader.json",
+              ),
+              "utf8",
+            ),
+          );
+          await writeFile(
+            path.join(gameRoot, "SKSE_LOADER.EXE"),
+            Buffer.from(fixture.data, "base64"),
+          );
+        }
+        await mkdir(path.join(extracted, "fomod"));
+        await writeFile(
+          path.join(extracted, "fomod", "ModuleConfig.xml"),
+          '<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' +
+            'xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">' +
+            "<moduleName>SKSE fixture</moduleName><conditionalFileInstalls><patterns><pattern>" +
+            `<dependencies operator="And"><skseDependency version="${scenario.minimum}" /></dependencies>` +
+            '<files><file source="Textures\\Example.dds" destination="Textures\\SKSE.dds" /></files>' +
+            "</pattern></patterns></conditionalFileInstalls></config>",
+        );
+        const { NativeLogger } = require("@nexusmods/fomod-installer-native") as typeof fomodT;
+        new NativeLogger(() => undefined).setCallbacks();
+        const result = await installNativeFomod(
+          deployment.api,
+          ["fomod/ModuleConfig.xml", "Textures/Example.dds"],
+          extracted,
+          "skyrim",
+          undefined,
+          true,
+          { hasXmlConfigXML: true },
+        );
+        await install(h, result.instructions, undefined, "skyrim");
+        if (scenario.installedFile) {
+          expect(await readFile(path.join(staging, "Textures", "SKSE.dds"), "utf8")).toBe(
+            "texture",
+          );
+        } else {
+          await expect(stat(path.join(staging, "Textures", "SKSE.dds"))).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+        }
+        expect(h.errorNotifications).toEqual([]);
+      } finally {
+        deployment.cleanup();
+      }
+    });
+  }
 
   test("installs and deploys a wrapped Skyrim LE mod, persists original-format plugins and removes its links", async ({
     makeInstallManager,
