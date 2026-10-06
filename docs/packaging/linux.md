@@ -215,10 +215,13 @@ Skyrim Legendary Edition uses game ID `skyrim`, Steam app ID `72850`, `TESV.exe`
 `Data`, `AppData/Local/Skyrim`, and `Documents/My Games/Skyrim`. It keeps the original
 plugin list format with enabled filenames without the Special Edition `*` prefix.
 Game activation and default mod deployment share the same directory resolver for
-Windows executables on Linux. It reuses existing spellings of the full mod path,
-including `data` and nested paths declared with Windows separators, before the
-writability check. Missing directories still fail activation instead of creating
-another mod directory. Native Linux executables retain case-sensitive paths.
+Windows executables on Linux. Paths inside the selected installation reuse
+existing spellings of every component, including `data` and nested paths declared
+with Windows separators, before the writability check. The search starts at the
+selected game root without listing its ancestors. Separately declared mod
+destinations keep their parent path and resolve the final directory name there.
+Missing directories still fail activation instead of creating another mod
+directory. Native Linux executables retain case-sensitive paths.
 Game and script extender versions are read from PE resources on Linux without
 executing the files. FOMOD script extender dependencies read the installed loader
 (for LE, `skse_loader.exe`) rather than substituting the game's version, and report
