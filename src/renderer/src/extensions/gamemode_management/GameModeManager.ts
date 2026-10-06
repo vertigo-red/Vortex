@@ -44,6 +44,7 @@ import {
   searchDiscovery,
 } from "./util/discovery";
 import { getGame } from "./util/getGame";
+import { getModPath } from "./util/getModPath";
 
 export interface IGameStub {
   ext: IExtensionDownloadInfo;
@@ -127,10 +128,7 @@ class GameModeManager {
 
     let modPath;
     try {
-      modPath = game.queryModPath(gameDiscovery.path);
-      if (!path.isAbsolute(modPath)) {
-        modPath = path.resolve(gameDiscovery.path, modPath);
-      }
+      modPath = getModPath(game, gameDiscovery.path);
     } catch (err) {
       return PromiseBB.reject(err);
     }
