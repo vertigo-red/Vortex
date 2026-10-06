@@ -1,4 +1,6 @@
-import { fs, selectors, types, log } from "@nexusmods/vortex-api";
+import * as path from "node:path";
+
+import { fs, selectors, types, log, util } from "@nexusmods/vortex-api";
 import Bluebird from "bluebird";
 import getVersion from "exe-version";
 import * as semver from "semver";
@@ -11,8 +13,14 @@ const getGameStore = (gameId: string, api: types.IExtensionApi): string | undefi
 
 const getScriptExtenderVersion = async (extenderPath: string): Promise<string | undefined> => {
   try {
-    await fs.statAsync(extenderPath);
-    const exeVersion = getVersion(extenderPath);
+    let filename = extenderPath;
+    try {
+      await fs.statAsync(filename);
+    } catch (err) {
+      if (process.platform !== "linux" || err?.code !== "ENOENT") throw err;
+      filename = util.resolveWindowsGamePath(path.dirname(filename), path.basename(filename));
+    }
+    const exeVersion = getVersion(filename);
     if (!/^\d+\.\d+\.\d+\.\d+$/.test(exeVersion)) return undefined;
     // SKSE 1.7.3 is encoded as the Windows file version 0.1.7.3.
     const parts = exeVersion.split(".");

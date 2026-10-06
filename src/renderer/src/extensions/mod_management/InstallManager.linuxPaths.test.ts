@@ -170,6 +170,12 @@ describe.skipIf(process.platform !== "linux")("Linux installer paths", () => {
           expect([target.dev, target.ino]).toEqual([source.dev, source.ino]);
         }
         expect(await readFile(path.join(scripts, "SKSEFixture.pex"), "utf8")).toBe("SKSE script");
+        const { getScriptExtenderVersion } = await vi.importActual<{
+          getScriptExtenderVersion: (filename: string) => Promise<string | undefined>;
+        }>("../../../../../extensions/script-extender-installer/src/util");
+        expect(await getScriptExtenderVersion(path.join(gameRoot, "skse_loader.exe"))).toBe(
+          "1.7.3",
+        );
         expect((await readdir(gameRoot)).filter((name) => name.toLowerCase() === "data")).toEqual([
           scriptDirectory.split("/")[0],
         ]);
