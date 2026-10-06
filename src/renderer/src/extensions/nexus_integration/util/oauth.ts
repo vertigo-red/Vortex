@@ -92,52 +92,71 @@ function makeResultPage(success: boolean) {
 
 async function postRequest(tokenUrl: string, request: any): Promise<string> {
   const requestStr = querystring.stringify(request);
-  return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(tokenUrl);
-    const req = https.request(
-      {
-        hostname: parsedUrl.hostname,
-        port: parsedUrl.port,
-        path: parsedUrl.pathname + parsedUrl.search,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          "Content-Length": requestStr.length,
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      const parsedUrl = new URL(tokenUrl);
+      const req = https.request(
+        {
+          hostname: parsedUrl.hostname,
+          port: parsedUrl.port,
+          path: parsedUrl.pathname + parsedUrl.search,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Content-Length": requestStr.length,
+          },
         },
-      },
-      (res) => {
-        let responseStr = "";
-        let error: Error;
-        res
-          .on("data", (chunk) => (responseStr += chunk.toString()))
-          .on("error", (err) => (error = err))
-          .on("end", () => {
-            if (error) {
-              reject(error);
-            } else if (res.statusCode !== 200) {
-              try {
-                const errDetails = JSON.parse(responseStr);
-                const err = new Error(`Invalid request: "${errDetails?.error}"`);
-                err["code"] = errDetails?.error;
-                // these details are explicitly intended for the developer, not for the user
-                err["details"] = errDetails?.error_description;
-                reject(err);
-              } catch (err) {
-                const errMessage = responseStr.includes("<!DOCTYPE html>")
-                  ? `Received HTML response from ${tokenUrl} when JSON was expected. Please check your connection settings.`
-                  : `Failed to parse failure response: "${responseStr.substring(0, 50)}"`;
-                reject(new Error(errMessage));
+        (res) => {
+          let responseStr = "";
+          res
+            .on("data", (chunk) => (responseStr += chunk.toString()))
+            .on("error", reject)
+            .on("close", () => {
+              if (!res.complete) {
+                reject(
+                  Object.assign(new Error("OAuth token response was interrupted"), {
+                    code: "ECONNRESET",
+                  }),
+                );
               }
-            } else {
-              resolve(responseStr);
-            }
-          });
-      },
-    );
-    req.on("error", (err) => console.error("token req error", err));
-    req.write(requestStr);
-    req.end();
-  });
+            })
+            .on("end", () => {
+              if (res.statusCode !== 200) {
+                try {
+                  const errDetails = JSON.parse(responseStr);
+                  const err = new Error(`Invalid request: "${errDetails?.error}"`);
+                  err["code"] = errDetails?.error;
+                  // these details are explicitly intended for the developer, not for the user
+                  err["details"] = errDetails?.error_description;
+                  reject(err);
+                } catch (err) {
+                  const errMessage = responseStr.includes("<!DOCTYPE html>")
+                    ? `Received HTML response from ${tokenUrl} when JSON was expected. Please check your connection settings.`
+                    : `Failed to parse failure response: "${responseStr.substring(0, 50)}"`;
+                  reject(new Error(errMessage));
+                }
+              } else {
+                resolve(responseStr);
+              }
+            });
+        },
+      );
+      req.on("error", reject);
+      // A socket timeout alone does not bound DNS, connecting or a trickling response.
+      deadline = setTimeout(() => {
+        req.destroy(
+          Object.assign(new Error("OAuth token request timed out"), {
+            code: "ETIMEDOUT",
+          }),
+        );
+      }, 30_000);
+      req.write(requestStr);
+      req.end();
+    });
+  } finally {
+    clearTimeout(deadline);
+  }
 }
 
 /** Trade a refresh token for a new token pair (RFC 6749 §6). */

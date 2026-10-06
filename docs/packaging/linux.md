@@ -510,6 +510,13 @@ handle; the normal terminate command still exits successfully.
 
 ## Nexus links and desktop integration
 
+OAuth token exchanges and refreshes propagate connection and response-stream
+errors to the existing login/session handlers. An incomplete response rejects
+with `ECONNRESET`. Each request has a 30-second total deadline, including DNS,
+connection and response transfer; expiration destroys it with `ETIMEDOUT`.
+Success and failures both remove the timer so a completed login cannot be
+interrupted later. Transient refresh failures retain the existing session policy.
+
 Enable **Handle Nexus Links** in Vortex. DEB/RPM installations use the package's
 `vortex.desktop` launcher without creating an additional user wrapper. AppImages
 and manually extracted builds create a per-user desktop handler in
