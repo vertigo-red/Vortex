@@ -35,7 +35,6 @@ import { ProcessCanceled, TemporaryError, UserCanceled } from "../../util/Custom
 import Debouncer from "../../util/Debouncer";
 import { withTrackedActivity } from "../../util/errorHandling";
 import * as fs from "../../util/fs";
-import getNormalizeFunc from "../../util/getNormalizeFunc";
 import getVortexPath from "../../util/getVortexPath";
 import { laterT, type TFunction } from "../../util/i18n";
 import { showError } from "../../util/message";
@@ -124,6 +123,7 @@ import {
   getSupportedActivators,
   registerDeploymentMethod,
 } from "./util/deploymentMethods";
+import { getDeploymentNormalize } from "./util/deploymentPaths";
 import { NoDeployment } from "./util/exceptions";
 import extendApi from "./util/extendAPI";
 import { dealWithExternalChanges } from "./util/externalChanges";
@@ -265,7 +265,7 @@ async function deployModType(
     count: lastDeployment.length,
   });
 
-  const normalize = await getNormalizeFunc(targetPath);
+  const normalize = await getDeploymentNormalize(api, game.id, targetPath);
   const newActivation = await deployMods(
     api,
     game.id,
@@ -1260,7 +1260,7 @@ function onDeploySingleMod(api: IExtensionApi) {
     const subdir = genSubDirFunc(game, getModType(mod.type));
     await withActivationLock(async () => {
       try {
-        const normalize = await getNormalizeFunc(dataPath);
+        const normalize = await getDeploymentNormalize(api, gameId, dataPath);
         const lastActivation = await loadActivation(
           api,
           gameId,

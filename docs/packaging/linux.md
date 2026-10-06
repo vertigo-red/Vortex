@@ -391,6 +391,27 @@ Windows Script Host is required; it does not run natively on Linux.
 
 ## Deployment and purge
 
+On Linux, a selected game whose extension declares an `.exe` executable uses
+case-insensitive conflict keys, including file overrides and merger exclusions.
+This follows the selected installation's executable, so native Linux
+installations retain the filesystem's case sensitivity. This rule does not scan
+Wine prefixes or launch games.
+
+Linking deployment reuses the spelling of existing game files and directories.
+New directories share one spelling even when several mods name them differently.
+The manifest's `relPath` records the deployed spelling; optional `sourceRelPath`
+preserves a different spelling in staging. Backups keep the original game path
+through changes in mod priority, mod updates, external-file import/restore and
+purge. A path with multiple existing case-insensitive matches interrupts deployment
+before any links are changed. Existing ambiguous directories require correction
+before retrying.
+
+`src/renderer/src/extensions/mod_management/LinkingDeployment.linux.test.ts`
+exercises the production deployment entry point on temporary Linux filesystems,
+including Skyrim LE conflict winners and vanilla-file restoration. Direct symlink
+method tests cover the shared implementation; Skyrim's existing restriction on
+selecting symlink deployment still applies.
+
 The pinned `turbowalk` dependency has a repository patch for its non-Windows
 walker. It supplies modification times in seconds, full-width device/inode IDs
 and hardlink counts, and honors hidden-file, recursion, symlink and batch options.

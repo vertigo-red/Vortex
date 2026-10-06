@@ -28,6 +28,8 @@ function genNormalizeCase(): (input: string) => string {
 }
 
 export interface INormalizeParameters {
+  // override the filesystem's case sensitivity for games that use Windows paths
+  caseSensitive?: boolean;
   // normalize path separators (only on windows, transforms forward slashes to backslashes)
   separators?: boolean;
   // normalize unicode symbols that can have multiple equivalent representations
@@ -110,7 +112,11 @@ function getNormalizeFunc(
 
   const stackErr = new Error();
 
-  return isCaseSensitive(testPath)
+  return (
+    parameters.caseSensitive === undefined
+      ? isCaseSensitive(testPath)
+      : PromiseBB.resolve(parameters.caseSensitive)
+  )
     .then((caseSensitive) => {
       let funcOut = caseSensitive ? (input: string) => input : genNormalizeCase();
 

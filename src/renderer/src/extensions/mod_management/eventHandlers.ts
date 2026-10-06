@@ -65,6 +65,7 @@ import {
   getSelectedActivator,
   getSupportedActivators,
 } from "./util/deploymentMethods";
+import { getDeploymentNormalize } from "./util/deploymentPaths";
 import { dropMissingMods } from "./util/dropMissingMods";
 import modName from "./util/modName";
 import queryGameId from "./util/queryGameId";
@@ -675,7 +676,7 @@ async function undeploy(
         }
         let normalize: Normalize;
         try {
-          normalize = await getNormalizeFunc(deployPath);
+          normalize = await getDeploymentNormalize(api, gameMode, deployPath);
           const lastActivation = await loadActivation(
             api,
             gameMode,

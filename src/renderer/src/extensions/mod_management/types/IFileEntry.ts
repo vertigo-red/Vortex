@@ -7,6 +7,8 @@ export type FileAction = FileActionRef | FileActionVal | FileActionDel | FileAct
 
 export interface IFileEntry {
   filePath: string;
+  sourceRelPath?: string;
+  target?: string;
   source: string;
   type: "refchange" | "valchange" | "deleted" | "srcdeleted";
   action: FileAction;

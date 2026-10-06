@@ -24,6 +24,7 @@ import type {
   IUnavailableReason,
 } from "./types/IDeploymentMethod";
 import type BlacklistSet from "./util/BlacklistSet";
+import { usesWindowsGamePaths, WindowsDeploymentPaths } from "./util/deploymentPaths";
 
 export interface IDeployment {
   [relPath: string]: IDeployedFile;
@@ -158,6 +159,15 @@ abstract class LinkingActivator implements IDeploymentMethod {
     installationPath: string,
     progressCB?: (files: number, total: number) => void,
   ): PromiseLike<IDeployedFile[]> {
+    return this.finalizeImpl(gameId, dataPath, installationPath, progressCB);
+  }
+
+  private async finalizeImpl(
+    gameId: string,
+    dataPath: string,
+    installationPath: string,
+    progressCB?: (files: number, total: number) => void,
+  ): Promise<IDeployedFile[]> {
     if (this.mContext === undefined) {
       const err = new Error("No deployment in progress");
       err["attachLogOnReport"] = true;
@@ -165,6 +175,16 @@ abstract class LinkingActivator implements IDeploymentMethod {
     }
 
     const context = this.mContext;
+
+    try {
+      if (usesWindowsGamePaths(this.mApi, gameId)) {
+        await this.resolveDeploymentPaths(dataPath);
+      }
+    } catch (err) {
+      this.mContext = undefined;
+      context.onComplete();
+      throw err;
+    }
 
     let added: string[];
     let removed: string[];
@@ -486,7 +506,19 @@ abstract class LinkingActivator implements IDeploymentMethod {
             ? [dataPath, fileEntry.target, fileEntry.relPath]
             : [dataPath, fileEntry.relPath]
         ).join(path.sep);
-        const fileModPath = [installPath, fileEntry.source, fileEntry.relPath].join(path.sep);
+        const fileModPath = [
+          installPath,
+          fileEntry.source,
+          fileEntry.sourceRelPath ?? fileEntry.relPath,
+        ].join(path.sep);
+        const changePath = {
+          filePath: fileEntry.relPath,
+          source: fileEntry.source,
+          ...(fileEntry.sourceRelPath === undefined
+            ? {}
+            : { sourceRelPath: fileEntry.sourceRelPath }),
+          ...(fileEntry.target ? { target: fileEntry.target } : {}),
+        };
         let sourceDeleted: boolean = false;
         let destDeleted: boolean = false;
         let sourceTime: Date;
@@ -544,20 +576,17 @@ abstract class LinkingActivator implements IDeploymentMethod {
           .then((isLink?: boolean) => {
             if (sourceDeleted && !destDeleted && this.canRestore()) {
               changes.push({
-                filePath: fileEntry.relPath,
-                source: fileEntry.source,
+                ...changePath,
                 changeType: "srcdeleted",
               });
             } else if (destDeleted && !sourceDeleted) {
               changes.push({
-                filePath: fileEntry.relPath,
-                source: fileEntry.source,
+                ...changePath,
                 changeType: "deleted",
               });
             } else if (!sourceDeleted && !destDeleted && !isLink) {
               changes.push({
-                filePath: fileEntry.relPath,
-                source: fileEntry.source,
+                ...changePath,
                 sourceTime,
                 destTime,
                 changeType: "refchange",
@@ -678,11 +707,9 @@ abstract class LinkingActivator implements IDeploymentMethod {
     };
 
     for (const change of input) {
-      if (
-        changeMap[change.filePath] === undefined ||
-        moreImportant(change, changeMap[change.filePath])
-      ) {
-        changeMap[change.filePath] = change;
+      const key = path.join(change.target || "", change.filePath);
+      if (changeMap[key] === undefined || moreImportant(change, changeMap[key])) {
+        changeMap[key] = change;
       }
     }
 
@@ -734,7 +761,8 @@ abstract class LinkingActivator implements IDeploymentMethod {
     const sourcePath = path.join(
       installationPath,
       this.mContext.previousDeployment[key].source,
-      this.mContext.previousDeployment[key].relPath,
+      this.mContext.previousDeployment[key].sourceRelPath ??
+        this.mContext.previousDeployment[key].relPath,
     );
     return Promise.resolve(this.unlinkFile(outputPath, sourcePath))
       .catch((err: unknown) =>
@@ -779,7 +807,7 @@ abstract class LinkingActivator implements IDeploymentMethod {
     const fullPath = [
       installPathStr,
       this.mContext.newDeployment[key].source,
-      this.mContext.newDeployment[key].relPath,
+      this.mContext.newDeployment[key].sourceRelPath ?? this.mContext.newDeployment[key].relPath,
     ].join(path.sep);
     const fullOutputPath = [
       dataPath,
@@ -791,20 +819,14 @@ abstract class LinkingActivator implements IDeploymentMethod {
 
     const backupProm: Promise<void> = replace
       ? Promise.resolve()
-      : Promise.resolve(this.isLink(fullOutputPath, fullPath))
-          .then((link) =>
-            link
-              ? Promise.resolve(undefined) // don't re-create link that's already correct
-              : fs.renameAsync(fullOutputPath, fullOutputPath + BACKUP_TAG),
-          )
-          .catch((err: unknown) =>
-            getErrorCode(err) === "ENOENT"
-              ? // if the backup fails because there is nothing to backup, that's great,
-                // that's the most common outcome. Otherwise we failed to backup an existing
-                // file, so continuing could cause data loss
-                Promise.resolve(undefined)
-              : Promise.reject(err),
-          );
+      : this.backupFile(fullOutputPath, fullPath).catch((err: unknown) =>
+          getErrorCode(err) === "ENOENT"
+            ? // if the backup fails because there is nothing to backup, that's great,
+              // that's the most common outcome. Otherwise we failed to backup an existing
+              // file, so continuing could cause data loss
+              Promise.resolve(undefined)
+            : Promise.reject(err),
+        );
 
     return backupProm
       .then(() => this.linkFile(fullOutputPath, fullPath, dirTags))
@@ -814,19 +836,67 @@ abstract class LinkingActivator implements IDeploymentMethod {
       });
   }
 
+  private async backupFile(outputPath: string, sourcePath: string): Promise<void> {
+    if (await this.isLink(outputPath, sourcePath)) return;
+    try {
+      await fs.lstatAsync(outputPath + BACKUP_TAG);
+      // A manifest entry dropped during external-change handling still owns its original backup.
+    } catch (err) {
+      if (getErrorCode(err) !== "ENOENT") throw err;
+      await fs.renameAsync(outputPath, outputPath + BACKUP_TAG);
+    }
+  }
+
   private diffActivation(before: IDeployment, after: IDeployment) {
     const keysBefore = Object.keys(before);
     const keysAfter = Object.keys(after);
     const keysBoth = _.intersection(keysBefore, keysAfter) || [];
+    const sourceChanged = keysBoth.filter(
+      (key: string) =>
+        before[key]?.source !== after[key]?.source ||
+        (before[key]?.sourceRelPath ?? before[key]?.relPath) !==
+          (after[key]?.sourceRelPath ?? after[key]?.relPath) ||
+        before[key]?.relPath !== after[key]?.relPath ||
+        before[key]?.target !== after[key]?.target,
+    );
+    const changedSources = new Set(sourceChanged);
     return {
       added: _.difference(keysAfter, keysBefore),
       removed: _.difference(keysBefore, keysAfter),
-      sourceChanged: keysBoth.filter((key: string) => before[key]?.source !== after[key]?.source),
+      sourceChanged,
       contentChanged: keysBoth.filter(
-        (key: string) =>
-          before[key]?.time !== after[key]?.time && before[key]?.source === after[key]?.source,
+        (key: string) => before[key]?.time !== after[key]?.time && !changedSources.has(key),
       ),
     };
+  }
+
+  private async resolveDeploymentPaths(dataPath: string): Promise<void> {
+    const paths = new WindowsDeploymentPaths(dataPath, BACKUP_TAG);
+    for (const file of Object.values(this.mContext.previousDeployment)) {
+      // Deleted links still own backups at their original spelling.
+      await paths.resolve(path.join(file.target || "", file.relPath));
+    }
+    for (const file of Object.values(this.mContext.newDeployment)) {
+      const sourceRelPath = file.sourceRelPath ?? file.relPath;
+      const requested = path.join(file.target || "", file.relPath);
+      const resolved = await paths.resolve(requested);
+      const targetLength = file.target
+        ? path
+            .normalize(file.target)
+            .split(path.sep)
+            .filter((segment) => segment !== ".").length
+        : 0;
+      const segments = resolved.split(path.sep);
+      // Keep old manifest entries intact until their links have been removed successfully.
+      const next = {
+        ...file,
+        target: segments.slice(0, targetLength).join(path.sep),
+        relPath: segments.slice(targetLength).join(path.sep),
+      };
+      if (sourceRelPath !== next.relPath) next.sourceRelPath = sourceRelPath;
+      else delete next.sourceRelPath;
+      this.mContext.newDeployment[this.mNormalize(requested)] = next;
+    }
   }
 
   private postLinkPurge(

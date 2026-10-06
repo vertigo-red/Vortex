@@ -68,7 +68,7 @@ async function applyFileActions(
   await Promise.all(
     (actionGroups["drop"] || []).map((entry) =>
       truthy(entry.filePath)
-        ? fs.removeAsync(path.join(outputPath, entry.filePath))
+        ? fs.removeAsync(path.join(outputPath, entry.target || "", entry.filePath))
         : Promise.reject(new Error("invalid file path")),
     ),
   );
@@ -76,15 +76,15 @@ async function applyFileActions(
   await Promise.all(
     (actionGroups["delete"] || []).map((entry) =>
       truthy(entry.filePath)
-        ? fs.removeAsync(path.join(sourcePath, entry.source, entry.filePath))
+        ? fs.removeAsync(path.join(sourcePath, entry.source, entry.sourceRelPath ?? entry.filePath))
         : Promise.reject(new Error("invalid file path")),
     ),
   );
 
   await Promise.all(
     (actionGroups["import"] || []).map((entry) => {
-      const source = path.join(sourcePath, entry.source, entry.filePath);
-      const deployed = path.join(outputPath, entry.filePath);
+      const source = path.join(sourcePath, entry.source, entry.sourceRelPath ?? entry.filePath);
+      const deployed = path.join(outputPath, entry.target || "", entry.filePath);
       // Very rarely we have a case where the files are links of each other
       // (or at least node reports that) so the copy would fail.
       // Instead of handling the errors (when we can't be sure if it's due to a bug in node.js
@@ -107,17 +107,21 @@ async function applyFileActions(
   // the activation list because then they get reinstalled.
   // this includes files that were deleted and those replaced
   const dropSet = new Set(
-    [].concat(
-      (actionGroups["restore"] || []).map((entry) => entry.filePath),
-      (actionGroups["drop"] || []).map((entry) => entry.filePath),
-      // also remove the files that got deleted, except these won't be reinstalled
-      (actionGroups["delete"] || []).map((entry) => entry.filePath),
-      // also remove the files that got imported because they too only exist in staging
-      // at this point
-      (actionGroups["import"] || []).map((entry) => entry.filePath),
-    ),
+    []
+      .concat(
+        actionGroups["restore"] || [],
+        actionGroups["drop"] || [],
+        // also remove the files that got deleted, except these won't be reinstalled
+        actionGroups["delete"] || [],
+        // also remove the files that got imported because they too only exist in staging
+        // at this point
+        actionGroups["import"] || [],
+      )
+      .map((entry: IFileEntry) => path.join(entry.target || "", entry.filePath)),
   );
-  const newDeployment = lastDeployment.filter((entry) => !dropSet.has(entry.relPath));
+  const newDeployment = lastDeployment.filter(
+    (entry) => !dropSet.has(path.join(entry.target || "", entry.relPath)),
+  );
   lastDeployment = newDeployment;
 
   const affectedMods = new Set<string>();
@@ -131,7 +135,7 @@ async function applyFileActions(
       // A file has been deleted from the staging folder - we need to check whether
       //  the user had set a file override for it.
       const current = testFileOverrides[action.source] || [];
-      testFileOverrides[action.source] = current.concat(action.filePath);
+      testFileOverrides[action.source] = current.concat(action.sourceRelPath ?? action.filePath);
     }
   });
 
@@ -205,6 +209,8 @@ export function changeToEntry(modTypeId: string, change: IFileChange): IFileEntr
   return {
     modTypeId,
     filePath: change.filePath,
+    ...(change.sourceRelPath === undefined ? {} : { sourceRelPath: change.sourceRelPath }),
+    ...(change.target === undefined ? {} : { target: change.target }),
     source: change.source,
     type: change.changeType,
     action: defaultAction(change.changeType),

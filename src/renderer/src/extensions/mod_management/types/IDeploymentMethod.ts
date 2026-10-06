@@ -10,6 +10,10 @@ export interface IFileChange {
    * relative path to the changed file
    */
   filePath: string;
+  /** Relative path in staging when its spelling differs from the deployed path. */
+  sourceRelPath?: string;
+  /** Deployment subdirectory, if any. */
+  target?: string;
   /**
    * the source mod
    */
@@ -41,9 +45,11 @@ export interface IFileChange {
 
 export interface IDeployedFile {
   /**
-   * the relative path to the file
+   * the relative path to the deployed file, inside target
    */
   relPath: string;
+  /** Relative path in staging when its spelling differs from relPath. */
+  sourceRelPath?: string;
   /**
    * the source of the file, which should be the name of the mod
    */

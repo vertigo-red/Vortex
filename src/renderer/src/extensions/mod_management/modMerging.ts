@@ -11,12 +11,12 @@ import * as fs from "../../util/fs";
 import type { IFileEntry } from "../../util/getFileList";
 import getFileList from "../../util/getFileList";
 import type { Normalize } from "../../util/getNormalizeFunc";
-import getNormalizeFunc from "../../util/getNormalizeFunc";
 import { setdefault, truthy } from "../../util/util";
 import walk from "../../util/walk";
 import { BACKUP_TAG } from "./LinkingDeployment";
 import type { IMod } from "./types/IMod";
 import type { IResolvedMerger } from "./types/IResolvedMerger";
+import { getDeploymentNormalize } from "./util/deploymentPaths";
 
 export const MERGED_PATH = "__merged";
 
@@ -189,7 +189,7 @@ async function mergeMods(
           const realDest = truthy(merger.modType) ? mergeDest + "." + merger.modType : mergeDest;
           const relPath = path.relative(modPath, fileEntry.filePath);
           res.usedInMerge.push(relPath);
-          const normalize: Normalize = await getNormalizeFunc(modPath);
+          const normalize: Normalize = await getDeploymentNormalize(api, game.id, modPath);
           await fs.ensureDirAsync(realDest);
 
           for (const file of merger.match.baseFiles(deployedFiles)) {
@@ -273,7 +273,7 @@ async function mergeMods(
       }
       throw err;
     }
-    const normalize = await getNormalizeFunc(destinationPath);
+    const normalize = await getDeploymentNormalize(api, game.id, destinationPath);
     setdefault(res.mergeInfluences, normalize(relPath), {
       modType: "",
       sources: archiveMerges[relPath].map((iter) => iter.id),
