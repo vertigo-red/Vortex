@@ -22,7 +22,7 @@ export default defineConfig({
     tsconfigPaths: true,
     alias: {
       "original-fs": "fs",
-      "@nexusmods/vortex-api": path.resolve(__dirname, "src/__mocks__/vortex-api.ts"),
+      "@nexusmods/vortex-api": path.resolve(__dirname, "src/test-utils/extensionApi.ts"),
       "modmeta-db": path.resolve(
         __dirname,
         "../../extensions/nmm-import-tool/node_modules/modmeta-db/lib/index.js",
