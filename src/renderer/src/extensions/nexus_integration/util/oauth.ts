@@ -3,20 +3,12 @@ import * as http from "node:http";
 import * as https from "node:https";
 import type { AddressInfo } from "node:net";
 import * as querystring from "node:querystring";
-import * as url from "node:url";
 
 import { unknownToError } from "@vortex/shared";
 import { v1 as uuidv1 } from "uuid";
 
-import { ArgumentInvalid } from "../../../util/CustomErrors";
 import { log } from "../../../util/log";
-import {
-  OAUTH_CLIENT_ID,
-  OAUTH_REDIRECT_URL,
-  OAUTH_REDIRECT_BASE,
-  OAUTH_URL,
-  getOAuthRedirectUrl,
-} from "../constants";
+import { OAUTH_CLIENT_ID, OAUTH_REDIRECT_BASE, OAUTH_URL } from "../constants";
 import NEXUSMODS_LOGO from "./nexusmodslogo";
 
 type TokenType = "Bearer";
@@ -43,6 +35,15 @@ interface IOAuthServerSettings {
   clientId: string;
   redirectUrl: string; // Deprecated - for backward compatibility
   getRedirectUrl?: (port: number) => string; // New way to get redirect URL
+}
+
+interface IOAuthAttempt {
+  onToken: (err: Error, token: ITokenReply) => void;
+  verifier: string;
+  controller: AbortController;
+  canceled?: boolean;
+  redirectUrl?: string;
+  result?: Promise<boolean>;
 }
 
 function makeResultPage(success: boolean) {
@@ -90,7 +91,7 @@ function makeResultPage(success: boolean) {
   return html.join("");
 }
 
-async function postRequest(tokenUrl: string, request: any): Promise<string> {
+async function postRequest(tokenUrl: string, request: any, signal?: AbortSignal): Promise<string> {
   const requestStr = querystring.stringify(request);
   let deadline: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -102,6 +103,7 @@ async function postRequest(tokenUrl: string, request: any): Promise<string> {
           port: parsedUrl.port,
           path: parsedUrl.pathname + parsedUrl.search,
           method: "POST",
+          signal,
           headers: {
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Content-Length": requestStr.length,
@@ -173,13 +175,10 @@ export async function requestTokenRefresh(refreshToken: string): Promise<ITokenR
  * deals with token exchange for OAuth2
  **/
 class OAuth {
-  private mVerifier: string;
   private mServerSettings: IOAuthServerSettings;
-  private mStates: {
-    [state: string]: (err: Error, token: ITokenReply) => void;
-  } = {};
+  private mStates = new Map<string, IOAuthAttempt>();
   private mServer: http.Server;
-  private mLastServerPort: number;
+  private mStartingServer: Promise<void>;
   private mLocalhost: boolean;
 
   constructor(settings: IOAuthServerSettings) {
@@ -193,56 +192,118 @@ class OAuth {
     onOpenPage: (url: string) => void,
   ): Promise<void> {
     const state = uuidv1();
-    this.mStates[state] = onToken;
-
     // see https://www.rfc-editor.org/rfc/rfc7636#section-4.1
-    this.mVerifier = Buffer.from(uuidv1().replace(/-/g, "")).toString("base64");
+    const attempt: IOAuthAttempt = {
+      onToken,
+      verifier: crypto.randomBytes(32).toString("base64url"),
+      controller: new AbortController(),
+    };
+    // Register before awaiting the shared listener, including other requests still starting.
+    this.mStates.set(state, attempt);
     // see https://www.rfc-editor.org/rfc/rfc7636#section-4.2
-    const challenge = crypto.createHash("sha256").update(this.mVerifier).digest("base64");
+    const challenge = crypto.createHash("sha256").update(attempt.verifier).digest("base64url");
 
     try {
-      this.mLastServerPort = this.mLocalhost ? await this.ensureServer() : -1;
+      const port = this.mLocalhost ? await this.ensureServer() : -1;
+      if (attempt.canceled) {
+        this.mStates.delete(state);
+        this.checkServerStillRequired();
+        return;
+      }
+      attempt.redirectUrl = this.mServerSettings.getRedirectUrl
+        ? this.mServerSettings.getRedirectUrl(port)
+        : this.mServerSettings.redirectUrl.replace("PORT", port.toString());
+      // The token exchange must retain this attempt's verifier and exact redirect URI.
+      onOpenPage(this.authorizeUrl(challenge, state, attempt.redirectUrl));
     } catch (err) {
-      log("error", "failed to start server", err);
-      throw err;
+      this.mStates.delete(state);
+      this.checkServerStillRequired();
+      if (!attempt.canceled) throw err;
     }
+  }
 
-    // see https://www.rfc-editor.org/rfc/rfc7636#section-4.3
-    const url = this.authorizeUrl(challenge, state);
-
-    // call callback with generated url
-    onOpenPage(url);
+  public cancel(error: Error): boolean {
+    const attempts = [...this.mStates].filter(([, attempt]) => !attempt.canceled);
+    for (const [state, attempt] of attempts) {
+      attempt.canceled = true;
+      // A starting listener must finish before sendRequest can release it safely.
+      if (attempt.redirectUrl !== undefined) this.mStates.delete(state);
+      attempt.controller.abort(error);
+    }
+    for (const [, attempt] of attempts) {
+      try {
+        attempt.onToken(error, undefined);
+      } catch (err) {
+        log("warn", "failed to report OAuth cancellation", err);
+      }
+    }
+    this.checkServerStillRequired();
+    return attempts.length > 0;
   }
 
   public async receiveCode(code: string, state?: string): Promise<void> {
     if (state === undefined) {
-      for (const key of Object.keys(this.mStates)) {
-        await this.receiveCode(code, key);
+      const states = [...this.mStates]
+        .filter(([, attempt]) => !attempt.canceled)
+        .map(([key]) => key);
+      if (states.length > 1) {
+        throw new Error("OAuth state is required while multiple login attempts are pending");
+      }
+      if (states.length === 1) {
+        await this.exchangeCode(code, states[0]);
       }
     } else {
-      if (this.mStates[state] === undefined) {
-        // State token not found — the callback arrived after the login flow was
-        // already completed or abandoned (e.g. the user clicked login twice).
-        // Silently ignore, matching the behavior of the local HTTP server path.
-        log("debug", "ignoring OAuth callback with unknown state token", { state });
-        return;
-      }
-      try {
-        const tokenReply = await this.sentAuthorizeToken(code);
-        this.mStates[state]?.(null, tokenReply);
-      } catch (unknownError) {
-        const err = unknownToError(unknownError);
-        this.mStates[state]?.(err, undefined);
-      }
-      delete this.mStates[state];
+      await this.exchangeCode(code, state);
+    }
+  }
+
+  private async exchangeCode(code: string, state: string): Promise<boolean> {
+    const attempt = this.mStates.get(state);
+    if (attempt?.redirectUrl === undefined) {
+      log("debug", "ignoring OAuth callback with unknown state token", { state });
+      return false;
+    }
+    return this.finishAttempt(state, attempt, () => this.sentAuthorizeToken(code, attempt));
+  }
+
+  private finishAttempt(
+    state: string,
+    attempt: IOAuthAttempt,
+    receive: () => Promise<ITokenReply>,
+  ): Promise<boolean> {
+    // Browser retries share the in-flight result instead of redeeming the same code twice.
+    attempt.result ??= this.completeAttempt(state, attempt, receive);
+    return attempt.result;
+  }
+
+  private async completeAttempt(
+    state: string,
+    attempt: IOAuthAttempt,
+    receive: () => Promise<ITokenReply>,
+  ): Promise<boolean> {
+    let token: ITokenReply;
+    let error: Error = null;
+    try {
+      token = await receive();
+    } catch (err) {
+      error = unknownToError(err);
+    }
+    if (attempt.canceled) return false;
+    this.mStates.delete(state);
+    try {
+      attempt.onToken(error, token);
+      return error === null;
+    } finally {
+      this.checkServerStillRequired();
     }
   }
 
   private async ensureServer(): Promise<number> {
-    if (this.mServer === undefined) {
+    if (this.mStartingServer === undefined) {
       log("info", "starting localhost server to receive oauth response");
-      await this.startServer();
+      this.mStartingServer = this.startServer();
     }
+    await this.mStartingServer;
     const addr: AddressInfo = this.mServer.address() as AddressInfo;
     log("info", "using localhost server for oauth response", {
       port: addr.port,
@@ -251,15 +312,16 @@ class OAuth {
   }
 
   private checkServerStillRequired() {
-    if (this.mLocalhost && Object.keys(this.mStates).length === 0) {
+    if (this.mLocalhost && this.mStates.size === 0) {
       log("info", "no more oauth responses outstanding, stopping server");
       this.stopServer();
     }
   }
 
   private stopServer() {
-    this.mServer?.close?.();
+    this.mServer?.close(() => undefined);
     this.mServer = undefined;
+    this.mStartingServer = undefined;
   }
 
   private async startServer(): Promise<void> {
@@ -267,11 +329,14 @@ class OAuth {
       try {
         this.mServer = http
           .createServer()
-          .listen(undefined, "127.0.0.1")
+          .listen(0, "127.0.0.1")
           .on("error", reject)
           .on("listening", resolve)
           .on("request", (req, resp) => {
-            this.onHTTPRequest(req, resp);
+            void this.onHTTPRequest(req, resp).catch((err) => {
+              log("warn", "failed to write OAuth callback response", err);
+              resp.destroy();
+            });
           });
       } catch (err) {
         reject(err);
@@ -279,90 +344,61 @@ class OAuth {
     });
   }
 
-  private onHTTPRequest(
+  private async onHTTPRequest(
     req: http.IncomingMessage,
     resp: http.ServerResponse<http.IncomingMessage> & {
       req: http.IncomingMessage;
     },
   ) {
-    const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
-    const queryItems = Object.fromEntries(parsedUrl.searchParams);
-    const getQueryParam = (key: string): string => {
-      const tmp = queryItems[key];
-      return Array.isArray(tmp) ? tmp[0] : tmp;
-    };
-    const code = getQueryParam("code");
-    const state = getQueryParam("state");
-    const error = getQueryParam("error");
-    const error_description = getQueryParam("error_description");
-
-    req.setEncoding("utf-8");
-    let msg: string = "";
-    req.on("data", (chunk) => {
-      msg += chunk;
-    });
-
-    if (code !== undefined && state !== undefined) {
-      (async () => {
-        try {
-          await this.receiveCode(code, state);
-        } catch (err) {
-          // ignore unexpected codes
-        }
-      })();
-      resp.write(makeResultPage(true));
-
-      this.checkServerStillRequired();
-    } else if (error !== undefined) {
-      const err = new Error(error_description ?? "Description missing");
-      err["code"] = error;
-      this.mStates[state]?.(err, undefined);
-      resp.write(makeResultPage(false));
-      delete this.mStates[state];
-
-      this.checkServerStillRequired();
+    let success = false;
+    try {
+      const query = new URL(req.url, "http://127.0.0.1").searchParams;
+      const code = query.get("code");
+      const state = query.get("state");
+      const error = query.get("error");
+      const attempt = this.mStates.get(state);
+      if (attempt === undefined || (!code && !error)) {
+        resp.statusCode = 400;
+      } else if (code) {
+        success = await this.exchangeCode(code, state);
+      } else {
+        const err = new Error(query.get("error_description") ?? "Description missing");
+        err["code"] = error;
+        success = await this.finishAttempt(state, attempt, () => Promise.reject(err));
+      }
+    } catch (err) {
+      log("warn", "failed to handle OAuth callback", err);
     }
-
-    resp.end();
+    if (!resp.destroyed) {
+      resp.setHeader("Content-Type", "text/html; charset=utf-8");
+      resp.end(makeResultPage(success));
+    }
   }
 
-  // sanitize a base64 string to use in urls
-  private static sanitizeBase64(input: string) {
-    const replacements = {
-      "+": "-",
-      "/": "_",
-    };
-    return input.replace(/[+/]/g, (char) => replacements[char]).replace(/=*$/, "");
-  }
-
-  private authorizeUrl(challenge: string, state: string): string {
+  private authorizeUrl(challenge: string, state: string, redirectUrl: string): string {
     const request = {
       response_type: "code",
       scope: "openid profile email",
       code_challenge_method: "S256",
       client_id: this.mServerSettings.clientId,
-      redirect_uri: this.mServerSettings.getRedirectUrl
-        ? this.mServerSettings.getRedirectUrl(this.mLastServerPort)
-        : this.mServerSettings.redirectUrl.replace("PORT", this.mLastServerPort.toString()),
+      redirect_uri: redirectUrl,
       state,
-      code_challenge: OAuth.sanitizeBase64(challenge),
+      code_challenge: challenge,
     };
     return `${this.mServerSettings.baseUrl}/authorize?${querystring.stringify(request)}`;
   }
 
-  private async sentAuthorizeToken(code: string): Promise<ITokenReply> {
+  private async sentAuthorizeToken(code: string, attempt: IOAuthAttempt): Promise<ITokenReply> {
     const request = {
       grant_type: "authorization_code",
       client_id: this.mServerSettings.clientId,
-      redirect_uri: this.mServerSettings.getRedirectUrl
-        ? this.mServerSettings.getRedirectUrl(this.mLastServerPort)
-        : this.mServerSettings.redirectUrl.replace("PORT", this.mLastServerPort.toString()),
+      redirect_uri: attempt.redirectUrl,
       code,
-      code_verifier: this.mVerifier,
+      code_verifier: attempt.verifier,
     };
     const tokenUrl = `${this.mServerSettings.baseUrl}/token`;
     // TODO: validate result
-    return JSON.parse(await postRequest(tokenUrl, request));
+    return JSON.parse(await postRequest(tokenUrl, request, attempt.controller.signal));
   }
 }
 

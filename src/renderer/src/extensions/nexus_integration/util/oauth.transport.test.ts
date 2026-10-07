@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { ClientRequest, IncomingMessage } from "node:http";
 import * as https from "node:https";
-import { createServer, type AddressInfo } from "node:net";
+import { createServer, type AddressInfo, type Socket } from "node:net";
 
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
@@ -202,5 +202,41 @@ describe("OAuth token transport", () => {
       expect.objectContaining({ code: "ECONNRESET" }),
       undefined,
     );
+  });
+
+  it("cancels a real TLS token request while the handshake is pending", async () => {
+    vi.useRealTimers();
+    const actual = await vi.importActual<typeof https>("node:https");
+    requestMock.mockImplementation(actual.request);
+    const sockets = new Set<Socket>();
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+      // Consume the ClientHello so the peer's later EOF is observable, without replying.
+      socket.resume();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    onTestFinished(async () => {
+      sockets.forEach((socket) => socket.destroy());
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+    const port = (server.address() as AddressInfo).port;
+    const oauth = new OAuth({
+      baseUrl: `https://127.0.0.1:${port}`,
+      clientId: "test-client",
+      redirectUrl: "nxm://oauth/callback",
+    });
+    const onToken = vi.fn();
+    let page: URL;
+    await oauth.sendRequest(onToken, (address) => {
+      page = new URL(address);
+    });
+    const pending = oauth.receiveCode("test-code", page.searchParams.get("state"));
+    await vi.waitFor(() => expect(sockets.size).toBe(1));
+    const canceled = new Error("Test canceled TLS exchange");
+    expect(oauth.cancel(canceled)).toBe(true);
+    await pending;
+    await vi.waitFor(() => expect(sockets.size).toBe(0));
+    expect(onToken).toHaveBeenCalledExactlyOnceWith(canceled, undefined);
   });
 });

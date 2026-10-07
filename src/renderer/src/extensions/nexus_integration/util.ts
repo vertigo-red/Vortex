@@ -131,7 +131,10 @@ export function searchCollections(
 
 export function onCancelLoginImpl(api: IExtensionApi) {
   api.store.dispatch(setLoginId(undefined));
-  api.events.emit("did-login", new UserCanceled());
+  api.store.dispatch(setOauthPending(undefined));
+  const error = new UserCanceled();
+  oauth.cancel(error);
+  api.events.emit("did-login", error);
 }
 
 export async function bringToFront() {

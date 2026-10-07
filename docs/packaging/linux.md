@@ -520,6 +520,24 @@ connection and response transfer; expiration destroys it with `ETIMEDOUT`.
 Success and failures both remove the timer so a completed login cannot be
 interrupted later. Transient refresh failures retain the existing session policy.
 
+Each authorization attempt retains its own PKCE verifier and exact redirect URI.
+Verifiers use 32 cryptographically random bytes encoded as 43 unpadded base64url
+characters, with an S256 challenge. Concurrent attempts share listener readiness;
+duplicate callbacks share one token exchange. The browser result waits for that
+exchange and reports its actual success or failure. Unknown callback states return
+HTTP 400 without consuming a pending login. The loopback listener closes after
+the final attempt completes, including failures and manual code callbacks.
+Manual code callbacks may omit state only when one login attempt is pending;
+ambiguous callbacks leave both attempts available for a state-bound retry.
+
+Closing the login dialog cancels pending attempts and token requests, clears the
+pending URL and notifies installations waiting for authentication with
+`UserCanceled`. Late codes and token responses cannot store credentials for the
+canceled attempt. Cancellation during listener startup also releases that listener
+without opening the authorization page. Setup failures allow a fresh attempt.
+Tests use real local HTTP/TLS connections and simulated token replies; a real
+Nexus Mods account and desktop browser login still need validation.
+
 Enable **Handle Nexus Links** in Vortex. DEB/RPM installations use the package's
 `vortex.desktop` launcher without creating an additional user wrapper. AppImages
 and manually extracted builds create a per-user desktop handler in
