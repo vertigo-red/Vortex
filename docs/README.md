@@ -37,6 +37,7 @@ Project and coding documentation. To set up and build Vortex, start with
 ## Building and shipping
 
 - [packaging/windows.md](packaging/windows.md) - Local unsigned installers, the pipeline, signed CI builds
+- [packaging/archlinux.md](packaging/archlinux.md) - Native Arch Linux and CachyOS packages from the stable release branch
 - [packaging/flatpak.md](packaging/flatpak.md) - Building and installing the Flatpak
 - [flatpak/technical.md](flatpak/technical.md) - Flatpak manifest and runtime details
 - [flatpak/maintenance.md](flatpak/maintenance.md) - Updating the Flatpak package

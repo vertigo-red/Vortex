@@ -1,0 +1,223 @@
+name: Package Arch Linux / CachyOS
+
+on:
+  push:
+    branches: [build/cachyos]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-cachyos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Build and validate native x86_64 package
+    if: github.repository == 'vertigo-red/Vortex'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CI: "true"
+      HUSKY: "0"
+      NX_DAEMON: "false"
+      NX_PARALLEL: "2"
+      NODE_OPTIONS: --max-old-space-size=4096
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check stable source baseline and packaging
+        id: sources
+        run: |
+          node scripts/prepare-arch-package.mjs --check-source
+          source_hash=$(node scripts/prepare-arch-package.mjs --source-hash)
+          echo "hash=$source_hash" >> "$GITHUB_OUTPUT"
+          echo "VORTEX_SOURCE_HASH=$source_hash" >> "$GITHUB_ENV"
+          bash -n packaging/arch/PKGBUILD
+          sh -n packaging/arch/vortex
+          node packaging/arch/check-launcher.mjs
+
+      - name: Restore successful workspace verification
+        id: verified-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .ci-verified
+          key: cachyos-verified-v2-ubuntu24.04-${{ steps.sources.outputs.hash }}
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential python3-setuptools libfontconfig1-dev \
+            libgtk-3-0t64 libnss3 libasound2t64 libgbm1 \
+            patchelf zstd
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Install pinned pnpm and Node.js
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Cache native headers
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.electron-gyp
+            ~/.cache/node-gyp
+          key: cachyos-headers-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
+
+      - name: Restore workspace build cache
+        id: nx-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            .nx/cache
+            .nx/workspace-data/*.db*
+          key: cachyos-nx-v3-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}-${{ github.run_attempt }}
+          restore-keys: |
+            cachyos-nx-v3-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          VORTEX_ELECTRON_REBUILD: defer
+
+      - name: Inject stable application version
+        run: |
+          pnpm -F @vortex/main version "$VORTEX_PACKAGE_VERSION" \
+            --no-git-tag-version --no-git-checks --allow-same-version
+
+      - name: Rebuild native modules for Electron
+        run: pnpm --filter @vortex/main exec electron-rebuild
+
+      - name: Verify workspace
+        if: steps.verified-cache.outputs.cache-hit != 'true'
+        run: |
+          pnpm run verify
+          mkdir -p .ci-verified
+          echo "$VORTEX_SOURCE_HASH" > .ci-verified/source-hash
+        env:
+          NODE_ENV: test
+
+      - name: Check verification fingerprint
+        run: test "$(cat .ci-verified/source-hash)" = "$VORTEX_SOURCE_HASH"
+
+      - name: Save successful workspace verification
+        if: steps.verified-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .ci-verified
+          key: ${{ steps.verified-cache.outputs.cache-primary-key }}
+
+      - name: Prepare production application
+        run: pnpm nx run @vortex/main:publish
+        env:
+          NODE_ENV: production
+          VORTEX_ELECTRON_REBUILD: skip
+
+      - name: Rebuild deployed native modules
+        working-directory: src/main/dist
+        run: pnpm exec electron-rebuild
+        env:
+          PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: "false"
+
+      - name: Make FOMOD library lookup relocatable
+        run: |
+          find src/main/dist/node_modules/@nexusmods/fomod-installer-native \
+            -name modinstaller.node -exec patchelf --set-rpath '$ORIGIN:$ORIGIN/../..' {} +
+
+      - name: Package Electron application
+        working-directory: src/main/dist
+        run: |
+          pnpm exec electron-builder \
+            --config ../../../packaging/arch/electron-builder.cjs \
+            --linux dir --x64 --publish never
+        env:
+          NODE_ENV: production
+          VORTEX_ELECTRON_REBUILD: skip
+          PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: "false"
+          # Builder 24 can visit the same hoisted dependency twice. copy() is
+          # idempotent there, whereas hardlink() raises EEXIST.
+          USE_HARD_LINKS: "false"
+
+      - name: Validate ASAR and stage pacman sources
+        run: |
+          pnpm exec node scripts/verify-packaged-asar.mjs \
+            --asar dist/linux-unpacked/resources/app.asar
+          tar --zstd -cf dist/vortex-app.tar.zst -C dist linux-unpacked
+          pnpm exec node scripts/prepare-arch-package.mjs
+
+      - name: Build and install in clean Arch Linux
+        run: |
+          docker run --rm \
+            -e BUILD_UID="$(id -u)" \
+            -v "$PWD/dist/arch:/work" \
+            -v "$PWD/packaging/arch/smoke-test.cjs:/smoke-test.cjs:ro" \
+            archlinux:base bash -euo pipefail -c '
+              pacman -Syu --noconfirm --needed base-devel dotnet-runtime-9.0 desktop-file-utils
+              useradd --uid "$BUILD_UID" --create-home builder
+              echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
+              chown -R builder:builder /work
+              cd /work
+              runuser -u builder -- makepkg --syncdeps --noconfirm --cleanbuild
+              pacman -U --noconfirm ./*.pkg.tar.zst
+              test "$(stat -c %u:%g:%a /opt/vortex/chrome-sandbox)" = 0:0:4755
+              desktop-file-validate /usr/share/applications/com.nexusmods.vortex.desktop
+              /opt/vortex/resources/app.asar.unpacked/assets/dotnetprobe 9
+              runuser -u builder -- env ELECTRON_RUN_AS_NODE=1 DOTNET_ROOT=/usr/share/dotnet \
+                /opt/vortex/vortex /smoke-test.cjs
+              pacman -Qi vortex
+            '
+          cd dist/arch
+          sha256sum ./*.pkg.tar.zst > SHA256SUMS
+
+      - name: Upload installable package
+        uses: actions/upload-artifact@v7
+        with:
+          name: vortex-${{ env.VORTEX_PACKAGE_VERSION }}-cachyos-x86_64-${{ github.run_number }}
+          path: |
+            dist/arch/*.pkg.tar.zst
+            dist/arch/SHA256SUMS
+            dist/arch/BUILD-INFO.json
+            dist/arch/PKGBUILD
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Summarize package
+        run: |
+          {
+            echo "Built native Vortex ${VORTEX_PACKAGE_VERSION}-${VORTEX_PACKAGE_RELEASE} for Arch Linux / CachyOS x86_64."
+            echo "Source commit: ${GITHUB_SHA}"
+            echo
+            echo "Extract the artifact ZIP, then run in the extracted directory:"
+            echo '```sh'
+            echo 'sha256sum -c SHA256SUMS'
+            echo 'sudo pacman -U ./vortex-*.pkg.tar.zst'
+            echo '```'
+            echo
+            echo "Validated: full workspace verify (no E2E), pacman installation, desktop entry, .NET, FOMOD, LOOT, font scanner, DuckDB/level_pivot and LevelDB."
+            echo "GUI and deployment into real games require testing on the target system."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save workspace build cache
+        if: ${{ always() && steps.nx-cache.outputs.cache-hit != 'true' && steps.nx-cache.outcome == 'success' }}
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            .nx/cache
+            .nx/workspace-data/*.db*
+          key: ${{ steps.nx-cache.outputs.cache-primary-key }}

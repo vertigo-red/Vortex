@@ -1,0 +1,10 @@
+#!/bin/sh
+export IGNORE_UPDATES=yes
+export ELECTRON_TRASH=gio
+export DOTNET_ROOT="${DOTNET_ROOT:-/usr/share/dotnet}"
+# Browsers pass a bare URL; Vortex's CLI expects --download before that URL.
+# Preserve ordinary CLI options, including an explicit --download.
+case "${1-}" in
+  nxm://*) set -- --download "$@" ;;
+esac
+exec /opt/vortex/vortex "$@"
