@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, utimes } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, writeFile, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -196,15 +196,17 @@ describe("native crash startup sweep", () => {
   });
 
   it("skips active claims and recovers stale claims", async () => {
-    const active = path.join(root, "active.dmp.sending");
-    const stale = path.join(root, "stale.dmp.sending");
-    await writeFile(active, Buffer.alloc(32));
-    await writeFile(stale, Buffer.alloc(32));
+    // Use versioned dumps: a backdated unreadable dump can legitimately predate
+    // a freshly installed executable and be discarded by the build filter.
+    const active = await dump("active", "browser");
+    const stale = await dump("stale", "browser");
+    await rename(active, active + ".sending");
+    await rename(stale, stale + ".sending");
     const old = new Date(Date.now() - 10 * 60 * 1000);
-    await utimes(stale, old, old);
+    await utimes(stale + ".sending", old, old);
     await sendPendingNativeCrashReport();
     expect(telemetry.startSpan).toHaveBeenCalledTimes(1);
-    expect(await readdir(root)).toEqual(["active.dmp.sending"]);
+    expect(await readdir(path.dirname(active))).toEqual(["active.dmp.sending"]);
   });
 
   it("limits startup reporting to the newest five dumps", async () => {
