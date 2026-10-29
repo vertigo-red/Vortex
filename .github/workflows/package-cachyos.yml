@@ -177,8 +177,20 @@ jobs:
               test "$(stat -c %u:%g:%a /opt/vortex/chrome-sandbox)" = 0:0:4755
               desktop-file-validate /usr/share/applications/com.nexusmods.vortex.desktop
               /opt/vortex/resources/app.asar.unpacked/assets/dotnetprobe 9
-              runuser -u builder -- env ELECTRON_RUN_AS_NODE=1 DOTNET_ROOT=/usr/share/dotnet \
-                /opt/vortex/vortex /smoke-test.cjs
+              if runuser -u builder -- env ELECTRON_RUN_AS_NODE=1 DOTNET_ROOT=/usr/share/dotnet \
+                /opt/vortex/vortex /smoke-test.cjs; then
+                true
+              else
+                smoke_status=$?
+                echo "Native smoke test failed; collecting isolated font probe and native stack."
+                runuser -u builder -- env ELECTRON_RUN_AS_NODE=1 DOTNET_ROOT=/usr/share/dotnet \
+                  /opt/vortex/vortex /smoke-test.cjs --font-only || true
+                pacman -S --noconfirm --needed gdb
+                runuser -u builder -- env ELECTRON_RUN_AS_NODE=1 DOTNET_ROOT=/usr/share/dotnet \
+                  gdb --batch -ex run -ex "thread apply all bt 12" \
+                  --args /opt/vortex/vortex /smoke-test.cjs || true
+                exit "$smoke_status"
+              fi
               pacman -Qi vortex
             '
           cd dist/arch
