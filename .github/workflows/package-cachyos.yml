@@ -182,6 +182,13 @@ jobs:
               pacman -Qi vortex
             '
           cd dist/arch
+          # Keep epoch in pacman metadata, but omit ':' from portable artifact names.
+          packages=(./*.pkg.tar.zst)
+          test "${#packages[@]}" -eq 1
+          artifact="./vortex-${VORTEX_PACKAGE_VERSION}-${VORTEX_PACKAGE_RELEASE}-x86_64.pkg.tar.zst"
+          if [[ "${packages[0]}" != "$artifact" ]]; then
+            mv -- "${packages[0]}" "$artifact"
+          fi
           sha256sum ./*.pkg.tar.zst > SHA256SUMS
 
       - name: Upload installable package
