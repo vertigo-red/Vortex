@@ -5,9 +5,18 @@ import { util } from "@nexusmods/vortex-api";
 
 import { IHaloGame } from "./types";
 
-export const MCC_LOCAL_LOW = path.resolve(util.getVortexPath("appData"), "..", "LocalLow", "MCC");
+function mccLocalLow(): string {
+  return path.resolve(
+    util.getVortexPath("appData", util.getGame("halothemasterchiefcollection")),
+    "..",
+    "LocalLow",
+    "MCC",
+  );
+}
 export const MOD_MANIFEST_FILE = "ModManifest.txt";
-export const MOD_MANIFEST_FILE_PATH = path.join(MCC_LOCAL_LOW, "Config", MOD_MANIFEST_FILE);
+export function getModManifestFilePath(): string {
+  return path.join(mccLocalLow(), "Config", MOD_MANIFEST_FILE);
+}
 export const MOD_INFO_JSON_FILE = "modinfo.json";
 
 export const HALO1_MAPS_RELPATH = path.join("halo1", "maps");

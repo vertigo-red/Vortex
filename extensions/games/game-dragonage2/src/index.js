@@ -28,7 +28,7 @@ function findGame() {
 
 function queryModPath() {
   return path.join(
-    util.getVortexPath("documents"),
+    util.getVortexPath("documents", util.getGame("dragonage2")),
     "BioWare",
     "Dragon Age 2",
     "packages",

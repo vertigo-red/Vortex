@@ -39,7 +39,7 @@ function prepareForModding() {
 
 function modPath() {
   return path.join(
-    util.getVortexPath("documents"),
+    util.getVortexPath("documents", util.getGame("thesims3")),
     "Electronic Arts",
     "The Sims 3",
     "Mods",

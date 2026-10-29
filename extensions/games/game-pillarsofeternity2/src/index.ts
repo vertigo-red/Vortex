@@ -7,13 +7,15 @@ import { getLoadOrder, setLoadOrder, startWatch, stopWatch } from "./sync";
 import { ILoadOrder } from "./types";
 import LoadOrder from "./views/LoadOrder";
 
-const poe2LocalLowPath = path.resolve(
-  util.getVortexPath("appData"),
-  "..",
-  "LocalLow",
-  "Obsidian Entertainment",
-  "Pillars of Eternity II",
-);
+function poe2LocalLowPath(): string {
+  return path.resolve(
+    util.getVortexPath("appData", util.getGame("pillarsofeternity2")),
+    "..",
+    "LocalLow",
+    "Obsidian Entertainment",
+    "Pillars of Eternity II",
+  );
+}
 
 const tools = [];
 
@@ -61,7 +63,7 @@ function modPath(discoveryPath: string): string {
 }
 
 function modConfig(): string {
-  return path.join(poe2LocalLowPath, "modconfig.json");
+  return path.join(poe2LocalLowPath(), "modconfig.json");
 }
 
 function prepareForModding(discovery: types.IDiscoveryResult): Promise<void> {

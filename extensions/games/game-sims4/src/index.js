@@ -86,7 +86,10 @@ function getLocale(eaPath) {
 }
 
 function findModPath() {
-  const eaPath = path.join(util.getVortexPath("documents"), "Electronic Arts");
+  const eaPath = path.join(
+    util.getVortexPath("documents", util.getGame("thesims4")),
+    "Electronic Arts",
+  );
 
   const locale = getLocale(eaPath);
   return path.join(eaPath, LOCALE_MODS_FOLDER[locale], "Mods");
@@ -174,7 +177,10 @@ function writeResourceCfg(resourceBasePath) {
 
 function enableModding() {
   const parser = new IniParser.default(new IniParser.WinapiFormat());
-  const eaPath = path.join(util.getVortexPath("documents"), "Electronic Arts");
+  const eaPath = path.join(
+    util.getVortexPath("documents", util.getGame("thesims4")),
+    "Electronic Arts",
+  );
   const locale = getLocale(eaPath);
   const filePath = path.join(eaPath, LOCALE_MODS_FOLDER[locale], "Options.ini");
 

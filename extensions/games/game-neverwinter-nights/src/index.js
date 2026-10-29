@@ -105,7 +105,10 @@ function modPath(context) {
 let _modsFolder;
 function modPathEE() {
   if (_modsFolder === undefined) {
-    _modsFolder = path.join(util.getVortexPath("documents"), "Neverwinter Nights");
+    _modsFolder = path.join(
+      util.getVortexPath("documents", util.getGame(NWNEE_GAME_ID)),
+      "Neverwinter Nights",
+    );
   }
 
   return _modsFolder;

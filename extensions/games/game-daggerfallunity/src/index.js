@@ -1,14 +1,16 @@
 const path = require("path");
 const { fs, util } = require("@nexusmods/vortex-api");
 
-const LOCAL_LOW = path.resolve(
-  util.getVortexPath("appData"),
-  "..",
-  "LocalLow",
-  "Daggerfall Workshop",
-  "Daggerfall Unity",
-);
-const ENV_LOG = path.join(LOCAL_LOW, "DFTFU_Environment.log");
+function environmentLogPath() {
+  const localLow = path.resolve(
+    util.getVortexPath("appData", util.getGame("daggerfallunity")),
+    "..",
+    "LocalLow",
+    "Daggerfall Workshop",
+    "Daggerfall Unity",
+  );
+  return path.join(localLow, "DFTFU_Environment.log");
+}
 const GAME_ID = "daggerfallunity";
 const GAME_EXEC = "DaggerfallUnity.exe";
 const CMD_PATTERN = "CommandLine | ";
@@ -16,7 +18,7 @@ const VERSION_PATTERN = "Version | ";
 const DFMOD_EXT = ".dfmod";
 
 function resolveGameVersion() {
-  return fs.readFileAsync(ENV_LOG, { encoding: "utf8" }).then((data) => {
+  return fs.readFileAsync(environmentLogPath(), { encoding: "utf8" }).then((data) => {
     const match = data.match(/^Version \| [0-9].[0-9].*/gm);
     return match
       ? Promise.resolve(match[0].substr(VERSION_PATTERN.length).trim())
@@ -31,7 +33,7 @@ function findGame() {
   };
 
   return fs
-    .readFileAsync(ENV_LOG, { encoding: "utf8" })
+    .readFileAsync(environmentLogPath(), { encoding: "utf8" })
     .then((data) => {
       const lines = data.split(/\n/gm);
       const gamePathLine = lines.find((line) => line.indexOf(GAME_EXEC) !== -1);

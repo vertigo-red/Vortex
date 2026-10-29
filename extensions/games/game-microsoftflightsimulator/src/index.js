@@ -55,7 +55,10 @@ function findLocalCache() {
   //  FlightSimulator.CFG and UserCfg.opt files are both inside
   //  his roaming folder. Going to keep opt2 just in case that
   //  option is valid for other users.
-  const opt3 = path.join(util.getVortexPath("appData"), "Microsoft Flight Simulator");
+  const opt3 = path.join(
+    util.getVortexPath("appData", util.getGame("microsoftflightsimulator")),
+    "Microsoft Flight Simulator",
+  );
 
   try {
     fs.statSync(opt1);
@@ -138,7 +141,10 @@ const getPackagesPath = (() => {
         usercfg = parseOPT(path.join(basePath, "UserCfg.opt"));
       } catch (err) {
         if (err.code === "ENOENT") {
-          const roamPath = path.join(util.getVortexPath("appData"), "Microsoft Flight Simulator");
+          const roamPath = path.join(
+            util.getVortexPath("appData", util.getGame("microsoftflightsimulator")),
+            "Microsoft Flight Simulator",
+          );
           // if the .opt file doesn't exist in that location, this may be steam
           // and it may be in a separate location from the LocalCache dir
           try {

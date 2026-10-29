@@ -7,7 +7,7 @@ const GAME_ID_DE = "divinityoriginalsin2definitiveedition";
 
 function modPath() {
   return path.join(
-    util.getVortexPath("documents"),
+    util.getVortexPath("documents", util.getGame(GAME_ID)),
     "Larian Studios",
     "Divinity Original Sin 2",
     "Mods",
@@ -16,7 +16,7 @@ function modPath() {
 
 function modPathDE() {
   return path.join(
-    util.getVortexPath("documents"),
+    util.getVortexPath("documents", util.getGame(GAME_ID_DE)),
     "Larian Studios",
     "Divinity Original Sin 2 Definitive Edition",
     "Mods",

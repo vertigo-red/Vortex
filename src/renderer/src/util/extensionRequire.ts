@@ -8,8 +8,10 @@ import * as reactSelect from "../controls/ReactSelectWrap";
 import ExtensionManager from "../ExtensionManager";
 import { findInstalled } from "../extensions/extension_manager/queries";
 import type { IRegisteredExtension } from "../types/extensions";
+import type { IGame } from "../types/IGame";
 import type { IExtensionState } from "../types/IState";
 import { deprecatedApiGet } from "./deprecatedApiUsage";
+import { makeGamePathGetter } from "./getVortexPath";
 import type { LogLevel } from "./log";
 import { webpackRequireHack } from "./webpack-hacks";
 
@@ -18,9 +20,19 @@ const identity = (input) => input;
 class ExtProxyHandler implements ProxyHandler<typeof api> {
   private mExt: IRegisteredExtension;
   private mState: IExtensionState | undefined;
-  constructor(ext: IRegisteredExtension, state: IExtensionState | undefined) {
+  private mUtil: typeof api.util;
+  constructor(
+    ext: IRegisteredExtension,
+    state: IExtensionState | undefined,
+    resolveGame: (extensionPath: string) => IGame | undefined,
+  ) {
     this.mExt = ext;
     this.mState = state;
+    const pathGetter = makeGamePathGetter(() => resolveGame(ext.path));
+    this.mUtil = new Proxy(deprecatedApiGet(api, "util", "", ext, state, api), {
+      get: (target, key, receiver) =>
+        key === "getVortexPath" ? pathGetter : Reflect.get(target, key, receiver),
+    });
   }
 
   public get(target: typeof api, p: PropertyKey, receiver: any): any {
@@ -29,6 +41,7 @@ class ExtProxyHandler implements ProxyHandler<typeof api> {
         target.log(level, `[${this.mExt.namespace}] ${message}`, metadata);
       };
     }
+    if (p === "util") return this.mUtil;
     return deprecatedApiGet(target, p as keyof typeof api, "", this.mExt, this.mState, receiver);
   }
 }
@@ -109,6 +122,7 @@ function extensionRequire(
   orig,
   getExtensions: () => IRegisteredExtension[],
   getInstalled: () => Record<string, IExtensionState>,
+  resolveGame: (extensionPath: string) => IGame | undefined,
 ) {
   const extensionPaths = ExtensionManager.getExtensionPaths();
   return function (id) {
@@ -117,7 +131,7 @@ function extensionRequire(
       if (ext !== undefined) {
         if (handlerMapAPI[ext.name] === undefined) {
           const state = findInstalled(getInstalled(), { path: ext.path })?.extension;
-          handlerMapAPI[ext.name] = new Proxy(api, new ExtProxyHandler(ext, state));
+          handlerMapAPI[ext.name] = new Proxy(api, new ExtProxyHandler(ext, state, resolveGame));
         }
         return handlerMapAPI[ext.name];
       } else {
@@ -156,7 +170,8 @@ function extensionRequire(
 export default function (
   getExtensions: () => IRegisteredExtension[],
   getInstalled: () => Record<string, IExtensionState>,
+  resolveGame: (extensionPath: string) => IGame | undefined = () => undefined,
 ) {
   const orig = Module.prototype.require;
-  Module.prototype.require = extensionRequire(orig, getExtensions, getInstalled);
+  Module.prototype.require = extensionRequire(orig, getExtensions, getInstalled, resolveGame);
 }

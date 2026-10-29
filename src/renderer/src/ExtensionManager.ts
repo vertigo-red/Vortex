@@ -4,7 +4,7 @@ import { EventEmitter } from "events";
 import * as net from "net";
 import * as path from "path";
 
-import { isPromiseLike, VCREDIST_URL } from "@vortex/shared";
+import { isPromiseLike, VCREDIST_URL, VortexGameId } from "@vortex/shared";
 import { getErrorCode, getErrorMessageOrDefault, unknownToError } from "@vortex/shared";
 import type { DiffOperation } from "@vortex/shared/ipc";
 import type { PreloadWindow } from "@vortex/shared/preload";
@@ -43,6 +43,7 @@ import { setOptionalExtensions } from "./extensions/extension_manager/actions";
 import { parseExtensionInfo } from "./extensions/extension_manager/extensionInfo";
 import { extensionStateFromScan, findInstalled } from "./extensions/extension_manager/queries";
 import _sessionReducer from "./extensions/extension_manager/reducers";
+import { getGameForExtension } from "./extensions/gamemode_management/util/getGame";
 import type { IModReference, IModRepoId } from "./extensions/mod_management/types/IMod";
 import { IPCDownloadAdapter } from "./IPCDownloadAdapter";
 import { log } from "./logging";
@@ -3076,6 +3077,7 @@ class ExtensionManager {
       settings_application: () => require("./extensions/settings_application/index.ts"),
       settings_interface: () => require("./extensions/settings_interface/index.ts"),
       settings_metaserver: () => require("./extensions/settings_metaserver/index.ts"),
+      vortex_benchmarks: () => require("./extensions/vortex_benchmarks/index.ts"),
       starter_dashlet: () => require("./extensions/starter_dashlet/index.ts"),
       sticky_mods: () => require("./extensions/sticky_mods/index.ts"),
       support_bundle: () => require("./extensions/support_bundle/index.ts"),
@@ -3089,6 +3091,14 @@ class ExtensionManager {
     require("./util/extensionRequire").default(
       () => this.extensions,
       () => this.mExtensionState,
+      (extensionPath: string) => {
+        try {
+          const active = activeGameId(this.mApi.getState());
+          return getGameForExtension(extensionPath, active ? VortexGameId(active) : undefined);
+        } catch {
+          return undefined; // game registry/store are not ready during module loading
+        }
+      },
     );
 
     const loadedExtensions = new Set<string>();

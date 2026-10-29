@@ -5,19 +5,21 @@ import Promise from "bluebird";
 
 import { ILoadOrder } from "./types";
 
-const poe2Path = path.resolve(
-  util.getVortexPath("appData"),
-  "..",
-  "LocalLow",
-  "Obsidian Entertainment",
-  "Pillars of Eternity II",
-);
+function poe2Path(): string {
+  return path.resolve(
+    util.getVortexPath("appData", util.getGame("pillarsofeternity2")),
+    "..",
+    "LocalLow",
+    "Obsidian Entertainment",
+    "Pillars of Eternity II",
+  );
+}
 
 let watcher: fs.FSWatcher;
 let loadOrder: ILoadOrder = util.makeReactive({});
 
 function modConfig(): string {
-  return path.join(poe2Path, "modconfig.json");
+  return path.join(poe2Path(), "modconfig.json");
 }
 
 function updateLoadOrder(tries: number = 3): Promise<void> {

@@ -8,8 +8,8 @@ function findGame() {
 
 function modPath() {
   return process.platform === "win32"
-    ? path.join(util.getVortexPath("appData"), "Factorio", "mods")
-    : path.join(util.getVortexPath("home"), ".factorio", "mods");
+    ? path.join(util.getVortexPath("appData", util.getGame("factorio")), "Factorio", "mods")
+    : path.join(util.getVortexPath("home", util.getGame("factorio")), ".factorio", "mods");
 }
 
 function gameExecutable() {

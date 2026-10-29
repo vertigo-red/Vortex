@@ -1,8 +1,8 @@
-name: Package Arch Linux / CachyOS
+name: Linux native Vortex / CachyOS
 
 on:
   push:
-    branches: [build/cachyos]
+    branches: [linux-native]
   workflow_dispatch:
 
 permissions:
@@ -34,7 +34,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Check stable source baseline and packaging
+      - name: Check upstream baseline and packaging
         id: sources
         run: |
           node scripts/prepare-arch-package.mjs --check-source
@@ -95,9 +95,9 @@ jobs:
         env:
           VORTEX_ELECTRON_REBUILD: defer
 
-      - name: Inject stable application version
+      - name: Inject development application version
         run: |
-          pnpm -F @vortex/main version "$VORTEX_PACKAGE_VERSION" \
+          pnpm -F @vortex/main version "$VORTEX_APPLICATION_VERSION" \
             --no-git-tag-version --no-git-checks --allow-same-version
 
       - name: Rebuild native modules for Electron
@@ -194,7 +194,7 @@ jobs:
       - name: Upload installable package
         uses: actions/upload-artifact@v7
         with:
-          name: vortex-${{ env.VORTEX_PACKAGE_VERSION }}-cachyos-x86_64-${{ github.run_number }}
+          name: vortex-linux-${{ env.VORTEX_PACKAGE_VERSION }}-cachyos-x86_64-${{ github.run_number }}
           path: |
             dist/arch/*.pkg.tar.zst
             dist/arch/SHA256SUMS

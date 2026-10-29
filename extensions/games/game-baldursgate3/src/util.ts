@@ -35,7 +35,11 @@ export function getGameDataPath(api) {
 }
 
 export function documentsPath() {
-  return path.join(util.getVortexPath("localAppData"), "Larian Studios", "Baldur's Gate 3");
+  return path.join(
+    util.getVortexPath("localAppData", util.getGame("baldursgate3")),
+    "Larian Studios",
+    "Baldur's Gate 3",
+  );
 }
 
 export function modsPath() {

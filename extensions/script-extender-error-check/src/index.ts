@@ -13,23 +13,11 @@ const ONE_HOUR = 60 * ONE_MINUTE;
 // https://github.com/ModOrganizer2/modorganizer-script_extender_plugin_checker
 // by Silarn.
 const compatibleGames = {
-  skyrim: [path.join(util.getVortexPath("documents"), "My Games", "Skyrim", "SKSE", "skse.log")],
-  skyrimse: [
-    path.join(
-      util.getVortexPath("documents"),
-      "My Games",
-      "Skyrim Special Edition",
-      "SKSE",
-      "skse64.log",
-    ),
-  ],
-  skyrimvr: [
-    path.join(util.getVortexPath("documents"), "My Games", "Skyrim VR", "SKSE", "sksevr.log"),
-  ],
-  enderal: [path.join(util.getVortexPath("documents"), "My Games", "Skyrim", "SKSE", "skse.log")],
-  fallout4: [
-    path.join(util.getVortexPath("documents"), "My Games", "Fallout 4", "F4SE", "f4se.log"),
-  ],
+  skyrim: [path.join("{Documents}", "My Games", "Skyrim", "SKSE", "skse.log")],
+  skyrimse: [path.join("{Documents}", "My Games", "Skyrim Special Edition", "SKSE", "skse64.log")],
+  skyrimvr: [path.join("{Documents}", "My Games", "Skyrim VR", "SKSE", "sksevr.log")],
+  enderal: [path.join("{Documents}", "My Games", "Skyrim", "SKSE", "skse.log")],
+  fallout4: [path.join("{Documents}", "My Games", "Fallout 4", "F4SE", "f4se.log")],
   oblivion: [path.join("{GamePath}", "obse.log"), path.join("{GamePath}", "obse_editor.log")],
   falloutnv: [path.join("{GamePath}", "nvse.log"), path.join("{GamePath}", "nvse_editor.log")],
   fallout3: [path.join("{GamePath}", "fose.log"), path.join("{GamePath}", "fose_editor.log")],
@@ -73,7 +61,9 @@ async function checkForErrors(api: types.IExtensionApi) {
   const gamePath = gameDiscovery.path;
   const gameMode = selectors.activeGameId(state);
 
-  const logPaths: string[] = compatibleGames[gameMode];
+  const logPaths: string[] = compatibleGames[gameMode]?.map((filePath: string) =>
+    filePath.replace("{Documents}", () => util.getVortexPath("documents", util.getGame(gameMode))),
+  );
 
   if (!logPaths) {
     log("debug", "game doesn't use a script extender", gameMode);

@@ -23,7 +23,12 @@ function findGame() {
 }
 
 function modPath() {
-  return path.join(util.getVortexPath("documents"), "Elder Scrolls Online", "live", "Addons");
+  return path.join(
+    util.getVortexPath("documents", util.getGame("teso")),
+    "Elder Scrolls Online",
+    "live",
+    "Addons",
+  );
 }
 
 function main(context) {

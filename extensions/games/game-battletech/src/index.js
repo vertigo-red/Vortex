@@ -18,7 +18,12 @@ function gameExecutable() {
 }
 
 function modPath() {
-  return path.join(util.getVortexPath("documents"), "My Games", "BattleTech", "mods");
+  return path.join(
+    util.getVortexPath("documents", util.getGame("battletech")),
+    "My Games",
+    "BattleTech",
+    "mods",
+  );
 }
 
 function resolveGameVersion(discoveryPath) {

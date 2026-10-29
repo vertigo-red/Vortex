@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rename, rm, writeFile, utimes } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -41,15 +41,25 @@ vi.mock("@opentelemetry/sdk-trace-base", () => ({
 import { sendPendingNativeCrashReport } from "./errorReporting";
 
 describe("native crash startup sweep", () => {
+  const execPath = process.execPath;
   let root: string;
+  let install: string;
   beforeEach(async () => {
     vi.clearAllMocks();
     root = await mkdtemp(path.join(tmpdir(), "vortex-crash-sweep-"));
     telemetry.getPath.mockReturnValue(root);
     telemetry.getVersion.mockReturnValue("43.0.0");
+    // unreadable dumps are dated against the executable, so pin its mtime
+    // rather than inherit whenever the runner installed node
+    install = await mkdtemp(path.join(tmpdir(), "vortex-crash-install-"));
+    process.execPath = path.join(install, "Vortex.exe");
+    await writeFile(process.execPath, "");
+    await utimes(process.execPath, new Date(0), new Date(0));
   });
   afterEach(async () => {
+    process.execPath = execPath;
     await rm(root, { recursive: true, force: true });
+    await rm(install, { recursive: true, force: true });
   });
 
   async function dump(name: string, processType: string) {
@@ -161,6 +171,18 @@ describe("native crash startup sweep", () => {
     expect(await readdir(root)).toEqual([]);
   });
 
+  it("discards unreadable dumps written before the install", async () => {
+    const now = new Date();
+    await utimes(process.execPath, now, now);
+    const broken = path.join(root, "broken.dmp");
+    await writeFile(broken, Buffer.alloc(32));
+    const old = new Date(now.getTime() - 60 * 1000);
+    await utimes(broken, old, old);
+    await sendPendingNativeCrashReport();
+    expect(telemetry.startSpan).not.toHaveBeenCalled();
+    expect(await readdir(root)).toEqual([]);
+  });
+
   it("releases failed reports for retry while sending other dumps", async () => {
     await dump("gpu", "gpu-process");
     await dump("renderer", "renderer");
@@ -196,17 +218,15 @@ describe("native crash startup sweep", () => {
   });
 
   it("skips active claims and recovers stale claims", async () => {
-    // Use versioned dumps: a backdated unreadable dump can legitimately predate
-    // a freshly installed executable and be discarded by the build filter.
-    const active = await dump("active", "browser");
-    const stale = await dump("stale", "browser");
-    await rename(active, active + ".sending");
-    await rename(stale, stale + ".sending");
+    const active = path.join(root, "active.dmp.sending");
+    const stale = path.join(root, "stale.dmp.sending");
+    await writeFile(active, Buffer.alloc(32));
+    await writeFile(stale, Buffer.alloc(32));
     const old = new Date(Date.now() - 10 * 60 * 1000);
-    await utimes(stale + ".sending", old, old);
+    await utimes(stale, old, old);
     await sendPendingNativeCrashReport();
     expect(telemetry.startSpan).toHaveBeenCalledTimes(1);
-    expect(await readdir(path.dirname(active))).toEqual(["active.dmp.sending"]);
+    expect(await readdir(root)).toEqual(["active.dmp.sending"]);
   });
 
   it("limits startup reporting to the newest five dumps", async () => {

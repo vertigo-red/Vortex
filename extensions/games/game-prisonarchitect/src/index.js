@@ -7,9 +7,13 @@ const executable = process.platform === "linux" ? "PrisonArchitect" : "Prison Ar
 
 const MODS_LOCAL =
   process.platform === "linux"
-    ? path.join(util.getVortexPath("home"), ".Prison Architect", "mods")
+    ? path.join(
+        util.getVortexPath("home", util.getGame("prisonarchitect")),
+        ".Prison Architect",
+        "mods",
+      )
     : path.resolve(
-        util.getVortexPath("appData"),
+        util.getVortexPath("appData", util.getGame("prisonarchitect")),
         "..",
         "Local",
         "Introversion",

@@ -1,9 +1,8 @@
-import { mdiMonitorArrowDownVariant } from "@mdi/js";
 import React from "react";
 import { useTranslation } from "react-i18next";
 
+import { PremiumBadge } from "@/ui/components/badges/premium_badge/PremiumBadge";
 import { Button } from "@/ui/components/button/Button";
-import { PremiumBadge } from "@/ui/components/premium_badge/PremiumBadge";
 
 import { useIssue, useIssueTracking } from "../../hooks/HealthCheckTracking.context";
 import { useModRequirementActions } from "../../hooks/useModRequirementActions";
@@ -25,6 +24,7 @@ export const ListingRow = ({ api, entry, isHidden, onOpen, onToggleHide }: IList
     showPremiumModal,
     setShowPremiumModal,
     openModPage,
+    openFilePage,
     installInApp,
     markFeedback,
   } = useModRequirementActions(api, mod, identity);
@@ -73,7 +73,7 @@ export const ListingRow = ({ api, entry, isHidden, onOpen, onToggleHide }: IList
             <Button
               appearance="moderate"
               brand="neutral"
-              leftIconPath={mdiMonitorArrowDownVariant}
+              leftIcon="install_desktop"
               rightIcon={showPremiumAd ? <PremiumBadge /> : undefined}
               size="sm"
               onClick={(e) => {
@@ -117,7 +117,7 @@ export const ListingRow = ({ api, entry, isHidden, onOpen, onToggleHide }: IList
         onClose={() => setShowPremiumModal(false)}
         onDownload={() => {
           setShowPremiumModal(false);
-          openModPage();
+          openFilePage();
         }}
         onPremiumUnlocked={() => void installInApp()}
       />

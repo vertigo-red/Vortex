@@ -1,6 +1,12 @@
 import * as path from "path";
 
-import { getErrorCode, unknownToError } from "@vortex/shared";
+import {
+  getErrorCode,
+  unknownToError,
+  VortexModId,
+  VortexProfileId,
+  VortexStagingFolder,
+} from "@vortex/shared";
 import { CycleError } from "@vortex/shared/errors";
 import * as _ from "lodash";
 import React from "react";
@@ -63,13 +69,17 @@ import {
   setModEnabled,
   forgetMod,
 } from "../profile_management/actions/profiles";
-import { enabledModCountForProfile } from "../profile_management/selectors";
+import {
+  enabledModCountForProfile,
+  lastActiveProfileForGame,
+} from "../profile_management/selectors";
 import type { IProfile, IProfileMod } from "../profile_management/types/IProfile";
 import { setAutoDeployment } from "../settings_interface/actions/automation";
-import { setDeploymentNecessary } from "./actions/deployment";
+import { setDeploymentNecessary, setDeploymentPurged } from "./actions/deployment";
 import { cacheModReference, removeMod, setModAttribute } from "./actions/mods";
 import { setDeploymentProblem } from "./actions/session";
 import { setTransferMods } from "./actions/transactions";
+import { CollectionUpdateWarning } from "./components/collection_update_warning/CollectionUpdateWarning";
 import {
   onAddMod,
   onGameModeActivated,
@@ -80,12 +90,20 @@ import {
   onStartInstallDownload,
 } from "./eventHandlers";
 import InstallManager from "./InstallManager";
+import {
+  createManualInstaller,
+  MANUAL_INSTALLER_ID,
+  MANUAL_INSTALLER_PRIORITY,
+} from "./manualInstaller";
+import { answerManualInstallerRequest, MANUAL_INSTALLER_DIALOG_ID } from "./manualInstallerQueue";
 import deployMods from "./modActivation";
 import { deriveModInstallName } from "./modIdManager";
-import mergeMods, { MERGED_PATH } from "./modMerging";
+import mergeMods, { mergedSourceName } from "./modMerging";
 import preStartDeployHook from "./preStartDeployHook";
 import { deploymentReducer } from "./reducers/deployment";
+import { manualInstallerReducer } from "./reducers/manualInstaller";
 import { modsReducer } from "./reducers/mods";
+import { modsTableViewsReducer } from "./reducers/modsTableViews";
 import { sessionReducer } from "./reducers/session";
 import { settingsReducer } from "./reducers/settings";
 import { transactionsReducer } from "./reducers/transactions";
@@ -112,7 +130,17 @@ import {
 import allTypesSupported from "./util/allTypesSupported";
 import * as basicInstaller from "./util/basicInstaller";
 import BlacklistSet from "./util/BlacklistSet";
-import { genSubDirFunc, purgeMods, purgeModsInPath } from "./util/deploy";
+import {
+  activateSingleMod,
+  genSubDirFunc,
+  laterStagingFolders,
+  purgeMods,
+  purgeModsInPath,
+} from "./util/deploy";
+import {
+  deployPendingOnAutoApply,
+  scheduleAutoDeploy,
+} from "./util/deploy_pending_on_auto_apply/deployPendingOnAutoApply";
 import { reportRecordedFailures, resetDeploymentFailures } from "./util/deploymentFailures";
 import {
   getAllActivators,
@@ -137,6 +165,10 @@ import DeactivationButton from "./views/DeactivationButton";
 import type { IDuplicatesMap, IRemoveDuplicateMap } from "./views/DuplicatesDialog";
 import {} from "./views/ExternalChangeDialog";
 import {} from "./views/FixDeploymentDialog";
+import {
+  ManualInstallerDialog,
+  type IManualInstallerDialogProps,
+} from "./views/ManualInstallerDialog";
 import {} from "./views/ModList";
 import {} from "./views/Settings";
 import URLInput from "./views/URLInput";
@@ -154,6 +186,18 @@ declare module "../../types/IExtensionContext" {
       options?: IInstallOptions | boolean,
       callback?: (err: Error | null, modId?: string) => void,
     ) => void;
+    "will-remove-mods": (gameId: string, modIds: string[], options?: IRemoveModOptions) => void;
+    "will-remove-mod": (gameId: string, modId: string, options?: IRemoveModOptions) => void;
+    // every deployments map below is keyed by mod type id
+    "will-purge": (profileId: string, deployments: Record<string, IDeployedFile[]>) => void;
+    "did-purge": (profileId: string) => void;
+    "did-deploy": (
+      profileId: string,
+      deployments: Record<string, IDeployedFile[]>,
+      setTitle: (title: string) => void,
+      options?: IDeployOptions,
+    ) => void;
+    "mods-did-deploy": (profileId: string, deployments: Record<string, IDeployedFile[]>) => void;
   }
 }
 
@@ -449,12 +493,19 @@ function checkIncompatibilities(
   }
 }
 
-function doSortMods(api: IExtensionApi, profile: IProfile, mods: { [modId: string]: IMod }) {
+function doSortMods(
+  api: IExtensionApi,
+  profile: IProfile,
+  mods: { [modId: string]: IMod },
+  includeModId?: VortexModId,
+) {
   // sort (all) mods based on their dependencies so the right files get activated
   const modState: { [id: string]: IProfileMod } = profile !== undefined ? profile.modState : {};
   const unsorted = Object.keys(mods)
     .map((key: string) => mods[key])
-    .filter((mod: IMod) => getSafe(modState, [mod.id, "enabled"], false));
+    .filter(
+      (mod: IMod) => mod.id === includeModId || getSafe(modState, [mod.id, "enabled"], false),
+    );
 
   return sortMods(profile.gameId, unsorted, api).catch((unknownErr) => {
     const err = unknownToError(unknownErr);
@@ -506,7 +557,7 @@ async function doMergeMods(
 
   // sequential: clean up merged mods in order
   for (const typeId of mergeModTypes) {
-    const mergePath = truthy(typeId) ? MERGED_PATH + "." + typeId : MERGED_PATH;
+    const mergePath = mergedSourceName(typeId);
     await fs.removeAsync(path.join(stagingPath, mergePath));
   }
 
@@ -823,8 +874,8 @@ function genUpdateModDeployment(installManager: InstallManager) {
               await dealWithExternalChanges(
                 api,
                 activator,
-                profileId,
-                stagingPath,
+                VortexProfileId(profile.id),
+                VortexStagingFolder(stagingPath),
                 modPaths,
                 lastDeployment,
                 recentChanges,
@@ -868,6 +919,7 @@ function genUpdateModDeployment(installManager: InstallManager) {
                 newDeployment,
                 deployProgress,
               );
+              api.store.dispatch(setDeploymentPurged(gameId, false));
             });
 
             // at this point the deployment lock gets released so another deployment
@@ -951,6 +1003,10 @@ function genUpdateModDeployment(installManager: InstallManager) {
                   allowReport: err["code"] !== "EPERM" && !isFSErr && err["allowReport"] !== false,
                 });
               }
+            }
+            api.store.dispatch(setDeploymentNecessary(gameId, true));
+            if (deployOptions?.failOnError) {
+              throw err;
             }
           } finally {
             api.store.dispatch(stopActivity("mods", "deployment"));
@@ -1220,12 +1276,7 @@ function onModsEnabled(api: IExtensionApi, deploymentTimer: Debouncer) {
       }
     });
     if (state.settings.automation.deploy && options?.allowAutoDeploy !== false) {
-      // Lets the UI show the deploy as under way while the timer runs down.
-      store.dispatch(startActivity("mods", "deployment_pending"));
-      deploymentTimer.schedule(
-        () => store.dispatch(stopActivity("mods", "deployment_pending")),
-        false,
-      );
+      scheduleAutoDeploy(api, deploymentTimer);
     } else if (!state.persistent.deployment.needToDeploy[gameId]) {
       store.dispatch(setDeploymentNecessary(gameId, true));
     }
@@ -1282,18 +1333,26 @@ function onDeploySingleMod(api: IExtensionApi) {
           activator,
         );
         resetDeploymentFailures(api, gameId);
-        await activator.prepare(dataPath, false, lastActivation, normalize);
-        if (mod !== undefined) {
-          if (enable !== false) {
-            await activator.activate(
-              modPath,
-              mod.installationPath,
-              subdir(mod),
-              new BlacklistSet(mod.fileOverrides ?? [], game, normalize),
-            );
-          } else {
-            await activator.deactivate(modPath, subdir(mod), mod.installationPath);
-          }
+        if (enable !== false) {
+          const profile = profileById(state, lastActiveProfileForGame(state, gameId));
+          const sorted =
+            profile !== undefined
+              ? await doSortMods(api, profile, state.persistent.mods[gameId], VortexModId(mod.id))
+              : [];
+          await activateSingleMod({
+            method: activator,
+            game,
+            dataPath,
+            normalize,
+            lastActivation,
+            mod,
+            modPath,
+            subDir: subdir(mod),
+            laterSources: laterStagingFolders(sorted, mod),
+          });
+        } else {
+          await activator.prepare(dataPath, false, lastActivation, normalize);
+          await activator.deactivate(modPath, subdir(mod), mod.installationPath);
         }
         const newActivation = await activator.finalize(gameId, dataPath, stagingPath);
         await doSaveActivation(
@@ -1616,6 +1675,11 @@ function once(api: IExtensionApi) {
 
   api.onStateChange(["persistent", "mods"], (previous, current) =>
     onModsChanged(api, previous, current),
+  );
+
+  api.onStateChange(
+    ["settings", "automation", "deploy"],
+    deployPendingOnAutoApply(api, deploymentTimer),
   );
 
   api.onStateChange(["persistent", "deployment", "needToDeploy"], (previous, current) => {
@@ -2000,7 +2064,9 @@ function checkStagingFolder(api: IExtensionApi): Promise<ITestResult> {
 
 function init(context: IExtensionContext): boolean {
   context.registerReducer(["session", "mods"], sessionReducer);
+  context.registerReducer(["session", "manualInstaller"], manualInstallerReducer);
   context.registerReducer(["settings", "mods"], settingsReducer);
+  context.registerReducer(["settings", "modsTableViews"], modsTableViewsReducer);
   context.registerReducer(["persistent", "mods"], modsReducer);
   context.registerReducer(["persistent", "deployment"], deploymentReducer);
   context.registerReducer(["persistent", "transactions"], transactionsReducer);
@@ -2125,7 +2191,7 @@ function init(context: IExtensionContext): boolean {
         modSources: getModSources(),
         onDropNonArchiveFiles,
       }),
-      mdi: nxmModOutline,
+      menuIcon: { path: nxmModOutline },
     },
   );
 
@@ -2215,6 +2281,19 @@ function init(context: IExtensionContext): boolean {
     75,
   );
   context.registerSettings("Workarounds", Workarounds, undefined, undefined, 1000);
+
+  context.registerDialog("collection-update-warning", CollectionUpdateWarning);
+
+  context.registerDialog(
+    MANUAL_INSTALLER_DIALOG_ID,
+    ManualInstallerDialog,
+    () =>
+      ({
+        request: context.api.getState().session.manualInstaller.pending[0],
+        onAnswer: (requestId, answer) =>
+          answerManualInstallerRequest(context.api, requestId, answer),
+      }) satisfies Partial<IManualInstallerDialogProps>,
+  );
 
   context.registerDialog(
     "external-changes",
@@ -2313,6 +2392,14 @@ function init(context: IExtensionContext): boolean {
 
   registerAttributeExtractor(150, attributeExtractor);
   registerAttributeExtractor(10, upgradeExtractor);
+
+  const manualInstaller = createManualInstaller(context.api);
+  registerInstaller(
+    MANUAL_INSTALLER_ID,
+    MANUAL_INSTALLER_PRIORITY,
+    manualInstaller.testSupported,
+    manualInstaller.install,
+  );
 
   registerInstaller("fallback", 1000, basicInstaller.testSupported, basicInstaller.install);
 

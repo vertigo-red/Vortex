@@ -1,23 +1,37 @@
-import { mdiCircleOutline, mdiImageBroken, mdiLoading } from "@mdi/js";
 import React, { useCallback, useState, type ImgHTMLAttributes } from "react";
 
-import { Icon } from "@/ui/components/icon/Icon";
+import { Icon, type IIconSource } from "@/ui/components/icon/Icon";
+import { getIconProps } from "@/ui/components/icon/utils/icon_props/iconProps.util";
 import { joinClasses } from "@/ui/utils/joinClasses";
 
 export interface IImageProps extends Omit<
   ImgHTMLAttributes<HTMLImageElement>,
-  "className" | "alt"
+  "className" | "alt" | "src"
 > {
+  /** Where the picture is; `null`, as an API sends for a picture it hasn't got, means none. */
+  src?: string | null;
+  /** The picture's text alternative, which also names the fallback icon; "" if decorative. */
   alt: string;
+  /** Classes for the frame's size and corners; an `other` frame collapses without a height. */
   className?: string;
+  /** Replaces the broken-image icon; given one, a missing `src` shows it too. */
+  fallbackIcon?: IIconSource;
+  /** Fills the frame, cropping, or fits inside it whole. Default `contain`. */
   fit?: "cover" | "contain";
+  /** Classes for the `img` itself. */
   imageClassName?: string;
-  imageType?: "collection" | "game" | "mod" | "other";
+  /** The aspect ratio the frame keeps; `other` leaves it to the container. Default `other`. */
+  imageType?: "avatar" | "collection" | "game" | "mod" | "other";
+  /** Blurs the picture, for adult content; it also fills the frame. */
   isBlurred?: boolean;
+  /** Shows the spinner, for a picture the caller knows is coming before it has a `src`. */
   isLoading?: boolean;
+  /** Gives the frame its background and border. Default `true`. */
+  isStyled?: boolean;
 }
 
 const imageTypeMap: Record<NonNullable<IImageProps["imageType"]>, string> = {
+  avatar: "nxm-image-avatar",
   collection: "nxm-image-collection",
   game: "nxm-image-game",
   mod: "nxm-image-mod",
@@ -28,11 +42,13 @@ export const Image = ({
   alt,
   children,
   className,
+  fallbackIcon,
   fit = "contain",
   imageClassName,
   imageType = "other",
   isBlurred,
   isLoading,
+  isStyled = true,
   onError,
   onLoad,
   src,
@@ -57,10 +73,15 @@ export const Image = ({
 
   // Only the caller knows a source is coming when there is no src; a failed one is settled.
   const showSpinner = !errored && (isLoading === true || (!!src && !loaded));
+  const showFallback = errored || (fallbackIcon !== undefined && !src && isLoading !== true);
 
   return (
-    <div className={joinClasses(["nxm-image", imageTypeMap[imageType], className])}>
-      {!errored ? (
+    <span
+      className={joinClasses(["nxm-image", imageTypeMap[imageType], className], {
+        "nxm-image-styled": isStyled,
+      })}
+    >
+      {!showFallback ? (
         <img
           {...rest}
           alt={alt}
@@ -76,7 +97,7 @@ export const Image = ({
             },
           )}
           ref={settleIfComplete}
-          src={src}
+          src={src ?? undefined}
           onError={(event) => {
             setErrored(true);
             onError?.(event);
@@ -87,20 +108,25 @@ export const Image = ({
           }}
         />
       ) : (
-        <Icon className="nxm-image-fallback" path={mdiImageBroken} size="none" title={alt} />
+        <Icon
+          {...getIconProps(fallbackIcon ?? "broken_image")}
+          className="nxm-image-fallback"
+          size="none"
+          title={alt}
+        />
       )}
 
       {showSpinner && (
         <span className="nxm-image-spinner">
-          <Icon className="opacity-40" path={mdiCircleOutline} size="none" />
+          <Icon className="opacity-40" name="radio_button_unchecked" size="none" />
 
-          <Icon className="absolute inset-0" path={mdiLoading} size="none" />
+          <Icon className="absolute inset-0" name="progress_activity" size="none" />
         </span>
       )}
 
       {children}
 
-      <div className="nxm-image-frame" />
-    </div>
+      {isStyled && <span className="nxm-image-frame" />}
+    </span>
   );
 };

@@ -11,7 +11,7 @@ function findGame() {
 
 function modPath() {
   return path.join(
-    util.getVortexPath("documents"),
+    util.getVortexPath("documents", util.getGame("grimrock")),
     "Almost Human",
     "Legend of Grimrock",
     "Dungeons",

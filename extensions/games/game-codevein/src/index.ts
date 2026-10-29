@@ -155,8 +155,7 @@ const localAppData = (() => {
   let cached;
   return () => {
     if (cached === undefined) {
-      cached =
-        process.env.LOCALAPPDATA || path.resolve(util.getVortexPath("appData"), "..", "Local");
+      cached = util.getVortexPath("localAppData", util.getGame("codevein"));
     }
     return cached;
   };

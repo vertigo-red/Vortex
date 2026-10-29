@@ -21,11 +21,14 @@ export type IPageScrollProps = HTMLAttributes<HTMLDivElement> & {
  * Like `Page`, it renders its children in a centred `max-w-8xl` content box
  * (opt out with `isFullWidth`); because the cap sits inside the scroll element,
  * the scrollbar stays at the viewport edge. `className` styles that content box.
+ * The scrollbar's gutter is always kept, so the content is as wide whether the page
+ * scrolls or not, and lines up with the `PageHeader`, which leaves the same gutter.
  * It reports its scroll position to the `Page` so a `PageHeader` can show its
  * shadow; any `onScroll` you pass still runs.
  *
  * A size container, so content that sticks to the region — a table's details
- * pane, say — can stand as tall as it rather than as tall as what it scrolls.
+ * pane, say — can stand as tall as it rather than as tall as what it scrolls. And a
+ * scroll-state one, so content can ask whether the region scrolls further.
  *
  * Focusable, so the region can be scrolled with the keyboard without first
  * tabbing to a focusable child. No focus ring for now — the browser default
@@ -48,7 +51,7 @@ export const PageScroll = forwardRef<HTMLDivElement, IPageScrollProps>(
 
     return (
       <div
-        className="@container-[size] min-h-0 flex-1 overflow-auto outline-none"
+        className="@container-[size_scroll-state] min-h-0 flex-1 scrollbar-gutter-stable overflow-auto outline-none"
         ref={ref}
         tabIndex={0}
         onScroll={handleScroll}

@@ -1,8 +1,7 @@
 {
   "repository": "Nexus-Mods/Vortex",
-  "tag": "v2.9.1",
-  "version": "2.9.1",
-  "commit": "c80326367cbe6d96621ad6cf4a5488ef49bac110",
-  "releaseUrl": "https://github.com/Nexus-Mods/Vortex/releases/tag/v2.9.1",
-  "publishedAt": "2026-10-27T09:53:42Z"
+  "ref": "master",
+  "commit": "9482caf996f16eb51c5e0664349fefc5bc072327",
+  "baseVersion": "2.9.1",
+  "sourceUrl": "https://github.com/Nexus-Mods/Vortex/tree/9482caf996f16eb51c5e0664349fefc5bc072327"
 }

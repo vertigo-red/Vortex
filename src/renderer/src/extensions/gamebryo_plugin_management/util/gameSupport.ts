@@ -11,6 +11,7 @@ import getVortexPath from "../../../util/getVortexPath";
 import { makeOverlayableDictionary } from "../../../util/util";
 import { discoveryByGame, gameById } from "../../gamemode_management/selectors";
 import type { IDiscoveryResult } from "../../gamemode_management/types/IDiscoveryResult";
+import { getGame } from "../../gamemode_management/util/getGame";
 import { modPathsForGame } from "../../mod_management/selectors";
 import { lastActiveProfileForGame } from "../../profile_management/selectors";
 import type { IStateWithGamebryo } from "../types/IStateWithGamebryo";
@@ -376,9 +377,7 @@ export function initGameSupport(api: IExtensionApi): Bluebird<void> {
 export function appDataPath(gameMode: string): string {
   const dataPath = gameSupport.get(gameMode, "appDataPath");
 
-  return process.env.LOCALAPPDATA !== undefined
-    ? path.join(process.env.LOCALAPPDATA, dataPath)
-    : path.resolve(getVortexPath("appData"), "..", "Local", dataPath);
+  return path.join(getVortexPath("localAppData", getGame(gameMode)), dataPath);
 }
 
 export function gameDataPath(gameMode: string): string {

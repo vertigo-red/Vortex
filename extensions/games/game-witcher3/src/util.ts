@@ -61,7 +61,7 @@ export async function getDeployment(
 }
 
 export const getDocumentsPath = (game: types.IGame) => {
-  return path.join(util.getVortexPath("documents"), "The Witcher 3");
+  return path.join(util.getVortexPath("documents", util.getGame("witcher3")), "The Witcher 3");
 };
 
 export const getDLCPath = (api: types.IExtensionApi) => {

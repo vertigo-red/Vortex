@@ -12,22 +12,30 @@ interface IDAGame {
 export const DA_GAMES: { [gameName: string]: IDAGame } = {
   DragonAge1: {
     id: "dragonage",
-    modPath: path.join(util.getVortexPath("documents"), "BioWare", "Dragon Age"),
+    get modPath() {
+      return path.join(
+        util.getVortexPath("documents", util.getGame("dragonage")),
+        "BioWare",
+        "Dragon Age",
+      );
+    },
   },
   DragonAge2: {
     id: "dragonage2",
-    modPath: path.join(
-      util.getVortexPath("documents"),
-      "BioWare",
-      "Dragon Age 2" /*, 'packages', 'core', 'override'*/,
-    ),
+    get modPath() {
+      return path.join(
+        util.getVortexPath("documents", util.getGame("dragonage2")),
+        "BioWare",
+        "Dragon Age 2",
+      );
+    },
     getAddinsFolder: (api: types.IExtensionApi) => {
       const state = api.getState();
       const discovery = selectors.discoveryByGame(state, "dragonage2");
       return discovery?.path
         ? path.join(discovery.path, "addins")
         : path.join(
-            util.getVortexPath("documents"),
+            util.getVortexPath("documents", util.getGame("dragonage2")),
             "BioWare",
             "Dragon Age 2" /*, 'packages', 'core', 'override'*/,
           );

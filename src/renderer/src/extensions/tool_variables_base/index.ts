@@ -6,6 +6,7 @@ import type { IProfile, IState } from "../../types/IState";
 import getVortexPath from "../../util/getVortexPath";
 import { log } from "../../util/log";
 import { activeProfile } from "../../util/selectors";
+import { getGame } from "../gamemode_management/util/getGame";
 
 function init(context: IExtensionContext): boolean {
   context.registerToolVariables((parameters: IRunParameters) => {
@@ -22,7 +23,7 @@ function init(context: IExtensionContext): boolean {
 
     let res: any = {
       ...Object.keys(env).reduce((prev, key) => ({ ...prev, [key.toUpperCase()]: env[key] }), {}),
-      APPDATA: getVortexPath("appData"),
+      APPDATA: getVortexPath("appData", profile && getGame(profile.gameId)),
       HOME: os.homedir(),
     };
 

@@ -1,107 +1,84 @@
 # Arch Linux and CachyOS Packages
 
-The `build/cachyos` branch builds native Vortex packages for Arch Linux and
-CachyOS x86_64. It starts at the official stable release `v2.9.1`, commit
-`c80326367cbe6d96621ad6cf4a5488ef49bac110`, published on 27 October 2026.
-The Linux GUI and game workflows still need testing on the target system.
+The `linux-native` branch develops and packages native Linux Vortex for Arch
+Linux and CachyOS x86_64. It incorporates upstream `master` and local Linux fixes.
+`build/cachyos` retains the earlier stable-release packaging snapshot.
 
 ## Install
 
-Open this branch's **Package Arch Linux / CachyOS** run in GitHub Actions.
-Download its artifact and extract the ZIP. In the extracted directory:
+Download the artifact from a successful **Linux native Vortex / CachyOS** workflow
+and extract its ZIP. In the extracted directory:
 
 ```bash
-sha256sum -c SHA256SUMS
-sudo pacman -U ./vortex-*.pkg.tar.zst
+sha256sum -c SHA256SUMS && sudo pacman -U ./vortex-*.pkg.tar.zst
 ```
 
-Pacman installs the `.pkg.tar.zst` inside the ZIP. The artifact ZIP itself is
-not a pacman package. Start **Vortex** from the application menu or run `vortex`.
+Pacman needs the `.pkg.tar.zst` inside the artifact ZIP. Start `vortex` or select
+Vortex from the application menu. The package includes its pinned Electron;
+pacman installs Linux libraries and .NET 9. It conflicts with `vortex-git` and
+`vortex-bin`. Its internal updater is disabled: update by installing a new package.
 
-The package includes its pinned Electron runtime, so system Node.js and Electron
-are not runtime dependencies. Pacman resolves the Linux libraries and .NET 9
-runtime. The package conflicts with `vortex-git` and `vortex-bin`.
-
-Select Vortex for Nexus links in its settings, or explicitly run:
+The launcher handles bare `nxm://` URLs with `--download` and preserves other
+arguments. The desktop ID matches Vortex's own registration:
 
 ```bash
 xdg-mime default com.nexusmods.vortex.desktop x-scheme-handler/nxm
-xdg-mime query default x-scheme-handler/nxm
 ```
 
-The desktop ID matches the app's Linux protocol registration. The launcher adds
-`--download` only for a bare `nxm://` URL; ordinary flags and paths are preserved.
-Pacman's standard desktop/icon hooks maintain system caches; package installation
-does not overwrite the user's default protocol handler.
+## Source and development workflow
 
-The launcher disables Vortex's internal updater. Updates come from new pacman
-packages. Remove with `sudo pacman -Rns vortex`; user data stays in the user's
-home directory.
+Every push to `linux-native` builds the branch checkout, including its Linux/UX
+fixes. A newer push cancels an older build on the same branch. Re-run a previous
+Actions run to rebuild the same commit. `workflow_dispatch` is declared too;
+GitHub may require a workflow on the default branch before displaying that control.
 
-## Build source and future UX changes
+`packaging/arch/upstream.json` records the integrated upstream commit. CI checks
+that it is an ancestor of the branch. When synchronising again, merge the new
+upstream master into this branch, resolve conflicts while retaining Linux fixes,
+and update the recorded upstream commit. CI never overwrites local fixes with a
+fresh upstream checkout.
 
-`packaging/arch/upstream.json` records the stable release tag and exact baseline
-commit. Every run checks that this commit is an ancestor of the branch checkout.
-It builds the branch itself, including subsequent UX fixes. It never checks out
-`master` or downloads a new release over those changes.
+These are development builds, not packages of an unmodified stable tag. The
+version label uses the latest stable base plus the source commit's UTC timestamp
+and abbreviated SHA: pacman `1:2.9.1.rYYYYMMDDhhmmss.g<sha>-<run number>`;
+application `2.9.1-linux.YYYYMMDDhhmmss.g<sha>`. The commit timestamp makes reruns
+of the same source reproducible at the version-label level. Portable artifact
+filenames omit the epoch's colon; the epoch stays in pacman metadata.
 
-Push fixes to `build/cachyos` to build them. Every push triggers the workflow;
-there is no packaging-only path filter. A new push cancels an older run on the
-same branch. Re-run an existing workflow in Actions to rebuild an unchanged
-commit. `workflow_dispatch` is also declared, but GitHub may require a workflow
-on the default branch before showing its manual-run control.
+`BUILD-INFO.json`, also installed at `/usr/share/doc/vortex/BUILD-INFO.json`, records
+the source commit/tree, upstream baseline, runtime versions and workflow URL.
+Include it when reporting a UX issue. Current Wine/Proton directory behaviour is
+described in [linux-game-paths.md](../linux-game-paths.md).
 
-The version inside Vortex is `2.9.1`. Pacman uses `1:2.9.1-<workflow run number>`,
-so each subsequent run produces an increasing package release. The artifact's
-`BUILD-INFO.json`, also installed at `/usr/share/doc/vortex/BUILD-INFO.json`,
-records the actual source commit, source tree, release baseline, Electron, Node,
-pnpm and workflow URL. Keep this file with UX bug reports.
+## Build checks
 
-To update the baseline later, verify the latest non-prerelease in the official
-repository, merge its exact tag into this branch and update `upstream.json` and
-the PKGBUILD version. Preserve the packaging files and local UX fixes. Automatic
-upstream updates are intentionally absent so a test run has a known base.
+One Ubuntu 24.04 runner uses pinned Node.js, pnpm and Electron, .NET SDK 9 and Nx
+parallelism two. Full `pnpm run verify` covers formatting, build, lint, typechecks,
+unit and integration tests; it excludes game-dependent E2E. Verification uses
+`NODE_ENV=test`. Production application generation runs afterwards. A successful
+verification is cached only for the same committed application/workflow tree;
+packaging/runtime checks always repeat.
 
-## Validation and packaging
+After deployment, native modules are rebuilt for Electron. FOMOD gets an
+`$ORIGIN`-relative library path, and Linux shared libraries are unpacked from
+ASAR. Electron-builder uses regular copying from `src/main/dist` to avoid hoisted
+dependency hardlink collisions. Packaged dependency versions are checked against
+the deploy tree.
 
-One Ubuntu 24.04 runner builds with the repository's pinned pnpm, Node.js and
-Electron versions, .NET SDK 9 and Nx parallelism limited to two tasks.
-`pnpm run verify` runs formatting, build, lint, typechecks, unit tests and
-integration tests. It excludes E2E, which needs real games. Verification uses
-`NODE_ENV=test`; production mode applies to application packaging afterwards.
-
-A completed verification may be reused for an identical committed application
-and workflow tree. The fingerprint excludes only `packaging/arch/`, this metadata
-helper, root Markdown files and `docs/`. Application changes invalidate it.
-Packaging and installed runtime checks always run. Nx and dependency caches
-reduce repeated work; there are no hard-coded successful commits or skipped
-tests based on old runs from a deleted fork.
-
-After `pnpm deploy`, native modules are rebuilt for Electron. The FOMOD addon
-uses `$ORIGIN`-relative RPATH, and shared libraries are unpacked from ASAR so the
-ELF loader can find them. `winapi-bindings` remains installed because application
-code imports it; on Linux it exports a shim, not Windows API functionality.
-Electron-builder runs in `src/main/dist` with normal copying to avoid duplicate
-hardlink `EEXIST` errors. The ASAR dependency-version check is mandatory.
-
-A clean Arch Linux container creates the pacman package with `makepkg`, installs
-it and checks desktop metadata, the `root:root` / `4755` sandbox helper, .NET,
-FOMOD, LOOT, font scanning, DuckDB with bundled `level_pivot`, and LevelDB
-read/write. It uses the runner's UID for the build user so the runner can write
-checksums and upload the result. Source checksums are generated before `makepkg`;
-`SHA256SUMS` covers the final package. Artifacts are retained for 30 days.
-
-These checks do not exercise the GUI, Nexus login, `nxm://` browser handoff or
-deployment into a real Steam/Proton game. Test those on CachyOS and commit fixes
-to this branch.
+A clean Arch container runs `makepkg`, installs the package and checks the desktop
+entry, sandbox ownership/mode, .NET, FOMOD, LOOT, font scanning, DuckDB with bundled
+`level_pivot`, and LevelDB reads/writes. The build user has the runner's UID so
+artifact checksums remain writable. Source and final-package SHA-256 checksums
+are generated. Artifacts are kept for 30 days. The GUI, real games, Nexus login
+and browser handoff still require target-system testing.
 
 ## Key Files
 
-- `.github/workflows/package-cachyos.yml` — branch build, checks and artifacts.
-- `packaging/arch/upstream.json` — official stable release and baseline commit.
-- `packaging/arch/PKGBUILD` — pacman metadata, dependencies and installed files.
+- `.github/workflows/package-cachyos.yml` — branch build, checks and artifact upload.
+- `packaging/arch/upstream.json` — integrated upstream revision and version-label base.
+- `packaging/arch/PKGBUILD` — package metadata, dependencies and installed files.
 - `packaging/arch/electron-builder.cjs` — Linux packaging configuration.
 - `packaging/arch/vortex` and `vortex.desktop` — launcher and desktop integration.
-- `packaging/arch/check-launcher.mjs` — launcher argument regression checks.
-- `packaging/arch/smoke-test.cjs` — installed native runtime checks.
+- `packaging/arch/check-launcher.mjs` — launcher regression checks.
+- `packaging/arch/smoke-test.cjs` — installed runtime checks.
 - `scripts/prepare-arch-package.mjs` — baseline validation, checksums and metadata.

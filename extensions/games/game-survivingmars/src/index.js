@@ -34,7 +34,11 @@ function findGame() {
 }
 
 function modPath() {
-  return path.join(util.getVortexPath("appData"), "Surviving Mars", "mods");
+  return path.join(
+    util.getVortexPath("appData", util.getGame("survivingmars")),
+    "Surviving Mars",
+    "mods",
+  );
 }
 
 function prepareForModding() {

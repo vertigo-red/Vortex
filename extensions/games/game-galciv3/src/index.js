@@ -29,11 +29,19 @@ function findGame() {
 }
 
 function modPath() {
-  return path.join(util.getVortexPath("documents"), "My Games", "GalCiv3");
+  return path.join(
+    util.getVortexPath("documents", util.getGame("galacticcivilizations3")),
+    "My Games",
+    "GalCiv3",
+  );
 }
 
 function crusadeModPath() {
-  return path.join(util.getVortexPath("documents"), "My Games", "GC3Crusade");
+  return path.join(
+    util.getVortexPath("documents", util.getGame("galacticcivilizations3")),
+    "My Games",
+    "GC3Crusade",
+  );
 }
 
 function dirExists(dirPath) {

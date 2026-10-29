@@ -26,15 +26,26 @@ function findGame() {
 }
 
 function modPath() {
-  return path.join(util.getVortexPath("documents"), "Neverwinter Nights 2");
+  return path.join(
+    util.getVortexPath("documents", util.getGame("neverwinter2")),
+    "Neverwinter Nights 2",
+  );
 }
 
 function overrideModPath() {
-  return path.join(util.getVortexPath("documents"), "Neverwinter Nights 2", "override");
+  return path.join(
+    util.getVortexPath("documents", util.getGame("neverwinter2")),
+    "Neverwinter Nights 2",
+    "override",
+  );
 }
 
 function modulesModPath() {
-  return path.join(util.getVortexPath("documents"), "Neverwinter Nights 2", "modules");
+  return path.join(
+    util.getVortexPath("documents", util.getGame("neverwinter2")),
+    "Neverwinter Nights 2",
+    "modules",
+  );
 }
 
 function install(files) {

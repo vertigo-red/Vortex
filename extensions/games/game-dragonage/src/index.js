@@ -43,7 +43,7 @@ function findGame() {
 function queryModPath() {
   if (_MODS_PATH === undefined) {
     _MODS_PATH = path.join(
-      util.getVortexPath("documents"),
+      util.getVortexPath("documents", util.getGame("dragonage")),
       "BioWare",
       "Dragon Age",
       "packages",
@@ -58,7 +58,7 @@ function queryModPath() {
 function addinsPath() {
   if (_ADDINS_PATH === undefined) {
     _ADDINS_PATH = path.join(
-      util.getVortexPath("documents"),
+      util.getVortexPath("documents", util.getGame("dragonage")),
       "Bioware",
       "Dragon Age",
       "Settings",
@@ -74,7 +74,12 @@ function prepareForModding() {
     .ensureDirWritableAsync(queryModPath())
     .then(() =>
       fs.ensureDirAsync(
-        path.join(util.getVortexPath("documents"), "BioWare", "Dragon Age", "AddIns"),
+        path.join(
+          util.getVortexPath("documents", util.getGame("dragonage")),
+          "BioWare",
+          "Dragon Age",
+          "AddIns",
+        ),
       ),
     )
     .then(() => fs.ensureDirAsync(path.dirname(addinsPath())));

@@ -1,12 +1,3 @@
-import {
-  mdiCheckCircleOutline,
-  mdiCogOutline,
-  mdiInformationOutline,
-  mdiMonitorArrowDownVariant,
-  mdiEyeOutline,
-  mdiEyeOffOutline,
-  mdiRefresh,
-} from "@mdi/js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDispatch, useSelector } from "react-redux";
@@ -14,9 +5,9 @@ import { useDispatch, useSelector } from "react-redux";
 import { setDialogVisible, setOpenMainPage, setSettingsPage } from "@/actions/session";
 import type { IExtensionApi } from "@/types/IExtensionContext";
 import type { IState } from "@/types/IState";
+import { PremiumBadge } from "@/ui/components/badges/premium_badge/PremiumBadge";
 import { Button } from "@/ui/components/button/Button";
 import { NoResults } from "@/ui/components/no_results/NoResults";
-import { PremiumBadge } from "@/ui/components/premium_badge/PremiumBadge";
 import { TabBar } from "@/ui/components/tabs/TabBar";
 import { TabButton } from "@/ui/components/tabs/TabButton";
 import { TabPanel } from "@/ui/components/tabs/TabPanel";
@@ -184,13 +175,13 @@ const HealthCheckPage = ({ api, onRefresh, active, registerReset }: IHealthCheck
     () => [
       {
         label: t("common:::refresh"),
-        iconPath: mdiRefresh,
+        icon: "refresh",
         isLoading: isRefreshing,
         onClick: () => onRefresh?.(),
       },
       {
         label: t("common:::settings"),
-        iconPath: mdiCogOutline,
+        icon: "settings",
         testId: "health-check-settings",
         onClick: () => {
           trackSettingsOpened();
@@ -347,7 +338,7 @@ const HealthCheckPage = ({ api, onRefresh, active, registerReset }: IHealthCheck
                   <Button
                     appearance="subdued"
                     brand="neutral"
-                    leftIconPath={tab === "active" ? mdiEyeOffOutline : mdiEyeOutline}
+                    leftIcon={tab === "active" ? "visibility_off" : "visibility"}
                     size="sm"
                     onClick={() =>
                       tab === "active"
@@ -362,7 +353,7 @@ const HealthCheckPage = ({ api, onRefresh, active, registerReset }: IHealthCheck
                 {tab === "active" && !!installCount && (
                   <Button
                     brand="neutral"
-                    leftIconPath={mdiMonitorArrowDownVariant}
+                    leftIcon="install_desktop"
                     rightIcon={showPremiumAd ? <PremiumBadge /> : undefined}
                     size="sm"
                     onClick={() => installAll(issueType, sectionItems.length)}
@@ -403,7 +394,7 @@ const HealthCheckPage = ({ api, onRefresh, active, registerReset }: IHealthCheck
   const loggedOutState = (
     <NoResults
       className="py-24"
-      iconPath={mdiInformationOutline}
+      icon="info"
       message={t("listing::no_results_logged_out::message")}
       title={t("listing::no_results_logged_out::title")}
     >
@@ -417,7 +408,7 @@ const HealthCheckPage = ({ api, onRefresh, active, registerReset }: IHealthCheck
     <NoResults
       appearance="success"
       className="py-24"
-      iconPath={mdiCheckCircleOutline}
+      icon="check_circle"
       message={t("listing::no_results_active::message")}
       title={t("listing::no_results_active::title")}
     />
@@ -442,8 +433,8 @@ const HealthCheckPage = ({ api, onRefresh, active, registerReset }: IHealthCheck
               <Typography
                 appearance={compact ? "subdued" : "moderate"}
                 as="h2"
-                className="transition-colors"
-                typographyType="heading-xs"
+                className="font-medium transition-colors"
+                typographyType="body-xl"
               >
                 {t("listing::title")}
               </Typography>
@@ -485,7 +476,7 @@ const HealthCheckPage = ({ api, onRefresh, active, registerReset }: IHealthCheck
                 ) : (
                   <NoResults
                     className="py-24"
-                    iconPath={mdiEyeOffOutline}
+                    icon="visibility_off"
                     title={t("listing::no_results_hidden::title")}
                   />
                 )}

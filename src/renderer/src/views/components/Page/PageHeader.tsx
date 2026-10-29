@@ -19,7 +19,8 @@ export type IPageHeaderProps = Omit<HTMLAttributes<HTMLDivElement>, "children"> 
  * Full-bleed header for a non-scrolling `Page`. The bar itself spans the full
  * width (so its background/shadow reach the viewport edges) and stays pinned
  * above the `PageScroll` sibling, while its content is centred and capped at
- * `max-w-8xl` so it lines up with the scrolled content. It trades its hairline
+ * `max-w-8xl` so it lines up with the scrolled content: it leaves
+ * `pr-scrollbar` on the right for the gutter `PageScroll` always keeps. It trades its hairline
  * for a shadow once that sibling is scrolled — unless `isFullWidth`, where
  * content reaches the bar itself, so the hairline stays and the shadow is
  * skipped.
@@ -31,7 +32,8 @@ export type IPageHeaderProps = Omit<HTMLAttributes<HTMLDivElement>, "children"> 
  * Pass `title` for the common heading, or `customTitle` when the title needs
  * more than a string (e.g. a badge alongside it); `subtitle` renders below
  * either. `title` goes subdued once compact — `customTitle` takes a
- * render-prop so it can match.
+ * render-prop so it can match. Expanded, the title drops a little to centre the
+ * title and subtitle on the pictogram.
  */
 export const PageHeader = ({
   children,
@@ -47,16 +49,19 @@ export const PageHeader = ({
 
   return (
     <div
-      className={joinClasses(["relative z-10 w-full py-3 pb-3", className], {
+      className={joinClasses(["relative z-10 w-full py-3 pr-scrollbar pb-3", className], {
         "border-b border-stroke-weak": !scrolled || isFullWidth,
         "shadow-md": scrolled && !isFullWidth,
       })}
       {...rest}
     >
-      <PageContent className="flex items-start gap-x-2 px-6" isFullWidth={isFullWidth}>
+      <PageContent className="flex items-center gap-x-2 px-6" isFullWidth={isFullWidth}>
         {!!pictogramName && (
           <Pictogram
-            className={joinClasses(["transition-[width,height]", compact ? "size-7" : "size-14"])}
+            className={joinClasses([
+              "transition-[width,height] ease-out",
+              compact ? "size-7" : "size-14",
+            ])}
             name={pictogramName}
             size="none"
           />
@@ -64,13 +69,18 @@ export const PageHeader = ({
 
         <div className="min-w-0 grow">
           <div className="flex items-center justify-between gap-x-6">
-            <div className="min-w-0">
+            <div
+              className={joinClasses([
+                "min-w-0 transition-[margin] ease-out",
+                !compact && !!pictogramName ? "mt-1" : "mt-0",
+              ])}
+            >
               {(typeof customTitle === "function" ? customTitle(compact) : customTitle) ?? (
                 <Typography
                   appearance={compact ? "subdued" : "moderate"}
                   as="h2"
-                  className="transition-colors"
-                  typographyType="heading-xs"
+                  className="font-medium transition-colors"
+                  typographyType="body-xl"
                 >
                   {title}
                 </Typography>
@@ -81,12 +91,17 @@ export const PageHeader = ({
           </div>
 
           {!!subtitle && (
-            <Typography
-              appearance="subdued"
-              className={joinClasses("truncate", { hidden: compact })}
+            <div
+              aria-hidden={compact || undefined}
+              className={joinClasses([
+                "grid transition-[grid-template-rows,opacity] ease-out",
+                compact ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr]",
+              ])}
             >
-              {subtitle}
-            </Typography>
+              <Typography appearance="subdued" className="min-h-0 truncate">
+                {subtitle}
+              </Typography>
+            </div>
           )}
         </div>
       </PageContent>

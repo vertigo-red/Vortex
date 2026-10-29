@@ -287,7 +287,7 @@ export function bsaVersion(gameId: string): number {
 
 export function mygamesPath(gameMode: string): string {
   return path.join(
-    util.getVortexPath("documents"),
+    util.getVortexPath("documents", util.getGame(gameMode)),
     "My Games",
     gameSupport.get(gameMode, "mygamesPath"),
   );

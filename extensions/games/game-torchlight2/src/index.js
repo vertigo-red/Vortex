@@ -14,7 +14,7 @@ const extension = process.platform == "linux" ? ".bin.x86" : ".exe";
 
 function modPath() {
   return path.join(
-    util.getVortexPath("documents"),
+    util.getVortexPath("documents", util.getGame("torchlight2")),
     "My Games",
     "runic games",
     "torchlight 2",

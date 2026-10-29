@@ -1,7 +1,12 @@
 import * as path from "path";
 
-import { mdiGamepadSquareOutline } from "@mdi/js";
-import { getErrorCode, getErrorMessageOrDefault, unknownToError } from "@vortex/shared";
+import {
+  getErrorCode,
+  getErrorMessageOrDefault,
+  type GameId,
+  unknownToError,
+  VortexGameId,
+} from "@vortex/shared";
 import PromiseBB from "bluebird";
 import * as fsExtra from "fs-extra";
 import React from "react";
@@ -12,6 +17,7 @@ import { showDialog } from "../../actions/notifications";
 import { setDialogVisible } from "../../actions/session";
 import LazyComponent from "../../controls/LazyComponent";
 import OptionsFilter, { type ISelectOption } from "../../controls/table/OptionsFilter";
+import { FlagService } from "../../FlagService";
 import { log } from "../../logging";
 import ReduxProp from "../../ReduxProp";
 import type { IExtensionDownloadInfo } from "../../types/extensions";
@@ -22,11 +28,12 @@ import type {
 } from "../../types/IExtensionContext";
 import type { IGame } from "../../types/IGame";
 import type { NotificationDismiss } from "../../types/INotification";
-import type { IProfile, IRunningTool, IState } from "../../types/IState";
+import type { IProfile, IRunningTool, IState, ITierZeroGame } from "../../types/IState";
 import type { IEditChoice, ITableAttribute } from "../../types/ITableAttribute";
 import { DataInvalid, ProcessCanceled, SetupError, UserCanceled } from "../../util/CustomErrors";
 import * as fs from "../../util/fs";
 import GameStoreHelperInstance from "../../util/GameStoreHelper";
+import { setGameUserPathContext } from "../../util/getVortexPath";
 import { isContributed } from "../../util/isContributed";
 import local from "../../util/local";
 import { showError } from "../../util/message";
@@ -36,25 +43,35 @@ import { getSafe } from "../../util/storeHelper";
 import { batchDispatch } from "../../util/util";
 import { setModType } from "../mod_management/actions/mods";
 import type { IModWithState } from "../mod_management/views/CheckModVersionsButton";
+import { isLoggedIn } from "../nexus_integration/selectors";
 import { nexusGames } from "../nexus_integration/util";
 import { setNextProfile } from "../profile_management/actions/settings";
-import { setGameInfo } from "./actions/persistent";
+import { removeTierZeroGame, setGameInfo, setTierZeroGame } from "./actions/persistent";
+import { clearFavouriteGames, setDetectedGamesStatus } from "./actions/session";
 import {
   addDiscoveredGame,
   clearDiscoveredGame,
   setGamePath,
   setGameSearchPaths,
 } from "./actions/settings";
-import type GameModeManager from "./GameModeManager";
+import { GameModeManager } from "./GameModeManager";
 import { type IGameStub } from "./GameModeManager";
 import { discoveryReducer } from "./reducers/discovery";
 import { persistentReducer } from "./reducers/persistent";
 import { sessionReducer } from "./reducers/session";
 import { settingsReducer } from "./reducers/settings/settings";
 import { currentGame, currentGameDiscovery, discoveryByGame, gameById } from "./selectors";
+import { catalogExtensionGameIds } from "./selectors";
+import {
+  makeTierZeroGame,
+  synthesizePersistedTierZeroGames,
+  unregisterTierZeroGame,
+} from "./tiered/tierZero";
 import type { IDiscoveryResult } from "./types/IDiscoveryResult";
 import type { IGameStored } from "./types/IGameStored";
 import type { IModType } from "./types/IModType";
+import { requestDetectedGames, resetDetectedGamesHash } from "./util/detected_games/detectedGames";
+import { listableDetectedIds } from "./util/detected_games/listableDetectedIds";
 import getDriveList from "./util/getDriveList";
 import { getGame, getGameStore, getGameStores } from "./util/getGame";
 import { identifyStore } from "./util/identifyStore";
@@ -90,6 +107,8 @@ declare module "@/types/IExtensionContext" {
   interface ApiEvents {
     "discover-game": (gameId: string) => string[];
     "discover-tools": (gameId: string) => void;
+    "register-tier-zero-game": (entry: ITierZeroGame) => void;
+    "remove-tier-zero-game": (gameId: GameId) => void;
   }
 }
 
@@ -716,7 +735,7 @@ function init(context: IExtensionContext): boolean {
         nexusGames: nexusGames(),
       }),
       activity,
-      mdi: mdiGamepadSquareOutline,
+      menuIcon: "stadia_controller",
     },
   );
   context.registerFooter("discovery-progress", ProgressFooter);
@@ -926,11 +945,9 @@ function init(context: IExtensionContext): boolean {
     const store: Redux.Store<IState> = context.api.store;
     const events = context.api.events;
 
-    const GameModeManagerImpl: typeof GameModeManager = require("./GameModeManager").default;
-
     context.api.ext["awaitProfileSwitch"] = () => awaitProfileSwitch(context.api);
 
-    const gameModeManager = new GameModeManagerImpl(
+    const gameModeManager = new GameModeManager(
       context.api,
       $.extensionGames,
       $.extensionStubs,
@@ -943,6 +960,44 @@ function init(context: IExtensionContext): boolean {
     // the extension API's GameStoreHelper is a dumb adapter; hand it the
     // manager's store list once the manager exists
     GameStoreHelperInstance.attach(() => gameModeManager.gameStores);
+    setGameUserPathContext((game) => ({
+      discovery: store.getState().settings.gameMode.discovered[game.id],
+      steamEntries: gameModeManager.gameStores
+        .find((candidate) => candidate.id === "steam")
+        ?.snapshot().entries,
+    }));
+
+    // synthesize the persisted Tier 0 games before the store attaches so
+    // getGame consumers never see a window without them. Deliberately not
+    // flag-gated: the flag only gates the management flows, the games
+    // themselves must reappear on every startup.
+    synthesizePersistedTierZeroGames(
+      store.getState().persistent.gameMode.tier0,
+      gameModeManager.games,
+      (games) => gameModeManager.addGames(games),
+    );
+
+    context.api.onAsync<"register-tier-zero-game">("register-tier-zero-game", (entry) => {
+      // persisting comes first: a crash between the steps resurfaces through the
+      // startup synthesis above on the next run
+      store.dispatch(setTierZeroGame(entry.gameId, entry));
+      gameModeManager.addGames([makeTierZeroGame(entry)]);
+
+      return Promise.resolve();
+    });
+
+    // the cleanup path of un-managing: registered without the flag so an
+    // opt-in from before a flag flip can still be torn down
+    context.api.onAsync<"remove-tier-zero-game">("remove-tier-zero-game", (gameId) => {
+      const entry = store.getState().persistent.gameMode.tier0[gameId];
+      if (entry === undefined) return Promise.resolve();
+
+      store.dispatch(removeTierZeroGame(gameId));
+      gameModeManager.removeGames([VortexGameId(entry.domain)]);
+      unregisterTierZeroGame(gameId);
+      return Promise.resolve();
+    });
+
     $.gameModeManager.attachToStore(store);
     // kick the first store scan eagerly; store snapshots are then populated
     // independently of quick discovery (which triggers its own reload)
@@ -989,29 +1044,56 @@ function init(context: IExtensionContext): boolean {
       }
     });
 
-    events.on("start-quick-discovery", (cb?: (gameIds: string[], err?: Error) => void) => {
-      const { discovered } = store.getState().settings.gameMode;
-      const discoveredGames = new Set(
-        Object.keys(discovered).filter((gameId) => discovered[gameId].path !== undefined),
-      );
+    // Reports the detected games' ids once the scan and its detection are done, with an
+    // error saying which step failed if one did.
+    events.on(
+      "start-quick-discovery",
+      (cb?: (detectedIds: string[], err?: Error, failure?: "discovery" | "detection") => void) => {
+        const { discovered } = store.getState().settings.gameMode;
+        const discoveredGames = new Set(
+          Object.keys(discovered).filter((gameId) => discovered[gameId].path !== undefined),
+        );
+        // read after the scan, so it sees what the scan discovered
+        const detectedIds = () => {
+          const current = store.getState();
+          const addedGameIds = new Set(
+            Object.values(current.persistent.profiles).map((profile) => profile.gameId),
+          );
 
-      $.gameModeManager
-        .startQuickDiscovery()
-        .then((gameIds: string[]) => {
-          return removeDisappearedGames(context.api, discoveredGames).then(() => {
-            if (cb !== undefined) {
-              cb(gameIds);
+          return listableDetectedIds(
+            current.session.gameMode.detectedGames,
+            current.session.gameMode.known,
+            current.settings.gameMode.discovered,
+            addedGameIds,
+            {
+              // same gating the detected section lists with, so a game doesn't
+              // get reported as "new" when the section doesn't show it
+              allowTierZero:
+                FlagService.instance?.getFlag("vortex-tier-0-game-support") !== undefined,
+              extensionGameIds: catalogExtensionGameIds(current),
+            },
+          );
+        };
+
+        $.gameModeManager
+          .startQuickDiscovery()
+          .then(() => removeDisappearedGames(context.api, discoveredGames))
+          .then(() => {
+            if (store.getState().session.gameMode.detectedGamesStatus === "failed") {
+              cb?.(detectedIds(), new Error("Game detection failed"), "detection");
+            } else {
+              cb?.(detectedIds());
             }
-          });
-        })
-        .catch((err) => {
-          const error = unknownToError(err);
+          })
+          .catch((err) => {
+            const error = unknownToError(err);
 
-          error["attachLogOnReport"] = true;
-          context.api.showErrorNotification("Discovery failed", err);
-          cb?.(Array.from(discoveredGames), error);
-        });
-    });
+            error["attachLogOnReport"] = true;
+            context.api.showErrorNotification("Discovery failed", err);
+            cb?.(detectedIds(), error, "discovery");
+          });
+      },
+    );
 
     context.api.onAsync<"discover-tools">("discover-tools", (gameId) =>
       $.gameModeManager.startToolDiscovery(gameId),
@@ -1059,18 +1141,18 @@ function init(context: IExtensionContext): boolean {
         .catch((err) => callback(unknownToError(err)));
     });
 
-    const changeGameMode = (
+    const prepareGameMode = (
       oldGameId: string,
       newGameId: string,
       currentProfileId: string,
-    ): PromiseBB<void> => {
+    ): Promise<void> => {
       if (newGameId === undefined) {
-        return PromiseBB.resolve();
+        return Promise.resolve();
       }
       log("debug", "change game mode", { oldGameId, newGameId });
 
       if (getGame(newGameId) === undefined) {
-        return PromiseBB.reject(new Error(`Attempt to switch to unknown game "${newGameId}"`));
+        return Promise.reject(new Error(`Attempt to switch to unknown game "${newGameId}"`));
       }
 
       const id = context.api.sendNotification({
@@ -1082,14 +1164,13 @@ function init(context: IExtensionContext): boolean {
       // Important: This happens after the profile has already been activated
       //   and while the ui is usable again so at this point the user can already
       //   switch the game/profile again. The code below has to be able to deal with that
-      return $.gameModeManager
-        .setupGameMode(newGameId)
+      return Promise.resolve($.gameModeManager.setupGameMode(newGameId))
         .then(() => {
           // only calling to check if it works, some game extensions might discover
           // a setup-error when trying to resolve the mod path
           const discovery = discoveryByGame(store.getState(), newGameId);
           if (discovery === undefined || discovery.path === undefined) {
-            return PromiseBB.reject(new ProcessCanceled("The game is no longer discovered"));
+            return Promise.reject(new ProcessCanceled("The game is no longer discovered"));
           }
           getGame(newGameId).getModPaths(discovery.path);
         })
@@ -1115,7 +1196,8 @@ function init(context: IExtensionContext): boolean {
               id: "failed-to-set-gamemode",
             });
           } else {
-            if (err.code === "ENOENT") {
+            const error = unknownToError(err);
+            if (getErrorCode(error) === "ENOENT") {
               context.api.sendNotification({
                 message: "Failed to set game mode",
                 type: "error",
@@ -1137,7 +1219,7 @@ function init(context: IExtensionContext): boolean {
                               "to enable modding capabilities" +
                               "[*]You may have to run the game at least once for certain folders to be created/unlocked" +
                               "[*]You might have installed an unrecognized game variant. Please inform the game extension developer[/list]",
-                            { replace: { errPath: err.path } },
+                            { replace: { errPath: (error as NodeJS.ErrnoException).path } },
                           ),
                         },
                         [{ label: "Close" }],
@@ -1147,8 +1229,8 @@ function init(context: IExtensionContext): boolean {
                 ],
               });
             } else {
-              err["attachLogOnReport"] = true;
-              showError(store.dispatch, "Failed to set game mode", err, {
+              error["attachLogOnReport"] = true;
+              showError(store.dispatch, "Failed to set game mode", error, {
                 message: newGameId,
                 id: "failed-to-set-gamemode",
               });
@@ -1160,6 +1242,23 @@ function init(context: IExtensionContext): boolean {
         .finally(() => {
           context.api.dismissNotification(id);
         });
+    };
+
+    // Switching profiles is itself a settings change, which queues the "settings-changed" checks.
+    // The deployment check fails until the game's setup has created the mod folders, so hold those
+    // checks until setup is done. They run once afterwards.
+    const changeGameMode = (
+      oldGameId: string,
+      newGameId: string,
+      currentProfileId: string,
+    ): Promise<void> => {
+      // async so a synchronous throw becomes a rejection, withSuppressedTests only releases its hold
+      // once the promise settles
+      const prepare = async () => prepareGameMode(oldGameId, newGameId, currentProfileId);
+      const { withSuppressedTests } = context.api.ext;
+      return withSuppressedTests !== undefined
+        ? withSuppressedTests(["settings-changed"], prepare)
+        : prepare();
     };
 
     context.api.onStateChange(
@@ -1177,7 +1276,7 @@ function init(context: IExtensionContext): boolean {
         const prom =
           oldGameId !== newGameId
             ? changeGameMode(oldGameId, newGameId, current)
-            : PromiseBB.resolve();
+            : Promise.resolve();
 
         prom.then(() => {
           const game = {
@@ -1216,6 +1315,30 @@ function init(context: IExtensionContext): boolean {
         }
       },
     );
+
+    {
+      // login/logout transitions: favourites are user-scoped, so they are cleared
+      // on logout and (re)requested on login. A different account may have
+      // different favourites even though the machine payload is unchanged, which
+      // is why the unchanged-payload skip has to be reset on login.
+      let loggedIn = isLoggedIn(store.getState());
+      context.api.onStateChange(["confidential", "account", "nexus"], () => {
+        const nowLoggedIn = isLoggedIn(store.getState());
+        if (loggedIn && !nowLoggedIn) {
+          store.dispatch(clearFavouriteGames());
+          if (store.getState().session.gameMode.detectedGamesStatus === "failed") {
+            store.dispatch(setDetectedGamesStatus(undefined));
+          }
+        } else if (!loggedIn && nowLoggedIn) {
+          resetDetectedGamesHash();
+          void requestDetectedGames(context.api).catch((err) =>
+            log("warn", "detected-games: unexpected failure", { err }),
+          );
+        }
+
+        loggedIn = nowLoggedIn;
+      });
+    }
 
     {
       const profile: IProfile = activeProfile(store.getState());

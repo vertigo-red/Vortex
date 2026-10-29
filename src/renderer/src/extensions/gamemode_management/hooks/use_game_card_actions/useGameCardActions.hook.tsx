@@ -7,11 +7,13 @@ import { registerAction } from "@/controls/ActionControl";
 import { useExtensionObjects } from "@/ExtensionProvider";
 import type { IActionDefinition } from "@/types/IActionDefinition";
 import type { IState } from "@/types/IState";
-import { PopoverMenu } from "@/ui/components/popover/PopoverMenu";
-import type { IMenuAction } from "@/ui/components/popover/PopoverMenuItem";
-import { getIconPath } from "@/views/components/iconMap";
+import { PopoverMenu } from "@/ui/components/popover/popover_menu/PopoverMenu";
+import type { IMenuAction } from "@/ui/components/popover/popover_menu/PopoverMenu.types";
+import { getIcon } from "@/views/components/icon_map/iconMap";
 
+import { setGameAddOrigin } from "../../actions/session";
 import { setGameHidden } from "../../actions/settings";
+import type { GameSource } from "../../types/GameSource";
 
 /**
  * Where a tile stops leading with an action and starts filing it in the menu. It's the
@@ -84,7 +86,7 @@ const useRegisteredActions = (group: string, gameId: string): IPositionedAction[
         // Registrations are inconsistent about translating their own title, and a
         // string already translated passes through untouched.
         label: t(definition.title),
-        iconPath: getIconPath(definition.icon),
+        icon: getIcon(definition.icon),
         disabled: typeof condition === "string",
         onClick: () => definition.action?.(instanceIds),
       },
@@ -108,6 +110,7 @@ export const useGameCardActions = (
   gameId: string,
   type: string,
   onShowDetails: () => void,
+  source?: GameSource,
 ): IGameCardActions => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -125,7 +128,7 @@ export const useGameCardActions = (
       position: MENU_POSITION,
       action: {
         label: hidden ? t("Show") : t("Hide"),
-        iconPath: getIconPath(hidden ? "show" : "hide"),
+        icon: getIcon(hidden ? "show" : "hide"),
         onClick: () => dispatch(setGameHidden(gameId, !hidden)),
       },
     };
@@ -134,7 +137,7 @@ export const useGameCardActions = (
       position: DETAILS_POSITION,
       action: {
         label: t("Game details"),
-        iconPath: getIconPath("game"),
+        icon: getIcon("game"),
         onClick: onShowDetails,
       },
     };
@@ -152,7 +155,7 @@ export const useGameCardActions = (
               position: opens[0].position,
               action: {
                 label: openLabel,
-                iconPath: getIconPath(OPEN_ICON),
+                icon: getIcon(OPEN_ICON),
                 panelRole: "menu",
                 panel: ({ dismiss }) => (
                   <PopoverMenu
@@ -172,9 +175,22 @@ export const useGameCardActions = (
 
     return {
       menu: [menu],
-      primary: leads
-        ? { label: sorted[0].action.label, onClick: () => sorted[0].action.onClick?.() }
-        : undefined,
+      primary:
+        leads &&
+        // The lead action of an unadded game is its add; recording the list it was
+        // picked from lets app_game_manage attribute the add. Never set for the
+        // added section, whose lead is an "Open".
+        source !== undefined
+          ? {
+              label: sorted[0].action.label,
+              onClick: () => {
+                dispatch(setGameAddOrigin(gameId, source));
+                sorted[0].action.onClick?.();
+              },
+            }
+          : leads
+            ? { label: sorted[0].action.label, onClick: () => sorted[0].action.onClick?.() }
+            : undefined,
     };
-  }, [dispatch, gameId, hidden, onShowDetails, registered, t]);
+  }, [dispatch, gameId, hidden, onShowDetails, registered, source, t]);
 };

@@ -27,6 +27,8 @@ Project and coding documentation. To set up and build Vortex, start with
 
 ## Subsystems
 
+- [linux-game-paths.md](linux-game-paths.md) - Windows game user directories inside Wine/Proton prefixes
+
 - [mod-management/collections.md](mod-management/collections.md) - Collections and phased installation; phase invariants
 - [mod-management/EXTERNAL-CHANGES.md](mod-management/EXTERNAL-CHANGES.md) - The External Changes dialog: change types, actions, auto-resolution
 - [analytics.md](analytics.md) - Mixpanel super properties, ID-to-name lookup tables, and how to add tracking to an extension
@@ -37,7 +39,7 @@ Project and coding documentation. To set up and build Vortex, start with
 ## Building and shipping
 
 - [packaging/windows.md](packaging/windows.md) - Local unsigned installers, the pipeline, signed CI builds
-- [packaging/archlinux.md](packaging/archlinux.md) - Native Arch Linux and CachyOS packages from the stable release branch
+- [packaging/archlinux.md](packaging/archlinux.md) - Native Linux development builds and CachyOS packages
 - [packaging/flatpak.md](packaging/flatpak.md) - Building and installing the Flatpak
 - [flatpak/technical.md](flatpak/technical.md) - Flatpak manifest and runtime details
 - [flatpak/maintenance.md](flatpak/maintenance.md) - Updating the Flatpak package

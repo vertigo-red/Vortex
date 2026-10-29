@@ -2,7 +2,7 @@ import path from "path";
 
 import { fs, types, selectors } from "@nexusmods/vortex-api";
 
-import { GAME_ID, HALO_GAMES, MOD_MANIFEST_FILE_PATH } from "./common";
+import { GAME_ID, HALO_GAMES, getModManifestFilePath } from "./common";
 import { IHaloGame } from "./types";
 
 export function identifyHaloGames(files: string[]): IHaloGame[] {
@@ -31,7 +31,7 @@ export async function applyToManifest(api: types.IExtensionApi, apply: boolean) 
   }
   let manifestData = "";
   try {
-    manifestData = await fs.readFileAsync(MOD_MANIFEST_FILE_PATH, { encoding: "utf8" });
+    manifestData = await fs.readFileAsync(getModManifestFilePath(), { encoding: "utf8" });
   } catch (err) {
     if (!["ENOENT"].includes(err.code)) {
       api.showErrorNotification("Failed to read mod manifest file", err, {
@@ -49,8 +49,8 @@ export async function applyToManifest(api: types.IExtensionApi, apply: boolean) 
     lines.splice(lines.indexOf(stagingPath), 1);
   }
   try {
-    await fs.ensureDirWritableAsync(path.dirname(MOD_MANIFEST_FILE_PATH));
-    await fs.writeFileAsync(MOD_MANIFEST_FILE_PATH, lines.filter((line) => !!line).join("\r\n"));
+    await fs.ensureDirWritableAsync(path.dirname(getModManifestFilePath()));
+    await fs.writeFileAsync(getModManifestFilePath(), lines.filter((line) => !!line).join("\r\n"));
   } catch (err) {
     api.showErrorNotification("Failed to write mod manifest file", err, {
       allowReport: err.code !== "EPERM",

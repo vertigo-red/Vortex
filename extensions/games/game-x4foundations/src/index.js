@@ -224,8 +224,19 @@ function steamUserId32Bit() {
 
 function getDocumentsModPath() {
   return _STEAM_ENTRY !== undefined
-    ? path.join(util.getVortexPath("documents"), "Egosoft", "X4", steamUserId32Bit(), "extensions")
-    : path.join(util.getVortexPath("documents"), "Egosoft", "X4", "extensions");
+    ? path.join(
+        util.getVortexPath("documents", util.getGame("x4foundations")),
+        "Egosoft",
+        "X4",
+        steamUserId32Bit(),
+        "extensions",
+      )
+    : path.join(
+        util.getVortexPath("documents", util.getGame("x4foundations")),
+        "Egosoft",
+        "X4",
+        "extensions",
+      );
 }
 
 function migrate101(api, oldVersion) {

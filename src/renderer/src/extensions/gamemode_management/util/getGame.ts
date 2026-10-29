@@ -1,12 +1,14 @@
 import * as path from "path";
 
+import type { VortexGameId } from "@vortex/shared";
+
 import type { IExtensionDownloadInfo } from "../../../types/extensions";
 import type { IGame } from "../../../types/IGame";
 import type { IGameStore } from "../../../types/IGameStore";
 import local from "../../../util/local";
 import { log } from "../../../util/log";
 import type { IGameStub } from "../GameModeManager";
-import type GameModeManager from "../GameModeManager";
+import type { GameModeManager } from "../GameModeManager";
 import type { IDiscoveryResult } from "../types/IDiscoveryResult";
 import { resolveGameVersion } from "./getGameVersion";
 import { getModTypeExtensions } from "./modTypeExtensions";
@@ -81,6 +83,21 @@ export function getGame(gameId: string): IGame {
     }
   }
   return makeGameProxy(game);
+}
+
+/** Resolve a game extension's owner without borrowing another game's prefix. */
+export function getGameForExtension(
+  extensionPath: string,
+  activeId?: VortexGameId,
+): IGame | undefined {
+  const games = $.extensionGames.filter(
+    (game) =>
+      game.extensionPath !== undefined &&
+      path.resolve(game.extensionPath) === path.resolve(extensionPath),
+  );
+  const selected =
+    games.find((game) => game.id === activeId) ?? (games.length === 1 ? games[0] : undefined);
+  return selected ? makeGameProxy(selected) : undefined;
 }
 
 export function getGameStubDownloadInfo(gameId: string): IExtensionDownloadInfo | undefined {
