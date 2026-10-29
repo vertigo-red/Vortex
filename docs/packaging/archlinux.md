@@ -65,6 +65,12 @@ ASAR. Electron-builder uses regular copying from `src/main/dist` to avoid hoiste
 dependency hardlink collisions. Packaged dependency versions are checked against
 the deploy tree.
 
+The pinned `font-scanner@0.2.1` patch pairs its `new char[]` allocations with
+`delete[]`. The original scalar deletes crash during font enumeration in
+Electron 45. Both synchronous and asynchronous scans are exercised in the
+installed package. On a native failure, CI also logs an isolated font probe and
+a native stack before rejecting the package.
+
 A clean Arch container runs `makepkg`, installs the package and checks the desktop
 entry, sandbox ownership/mode, .NET, FOMOD, LOOT, font scanning, DuckDB with bundled
 `level_pivot`, and LevelDB reads/writes. The build user has the runner's UID so

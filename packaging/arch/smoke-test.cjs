@@ -8,18 +8,19 @@ const resources = "/opt/vortex/resources";
 const unpacked = join(resources, "app.asar.unpacked");
 const appRequire = createRequire(join(resources, "app.asar/package.json"));
 
-function checkFonts() {
+async function checkFonts() {
     console.log("Font scanner: loading native addon");
     const font = require(join(unpacked, "bundledPlugins/theme-switcher/fontmanager.node"));
     console.log("Font scanner: enumerating installed fonts");
     assert.ok(Array.isArray(font.getAvailableFontsSync()));
+    assert.ok(Array.isArray(await font.getAvailableFonts()));
     console.log("Font scanner: OK");
 }
 
 async function main() {
     assert.ok(process.versions.electron, "Run with the packaged Electron runtime");
     if (process.argv.includes("--font-only")) {
-        checkFonts();
+        await checkFonts();
         return;
     }
     const fomod = appRequire("@nexusmods/fomod-installer-native");
@@ -32,7 +33,7 @@ async function main() {
     assert.equal(typeof loot.IsCompatible, "function");
     console.log("LOOT native addon and companion library: OK");
 
-    checkFonts();
+    await checkFonts();
 
     // Linux exports an empty shim here. This tests module resolution, not WinAPI.
     assert.equal(typeof appRequire("winapi-bindings"), "object");

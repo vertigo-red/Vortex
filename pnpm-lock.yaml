@@ -987,6 +987,9 @@ overrides:
   '@types/node': 24.12.2
   react-dnd: 14.0.5
 
+patchedDependencies:
+  font-scanner@0.2.1: 72728f467e6bcc143f91f4e27b79059ba2cc108fbeb6d95a6db05e1a1ee1347e
+
 importers:
 
   .:
@@ -3759,7 +3762,7 @@ importers:
         version: 2.4.1
       font-scanner:
         specifier: 'catalog:'
-        version: 0.2.1
+        version: 0.2.1(patch_hash=72728f467e6bcc143f91f4e27b79059ba2cc108fbeb6d95a6db05e1a1ee1347e)
       i18next:
         specifier: 'catalog:'
         version: 21.10.0
@@ -18188,7 +18191,7 @@ snapshots:
 
   follow-redirects@1.16.0: {}
 
-  font-scanner@0.2.1:
+  font-scanner@0.2.1(patch_hash=72728f467e6bcc143f91f4e27b79059ba2cc108fbeb6d95a6db05e1a1ee1347e):
     dependencies:
       node-addon-api: 8.5.0
 

@@ -323,6 +323,9 @@ overrides:
   # DndContext) is shared. Keep in sync with the react-dnd catalog entry.
   react-dnd: 14.0.5
 
+patchedDependencies:
+  font-scanner@0.2.1: patches/font-scanner@0.2.1.patch
+
 allowBuilds:
   "@nexusmods/fomod-installer-native": true
   "@parcel/watcher": true
